@@ -9,5 +9,5 @@ not_found_handling = "single-page-application"
 # Override via: wrangler secret put SUPABASE_URL (etc.) — or set here as vars for
 # values that are safe to expose (the anon key is public, URL is public).
 [vars]
-SUPABASE_URL = ""
-SUPABASE_ANON_KEY = ""
+SUPABASE_URL = "https://kyfydyownbgwhquorchn.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5ZnlkeW93bmJnd2hxdW9yY2huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMzYyNDQsImV4cCI6MjA5MTYxMjI0NH0.BqsGiVxhtSqWRnqVM_w1dIDu0tDuzv9Xrg6a3NRUTxM"
