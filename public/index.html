@@ -8,10 +8,17 @@
   </head>
   <body>
     <script type="module">
-      // Temporium currently only ships the admin Departments UI, so bounce
-      // any visitor straight to /admin.html and let that page handle the
-      // "not signed in" case.
-      location.replace("/admin.html");
+      // Route the landing page based on auth state.
+      import { getSupabase } from "/js/supabase-client.js";
+      import { routeAfterAuth } from "/js/shared.js";
+
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        location.replace("/signin.html");
+      } else {
+        await routeAfterAuth(sb);
+      }
     </script>
   </body>
 </html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign up · Temporium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <div class="auth-wrap">
+      <div class="card">
+        <h1>Create your Temporium account</h1>
+        <p class="small muted mb-md">
+          Your admin must have added you to the employee list first. Sign up
+          with the same work email they used, and your account will be linked
+          automatically.
+        </p>
+        <div id="notice" class="notice hidden"></div>
+
+        <form id="signup-form">
+          <div class="mb-sm">
+            <label for="email">Work email</label>
+            <input id="email" type="email" required autocomplete="email" style="width:100%" />
+          </div>
+          <div class="mb-md">
+            <label for="password">Password (at least 6 characters)</label>
+            <input id="password" type="password" required minlength="6"
+              autocomplete="new-password" style="width:100%" />
+          </div>
+          <button type="submit" style="width:100%" id="submit-btn">Sign up</button>
+        </form>
+
+        <p class="small muted mt-md" style="margin-bottom:0">
+          Already have an account? <a href="/signin.html">Sign in</a>.
+        </p>
+      </div>
+    </div>
+
+    <script type="module">
+      import { getSupabase } from "/js/supabase-client.js";
+      import { notice, routeAfterAuth } from "/js/shared.js";
+
+      const sb = await getSupabase();
+
+      // Already signed in? Skip straight to the router.
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        await routeAfterAuth(sb);
+      }
+
+      document.getElementById("signup-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        const btn = document.getElementById("submit-btn");
+        btn.disabled = true;
+        btn.textContent = "Creating account…";
+
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if (error) {
+          notice(error.message || "Sign up failed", "error");
+          btn.disabled = false;
+          btn.textContent = "Sign up";
+          return;
+        }
+
+        // If email confirmation is ON in Supabase, signUp returns session=null.
+        // Tell the user to check their inbox and stop here.
+        if (!data.session) {
+          notice(
+            "Account created. Check your email to confirm, then sign in.",
+            "success",
+            { sticky: true }
+          );
+          btn.disabled = false;
+          btn.textContent = "Sign up";
+          return;
+        }
+
+        // Session is live — try to claim an employee row.
+        await routeAfterAuth(sb);
+      });
+    </script>
+  </body>
+</html>

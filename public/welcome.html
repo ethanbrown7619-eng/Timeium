@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Welcome · Temporium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">Temporium</div>
+      <div class="grow"></div>
+      <div class="row-flex">
+        <span id="whoami" class="who"></span>
+        <a href="#" id="signout-link" class="muted">Sign out</a>
+      </div>
+    </header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <div class="card" id="linked-card" style="display:none">
+        <h2 id="linked-heading">You're all set</h2>
+        <p class="muted">
+          Your account is linked to <strong id="linked-name"></strong>. The
+          weekly timesheet page is coming in the next release — you'll be able
+          to enter hours here once it's ready.
+        </p>
+      </div>
+
+      <div class="card" id="unlinked-card" style="display:none">
+        <h2>Almost there</h2>
+        <p>
+          Your account is signed in, but you're not on the employee roster
+          yet. Ask your admin to add you to Temporium using the email
+          <strong id="unlinked-email"></strong>, then refresh this page.
+        </p>
+        <button id="refresh-link" class="ghost">Try again</button>
+      </div>
+    </main>
+
+    <script type="module">
+      import { getSupabase } from "/js/supabase-client.js";
+      import { escapeHtml } from "/js/shared.js";
+
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        location.replace("/signin.html");
+      }
+
+      document.getElementById("whoami").textContent = session.user.email || "";
+      document.getElementById("signout-link").addEventListener("click", async (e) => {
+        e.preventDefault();
+        await sb.auth.signOut();
+        location.href = "/signin.html";
+      });
+
+      document.getElementById("refresh-link").addEventListener("click", async () => {
+        const { data: claim } = await sb.rpc("claim_employee_by_email").catch(() => ({ data: null }));
+        if (claim?.claimed) {
+          location.reload();
+        } else {
+          // Still no match.
+          document.getElementById("unlinked-email").textContent = session.user.email || "your email";
+        }
+      });
+
+      const { data: claim } = await sb
+        .rpc("claim_employee_by_email")
+        .catch(() => ({ data: null }));
+
+      if (claim?.claimed) {
+        document.getElementById("linked-card").style.display = "";
+        document.getElementById("linked-name").textContent = claim.name || session.user.email;
+      } else {
+        document.getElementById("unlinked-card").style.display = "";
+        document.getElementById("unlinked-email").textContent = session.user.email || "your email";
+      }
+    </script>
+  </body>
+</html>

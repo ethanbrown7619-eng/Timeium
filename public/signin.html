@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · Temporium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <div class="auth-wrap">
+      <div class="card">
+        <h1>Sign in to Temporium</h1>
+        <div id="notice" class="notice hidden"></div>
+
+        <form id="signin-form">
+          <div class="mb-sm">
+            <label for="email">Email</label>
+            <input id="email" type="email" required autocomplete="email" style="width:100%" />
+          </div>
+          <div class="mb-md">
+            <label for="password">Password</label>
+            <input id="password" type="password" required autocomplete="current-password" style="width:100%" />
+          </div>
+          <button type="submit" style="width:100%" id="submit-btn">Sign in</button>
+        </form>
+
+        <p class="small muted mt-md" style="margin-bottom:0">
+          New to Temporium? <a href="/signup.html">Create an account</a>.
+        </p>
+        <p class="small muted" style="margin-top:4px;margin-bottom:0">
+          Setting up a new organisation? Use
+          <a href="https://clock-in-out.ethanbrown7619.workers.dev/signup.html">
+            Attendium's signup
+          </a> — the two products share the same account.
+        </p>
+      </div>
+    </div>
+
+    <script type="module">
+      import { getSupabase } from "/js/supabase-client.js";
+      import { notice, routeAfterAuth } from "/js/shared.js";
+
+      const sb = await getSupabase();
+
+      // Already signed in? Bounce straight through.
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        await routeAfterAuth(sb);
+      }
+
+      document.getElementById("signin-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+        const btn = document.getElementById("submit-btn");
+        btn.disabled = true;
+        btn.textContent = "Signing in…";
+
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) {
+          notice(error.message || "Sign in failed", "error");
+          btn.disabled = false;
+          btn.textContent = "Sign in";
+          return;
+        }
+
+        await routeAfterAuth(sb);
+      });
+    </script>
+  </body>
+</html>

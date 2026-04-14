@@ -55,10 +55,26 @@ of employee-login columns on `users`.
     `resolve_org_id`
   - Backfill: distinct free-text `users.department` values seeded into
     `departments` per org
+- `supabase/migrations/024_employee_signup.sql`
+  - `claim_employee_by_email()` RPC — idempotently links an auth user to
+    their pre-existing `public.users` row when the emails match
 - `supabase/functions/sync-infusion-projects/` — multi-tenant edge function
   (fan-out across active orgs, or target one, or test-seed)
+- `public/signin.html` / `public/signup.html` — email+password sign in and
+  employee self-signup; auto-claim via email match after either
+- `public/welcome.html` — landing page for signed-in employees (before
+  `/timesheet.html` is built) or not-yet-claimed accounts
 - `public/admin.html` — Departments CRUD for the current org, with developer
   org switcher; role-aware UI (manager sees read-only)
+
+### Sign-in / Sign-up flow
+
+| Who | Where they start | What happens |
+|---|---|---|
+| Admin setting up a new org | Attendium's `/signup.html` | Creates auth user + organisation + admins row (via `create_first_organisation`). They can then sign into Temporium using the same credentials. |
+| Admin joining an existing org | An existing admin creates their auth user in the Supabase dashboard and inserts an `admins` row. They sign into Temporium at `/signin.html`. |
+| Employee being onboarded | Their admin adds them via `public.users` with their work email. Employee visits `/signup.html`, enters the same email + a password. `claim_employee_by_email()` RPC auto-links the new auth user to their existing roster row. |
+| Employee who signed up *before* their admin added them | `/welcome.html` shows "not on the roster" message. When the admin adds them later, employee clicks "Try again" and the claim RPC picks it up. |
 
 ### ⏭ Later units (not yet built)
 
@@ -172,12 +188,15 @@ values ('<auth-user-uuid>', 1, 'admin');  -- org 1 = PTL
 
 ```
 public/
-  index.html             # bounces to /admin.html
+  index.html             # router: signed in → /admin or /welcome, else /signin
+  signin.html            # email+password sign in
+  signup.html            # employee self-signup (email-matched claim)
+  welcome.html           # landing for signed-in employees (no admin role)
   admin.html             # Departments CRUD (this unit)
   css/style.css
   js/
     admin.js             # role-aware Departments logic + developer org switcher
-    shared.js            # notice(), escapeHtml()
+    shared.js            # notice(), escapeHtml(), routeAfterAuth()
     supabase-client.js   # lazy loads /config.json + createClient()
 worker.js                # Cloudflare Worker (static + /config.json)
 wrangler.toml
@@ -186,6 +205,7 @@ supabase/
   migrations/
     022_temporium_core_extensions.sql
     023_departments_and_projects.sql
+    024_employee_signup.sql
   functions/
     sync-infusion-projects/
       index.ts

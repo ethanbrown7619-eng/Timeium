@@ -17,10 +17,7 @@ const sb = await getSupabase();
 
 const { data: { session } } = await sb.auth.getSession();
 if (!session) {
-  showUnauth(
-    "Not signed in",
-    "Sign in with your Temporium / Attendium account to continue."
-  );
+  location.replace("/signin.html");
   throw new Error("not signed in");
 }
 
@@ -34,10 +31,9 @@ const isAdminOrHigher = role === "admin" || role === "developer";
 const canView = isDeveloper || role === "admin" || role === "manager";
 
 if (!canView) {
-  showUnauth(
-    "Admin access required",
-    "Your account isn't an admin, manager, or developer on any organisation."
-  );
+  // Employee account — send them to the welcome page where the claim RPC
+  // can be re-checked / a future /timesheet.html will land them.
+  location.replace("/welcome.html");
   throw new Error("not admin");
 }
 
@@ -45,7 +41,7 @@ document.getElementById("whoami").textContent = session.user.email || "";
 document.getElementById("signout-link").addEventListener("click", async (e) => {
   e.preventDefault();
   await sb.auth.signOut();
-  location.href = "/";
+  location.href = "/signin.html";
 });
 
 /* -------------------------------------------------------- org context */
@@ -194,14 +190,3 @@ async function deleteDepartment(id) {
   loadDepartments();
 }
 
-/* -------------------------------------------------------- helpers */
-
-function showUnauth(title, body) {
-  document.body.innerHTML = `
-    <div class="auth-wrap">
-      <div class="card">
-        <h1>${escapeHtml(title)}</h1>
-        <p class="muted">${escapeHtml(body)}</p>
-      </div>
-    </div>`;
-}
