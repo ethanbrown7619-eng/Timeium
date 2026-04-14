@@ -2,7 +2,7 @@
   "name": "timeium",
   "version": "0.1.0",
   "private": true,
-  "description": "Timesheet / payroll / reporting module for Attendium. Pairs with the Attendium Phase-1 clock-in-out app on the same Supabase project.",
+  "description": "Temporium — timesheet, approval, and payroll-reporting app. Runs standalone or alongside Attendium on the same Supabase project.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"

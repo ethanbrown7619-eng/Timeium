@@ -1,14 +1,16 @@
--- 017_departments_and_projects.sql
--- First timesheet-app migration. Introduces:
---   - public.departments    (per-org dropdown for the employee timesheet)
---   - public.projects       (per-org, synced from Infusion every ~30 min)
---   - public.upsert_projects_from_infusion RPC
---   - backfill of existing users.department free-text values into departments
+-- 023_departments_and_projects.sql
+-- Temporium Unit 1 content.
 --
--- Follows Phase 1 conventions:
---   * organisation_id NOT NULL on every new table, indexed, FK → organisations
---   * RLS uses is_admin_of(organisation_id) with unqualified column names
---   * SECURITY DEFINER RPCs call resolve_org_id(p_org_id) before touching any row
+--   public.departments   — per-org dropdown list (replaces the free-text
+--                          users.department for new entry; old values backfilled)
+--   public.projects      — per-org list, synced from Infusion every ~30 min
+--   public.upsert_projects_from_infusion(p_org_id, p_projects)
+--
+-- RLS pattern follows the Attendium Phase-1 convention exactly:
+--   admin writes:   using (is_admin_of(organisation_id))
+--   member reads:   any authenticated caller whose users row OR admins row is
+--                   in the same org (covers employees + managers + admins +
+--                   developers)
 --
 -- Safe to re-run.
 
@@ -36,11 +38,6 @@ create policy "admins manage org departments"
     using (public.is_admin_of(organisation_id))
     with check (public.is_admin_of(organisation_id));
 
--- Employees need to read their org's department list to populate the dropdown
--- on the (future) timesheet page. Scoped by the caller's org via a subquery
--- against admins OR users.auth_user_id — but because v_org helper doesn't
--- exist in a policy context, we just allow read to any authenticated user
--- who belongs to the same org through an admins row OR a users row.
 drop policy if exists "members read org departments" on public.departments;
 create policy "members read org departments"
     on public.departments for select
@@ -48,16 +45,21 @@ create policy "members read org departments"
     using (
         public.is_admin_of(organisation_id)
         or exists (
-            select 1 from public.admins
-            where admins.user_id = auth.uid()
-              and admins.organisation_id = departments.organisation_id
+            select 1 from public.users u
+            where u.auth_user_id = auth.uid()
+              and u.organisation_id = departments.organisation_id
+        )
+        or exists (
+            select 1 from public.admins a
+            where a.user_id = auth.uid()
+              and a.organisation_id = departments.organisation_id
         )
     );
 
 --------------------------------------------------------------------------------
--- projects (synced from Infusion)
--- One row per (organisation, job_number, project_number). Job-level fields are
--- replicated on every project row because Infusion's project endpoint already
+-- projects (Infusion-sourced)
+-- One row per (organisation, job_number, project_number). Job-level fields
+-- are replicated on every project row because Infusion's endpoint already
 -- denormalises them; querying a single table keeps the UI simple.
 --------------------------------------------------------------------------------
 
@@ -78,9 +80,9 @@ create table if not exists public.projects (
     unique (organisation_id, job_number, project_number)
 );
 
-create index if not exists projects_org_idx            on public.projects (organisation_id);
-create index if not exists projects_org_active_idx     on public.projects (organisation_id, active);
-create index if not exists projects_org_job_idx        on public.projects (organisation_id, job_number);
+create index if not exists projects_org_idx        on public.projects (organisation_id);
+create index if not exists projects_org_active_idx on public.projects (organisation_id, active);
+create index if not exists projects_org_job_idx    on public.projects (organisation_id, job_number);
 
 alter table public.projects enable row level security;
 
@@ -91,8 +93,6 @@ create policy "admins manage org projects"
     using (public.is_admin_of(organisation_id))
     with check (public.is_admin_of(organisation_id));
 
--- Employees read projects to populate the timesheet dropdown — same pattern
--- as departments above.
 drop policy if exists "members read org projects" on public.projects;
 create policy "members read org projects"
     on public.projects for select
@@ -100,14 +100,21 @@ create policy "members read org projects"
     using (
         public.is_admin_of(organisation_id)
         or exists (
-            select 1 from public.admins
-            where admins.user_id = auth.uid()
-              and admins.organisation_id = projects.organisation_id
+            select 1 from public.users u
+            where u.auth_user_id = auth.uid()
+              and u.organisation_id = projects.organisation_id
+        )
+        or exists (
+            select 1 from public.admins a
+            where a.user_id = auth.uid()
+              and a.organisation_id = projects.organisation_id
         )
     );
 
 --------------------------------------------------------------------------------
 -- updated_at trigger for projects
+-- Defensive CREATE OR REPLACE — Attendium may have its own set_updated_at()
+-- already; shadowing with an identical body is a no-op.
 --------------------------------------------------------------------------------
 
 create or replace function public.set_updated_at()
@@ -127,12 +134,12 @@ create trigger trg_projects_updated_at
 --------------------------------------------------------------------------------
 -- upsert_projects_from_infusion RPC
 --
--- Called by the sync-infusion-projects edge function. The edge function passes
--- p_org_id explicitly because it runs as the service_role (developer-equivalent)
--- and iterates over all active orgs.
+-- Called by the sync-infusion-projects edge function. The edge function runs
+-- as the service_role (which resolve_org_id treats as a developer), so it
+-- passes p_org_id explicitly while iterating over active organisations.
 --
--- Payload shape:
---   [{
+-- Payload shape (per element of p_projects):
+--   {
 --     "job_number":          "1234",
 --     "project_number":      "01",
 --     "job_description":     "Wellington Warehouse fit-out",
@@ -141,7 +148,7 @@ create trigger trg_projects_updated_at
 --     "project_status":      "In progress",
 --     "client_name":         "Acme Ltd",
 --     "active":              true
---   }, ...]
+--   }
 --------------------------------------------------------------------------------
 
 create or replace function public.upsert_projects_from_infusion(
@@ -194,11 +201,12 @@ end$$;
 grant execute on function public.upsert_projects_from_infusion(bigint, jsonb) to authenticated;
 
 --------------------------------------------------------------------------------
--- Backfill: seed departments from existing free-text users.department values.
+-- Backfill: seed departments from existing free-text users.department values,
+-- one row per (organisation, distinct trimmed name). Runs once; subsequent
+-- applications are no-ops because of ON CONFLICT.
 --
--- Runs once; subsequent runs are no-ops because of the ON CONFLICT clause. The
--- free-text users.department column stays put for now — a later migration
--- will convert it to a FK once the dropdown is in use.
+-- We leave the free-text users.department column in place for now. A later
+-- migration will convert it to a FK once the dropdown is the canonical source.
 --------------------------------------------------------------------------------
 
 insert into public.departments (organisation_id, name)

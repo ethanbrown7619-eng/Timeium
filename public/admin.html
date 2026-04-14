@@ -3,18 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin · Attendium</title>
+    <title>Admin · Temporium</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
-    <header id="topbar" class="topbar">
-      <div class="brand">Attendium</div>
+    <header class="topbar">
+      <div class="brand">Temporium</div>
       <nav>
         <a href="/admin.html" class="active">Admin</a>
       </nav>
       <div class="grow"></div>
       <div class="row-flex">
-        <!-- Developer-only org switcher. Hidden for regular admins. -->
+        <!-- Developer-only org switcher. Hidden for regular admins/managers. -->
         <select id="org-switcher" class="hidden"></select>
         <span id="whoami" class="who"></span>
         <a href="#" id="signout-link" class="muted">Sign out</a>
@@ -29,7 +29,7 @@
         <p class="muted small">
           Department dropdown used by the timesheet. Existing free-text
           <code>users.department</code> values were seeded automatically by
-          migration 017 — you can tidy them up here.
+          migration 023 — tidy them up here.
         </p>
 
         <div class="row-flex mb-md">
@@ -50,8 +50,9 @@
       </div>
 
       <div class="card muted small">
-        <strong>Next:</strong> tasks, holidays, timesheet submissions, approvals,
-        IMS + Infusion exports. Shipping one reviewable unit at a time.
+        <strong>Coming next:</strong> tasks, holidays, employee auth, the weekly
+        timesheet grid, the approval flow, and the IMS + Infusion exports —
+        shipping one reviewable unit at a time.
       </div>
     </main>
 

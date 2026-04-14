@@ -1,7 +1,8 @@
 # sync-infusion-projects
 
-Pulls active projects from Infusion and upserts them into `public.projects`,
-one organisation at a time, via the `upsert_projects_from_infusion` RPC.
+**Temporium** edge function. Pulls active projects from Infusion and upserts
+them into `public.projects`, one organisation at a time, via the
+`upsert_projects_from_infusion` RPC.
 
 ## Invocation modes
 
@@ -31,17 +32,23 @@ automatically.
 
 ## Schedule
 
-In **Supabase → Database → Cron Jobs**, add:
+Temporium uses the same `pg_cron` scheduler Attendium adopted for
+`close_all_stale_shifts`. Register a job from the Supabase SQL editor:
 
-```
-*/30 * * * *
-select net.http_post(
-  url := 'https://kyfydyownbgwhquorchn.supabase.co/functions/v1/sync-infusion-projects',
-  headers := jsonb_build_object(
-    'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true),
-    'Content-Type',  'application/json'
-  ),
-  body := '{}'::jsonb
+```sql
+select cron.schedule(
+    'temporium-infusion-sync',
+    '*/30 * * * *',
+    $$
+    select net.http_post(
+        url := 'https://kyfydyownbgwhquorchn.supabase.co/functions/v1/sync-infusion-projects',
+        headers := jsonb_build_object(
+            'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true),
+            'Content-Type',  'application/json'
+        ),
+        body := '{}'::jsonb
+    )
+    $$
 );
 ```
 

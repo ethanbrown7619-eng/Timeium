@@ -1,12 +1,12 @@
-// Admin page — Unit 1 scope: Departments CRUD for the current organisation.
+// Temporium admin page — Unit 1: Departments CRUD for the current organisation.
 //
-// Follows the Attendium Phase-1 patterns:
-//   - Every read filters by the currently-selected organisation_id. For
-//     regular admins that's their own org (derived server-side by RLS); for
-//     developers it's whatever they pick in the org switcher and is passed
-//     explicitly on writes via the is_developer() code path.
-//   - All writes happen through the standard table endpoints; RLS gates them
-//     with is_admin_of(organisation_id).
+// Auth model: Temporium reuses Attendium's shared core (organisations, users,
+// admins). This page is accessible to admin, manager, and developer roles.
+// (Manager is currently a read-only role for lookup tables; only admin and
+// developer can modify. Manager-specific approval UI lands in a later unit.)
+//
+// Developer: cross-org via the org switcher (value persisted in localStorage).
+// Admin / Manager: locked to their own org (derived from their admins row).
 
 import { getSupabase } from "/js/supabase-client.js";
 import { notice, escapeHtml } from "/js/shared.js";
@@ -17,19 +17,27 @@ const sb = await getSupabase();
 
 const { data: { session } } = await sb.auth.getSession();
 if (!session) {
-  location.replace("/signup.html"); // Attendium Phase 1 surface
+  showUnauth(
+    "Not signed in",
+    "Sign in with your Temporium / Attendium account to continue."
+  );
+  throw new Error("not signed in");
 }
 
-// Role detection
-const [{ data: isAdmin }, { data: isDeveloper }] = await Promise.all([
-  sb.rpc("is_admin").then((r) => ({ data: !!r.data })).catch(() => ({ data: false })),
+const [{ data: isDeveloper }, adminRow] = await Promise.all([
   sb.rpc("is_developer").then((r) => ({ data: !!r.data })).catch(() => ({ data: false })),
+  sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
 ]);
 
-if (!isAdmin && !isDeveloper) {
-  document.body.innerHTML =
-    `<div class="auth-wrap"><div class="card"><h1>Admin access required</h1>` +
-    `<p class="muted">Your account isn't an admin on any organisation.</p></div></div>`;
+const role = adminRow?.data?.role || (isDeveloper ? "developer" : null);
+const isAdminOrHigher = role === "admin" || role === "developer";
+const canView = isDeveloper || role === "admin" || role === "manager";
+
+if (!canView) {
+  showUnauth(
+    "Admin access required",
+    "Your account isn't an admin, manager, or developer on any organisation."
+  );
   throw new Error("not admin");
 }
 
@@ -41,10 +49,6 @@ document.getElementById("signout-link").addEventListener("click", async (e) => {
 });
 
 /* -------------------------------------------------------- org context */
-// For developers: pick any org. Persist selection in localStorage.
-// For admins: their own org is derived by RLS, but we still need the id for
-// the "new department" insert (organisation_id is NOT NULL). We read it from
-// the admins table.
 
 let currentOrgId = null;
 await initOrgContext();
@@ -66,40 +70,40 @@ async function initOrgContext() {
       )
       .join("");
 
-    const saved = Number(localStorage.getItem("attendium-dev-org-id"));
-    currentOrgId =
-      orgs?.find((o) => o.id === saved)?.id || orgs?.[0]?.id || null;
-    sel.value = String(currentOrgId);
+    const saved = Number(localStorage.getItem("temporium-dev-org-id"));
+    currentOrgId = orgs?.find((o) => o.id === saved)?.id || orgs?.[0]?.id || null;
+    if (currentOrgId) sel.value = String(currentOrgId);
 
     sel.addEventListener("change", () => {
       currentOrgId = Number(sel.value);
-      localStorage.setItem("attendium-dev-org-id", String(currentOrgId));
+      localStorage.setItem("temporium-dev-org-id", String(currentOrgId));
       loadDepartments();
     });
   } else {
-    // Regular admin: look up their admins row to get organisation_id.
-    const { data, error } = await sb
-      .from("admins")
-      .select("organisation_id")
-      .eq("user_id", session.user.id)
-      .maybeSingle();
-    if (error) return notice(error.message, "error");
-    currentOrgId = data?.organisation_id || null;
+    currentOrgId = adminRow?.data?.organisation_id || null;
   }
 
   if (!currentOrgId) {
-    notice("No organisation on this account — contact a developer.", "error", {
-      sticky: true,
-    });
+    notice(
+      "No organisation on this account — contact a developer.",
+      "error",
+      { sticky: true }
+    );
   }
 }
 
 /* -------------------------------------------------------- departments */
 
-document.getElementById("add-department").addEventListener("click", addDepartment);
-document
-  .getElementById("new-department")
-  .addEventListener("keydown", (e) => e.key === "Enter" && addDepartment());
+if (isAdminOrHigher) {
+  document.getElementById("add-department").addEventListener("click", addDepartment);
+  document
+    .getElementById("new-department")
+    .addEventListener("keydown", (e) => e.key === "Enter" && addDepartment());
+} else {
+  // Manager: hide the write controls.
+  document.getElementById("add-department").disabled = true;
+  document.getElementById("new-department").disabled = true;
+}
 
 await loadDepartments();
 
@@ -123,7 +127,7 @@ async function loadDepartments() {
     `${data?.length || 0} department${data?.length === 1 ? "" : "s"}`;
 
   if (!data || data.length === 0) {
-    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center;padding:16px">No departments yet — add one above.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center;padding:16px">No departments yet — ${isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
     return;
   }
 
@@ -131,11 +135,11 @@ async function loadDepartments() {
     .map(
       (d) => `
         <tr data-dept="${d.id}">
-          <td><input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" /></td>
-          <td><input type="checkbox" data-field="active" ${d.active ? "checked" : ""} /></td>
+          <td><input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" ${isAdminOrHigher ? "" : "disabled"} /></td>
+          <td><input type="checkbox" data-field="active" ${d.active ? "checked" : ""} ${isAdminOrHigher ? "" : "disabled"} /></td>
           <td class="row-flex">
-            <button data-save-dept="${d.id}" class="ghost">Save</button>
-            <button data-del-dept="${d.id}" class="danger">Delete</button>
+            ${isAdminOrHigher ? `<button data-save-dept="${d.id}" class="ghost">Save</button>` : ""}
+            ${isAdminOrHigher ? `<button data-del-dept="${d.id}" class="danger">Delete</button>` : ""}
           </td>
         </tr>`
     )
@@ -155,10 +159,9 @@ async function addDepartment() {
   if (!name) return;
   if (!currentOrgId) return notice("No organisation selected", "error");
 
-  const { error } = await sb.from("departments").insert({
-    organisation_id: currentOrgId,
-    name,
-  });
+  const { error } = await sb
+    .from("departments")
+    .insert({ organisation_id: currentOrgId, name });
   if (error) return notice(error.message, "error");
   input.value = "";
   notice(`Added "${name}"`, "success");
@@ -175,7 +178,7 @@ async function saveDepartment(id) {
     .from("departments")
     .update({ name, active })
     .eq("id", id)
-    .eq("organisation_id", currentOrgId); // defence in depth
+    .eq("organisation_id", currentOrgId); // defence-in-depth against stale currentOrgId
   if (error) return notice(error.message, "error");
   notice("Saved", "success");
 }
@@ -189,4 +192,16 @@ async function deleteDepartment(id) {
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
   loadDepartments();
+}
+
+/* -------------------------------------------------------- helpers */
+
+function showUnauth(title, body) {
+  document.body.innerHTML = `
+    <div class="auth-wrap">
+      <div class="card">
+        <h1>${escapeHtml(title)}</h1>
+        <p class="muted">${escapeHtml(body)}</p>
+      </div>
+    </div>`;
 }
