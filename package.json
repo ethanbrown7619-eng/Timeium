@@ -2,7 +2,7 @@
   "name": "timeium",
   "version": "0.1.0",
   "private": true,
-  "description": "Timesheet Web App (Phase 2) — web UI for weekly timesheets, manager approval, and IMS/Infusion reporting. Pairs with the Clock-in-out kiosk app on the same Supabase project.",
+  "description": "Timesheet / payroll / reporting module for Attendium. Pairs with the Attendium Phase-1 clock-in-out app on the same Supabase project.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy"
