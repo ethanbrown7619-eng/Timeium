@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Timeium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <script type="module">
+      import { getSupabase } from "/js/supabase-client.js";
+      const sb = await getSupabase();
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) {
+        window.location.replace("/timesheet.html");
+      } else {
+        window.location.replace("/login.html");
+      }
+    </script>
+  </body>
+</html>

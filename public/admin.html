@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin · Timeium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header id="topbar" class="topbar"></header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <!-- Reports -->
+      <div class="card">
+        <h2>Reports</h2>
+        <p class="muted small">
+          Weekly exports for Infusion (project costs) and IMS (wages). Only
+          manager-approved or paid timesheets are included.
+        </p>
+        <div class="row-flex">
+          <div>
+            <label for="report-week">Week starting (Monday)</label>
+            <input id="report-week" type="date" />
+          </div>
+          <div class="grow"></div>
+          <button id="export-infusion">Export Infusion report</button>
+          <button id="export-ims">Export IMS report</button>
+        </div>
+      </div>
+
+      <!-- Employees + rates -->
+      <div class="card">
+        <h2>Employees</h2>
+        <p class="muted small">
+          Employee codes, cost / sell rates, and manager assignment. Rate changes
+          are recorded in the wage-rate history so historical reports stay accurate.
+        </p>
+        <table id="employees-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Code</th>
+              <th>Dept</th>
+              <th>Type</th>
+              <th>Manager</th>
+              <th class="num">Cost $/hr</th>
+              <th class="num">Sell $/hr</th>
+              <th>Active</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="employees-body">
+            <tr><td colspan="9" class="muted small">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Departments -->
+      <div class="card">
+        <div class="row-flex"><h2 style="margin:0">Departments</h2><div class="grow"></div>
+          <input id="new-department" placeholder="New department name" />
+          <button id="add-department">Add</button>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Active</th><th></th></tr></thead>
+          <tbody id="departments-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Tasks -->
+      <div class="card">
+        <div class="row-flex"><h2 style="margin:0">Tasks</h2><div class="grow"></div>
+          <input id="new-task-code" placeholder="Code (optional)" style="width:140px" />
+          <input id="new-task-name" placeholder="New task name" />
+          <button id="add-task">Add</button>
+        </div>
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>Active</th><th></th></tr></thead>
+          <tbody id="tasks-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Holidays -->
+      <div class="card">
+        <div class="row-flex"><h2 style="margin:0">Holidays</h2><div class="grow"></div>
+          <input id="new-holiday-date" type="date" />
+          <input id="new-holiday-name" placeholder="Holiday name" />
+          <button id="add-holiday">Add</button>
+        </div>
+        <p class="muted small">Hours logged on a holiday are automatically treated as overtime.</p>
+        <table>
+          <thead><tr><th>Date</th><th>Name</th><th></th></tr></thead>
+          <tbody id="holidays-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Projects -->
+      <div class="card">
+        <div class="row-flex"><h2 style="margin:0">Projects (synced from Infusion)</h2><div class="grow"></div>
+          <span class="muted small" id="projects-meta"></span>
+          <button id="sync-projects" class="ghost">Sync now</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Job #</th><th>Project #</th><th>Job description</th>
+              <th>Status</th><th>Client</th><th>Active</th><th>Last synced</th>
+            </tr>
+          </thead>
+          <tbody id="projects-body"></tbody>
+        </table>
+      </div>
+    </main>
+
+    <script type="module" src="/js/admin.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "timeium",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Timesheet Web App (Phase 2) — web UI for weekly timesheets, manager approval, and IMS/Infusion reporting. Pairs with the Clock-in-out kiosk app on the same Supabase project.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}
