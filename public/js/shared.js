@@ -39,15 +39,33 @@ export function escapeHtml(s) {
 export async function routeAfterAuth(sb) {
   // 1. Try to claim an employee roster row. Safe no-op if already linked, or
   //    if the auth email doesn't match any unclaimed users row.
-  const { data: claim } = await sb
-    .rpc("claim_employee_by_email")
-    .catch((err) => ({ data: null, error: err }));
+  //
+  //    Supabase's rpc() returns a PromiseLike, not a real Promise — it has
+  //    .then() but not .catch(). We await it inside a try/catch so transient
+  //    failures don't block the role check.
+  let claim = null;
+  try {
+    const res = await sb.rpc("claim_employee_by_email");
+    claim = res.data;
+  } catch (err) {
+    console.warn("claim_employee_by_email failed, continuing", err);
+  }
 
   // 2. Are they an admin / manager / developer?
-  const [{ data: isDeveloper }, { data: adminRow }] = await Promise.all([
-    sb.rpc("is_developer").then((r) => ({ data: !!r.data })).catch(() => ({ data: false })),
-    sb.from("admins").select("role").maybeSingle(),
-  ]);
+  let isDeveloper = false;
+  let adminRow = null;
+  try {
+    const res = await sb.rpc("is_developer");
+    isDeveloper = !!res.data;
+  } catch (err) {
+    console.warn("is_developer failed, continuing", err);
+  }
+  try {
+    const res = await sb.from("admins").select("role").maybeSingle();
+    adminRow = res.data;
+  } catch (err) {
+    console.warn("admins lookup failed, continuing", err);
+  }
 
   const isPrivileged = isDeveloper || !!adminRow;
 

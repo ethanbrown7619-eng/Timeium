@@ -25,6 +25,12 @@ export default {
       );
     }
 
+    // No favicon shipped yet — quiet the browser's automatic request so it
+    // doesn't 500 through the SPA fallback.
+    if (url.pathname === "/favicon.ico") {
+      return new Response(null, { status: 204 });
+    }
+
     // Everything else falls through to the static assets binding.
     return env.ASSETS.fetch(request);
   },

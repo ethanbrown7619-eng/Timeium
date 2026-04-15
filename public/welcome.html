@@ -57,7 +57,13 @@
       });
 
       document.getElementById("refresh-link").addEventListener("click", async () => {
-        const { data: claim } = await sb.rpc("claim_employee_by_email").catch(() => ({ data: null }));
+        let claim = null;
+        try {
+          const res = await sb.rpc("claim_employee_by_email");
+          claim = res.data;
+        } catch (err) {
+          console.warn("claim retry failed", err);
+        }
         if (claim?.claimed) {
           location.reload();
         } else {
@@ -66,9 +72,13 @@
         }
       });
 
-      const { data: claim } = await sb
-        .rpc("claim_employee_by_email")
-        .catch(() => ({ data: null }));
+      let claim = null;
+      try {
+        const res = await sb.rpc("claim_employee_by_email");
+        claim = res.data;
+      } catch (err) {
+        console.warn("initial claim failed", err);
+      }
 
       if (claim?.claimed) {
         document.getElementById("linked-card").style.display = "";

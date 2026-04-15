@@ -21,10 +21,26 @@ if (!session) {
   throw new Error("not signed in");
 }
 
-const [{ data: isDeveloper }, adminRow] = await Promise.all([
-  sb.rpc("is_developer").then((r) => ({ data: !!r.data })).catch(() => ({ data: false })),
-  sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
-]);
+// Supabase's rpc() / from() return a PromiseLike, not a real Promise — they
+// expose .then() but NOT .catch(). Await each inside its own try/catch.
+let isDeveloper = false;
+let adminRow = null;
+try {
+  const res = await sb.rpc("is_developer");
+  isDeveloper = !!res.data;
+} catch (err) {
+  console.warn("is_developer failed, continuing", err);
+}
+try {
+  const res = await sb
+    .from("admins")
+    .select("organisation_id, role")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  adminRow = res;
+} catch (err) {
+  console.warn("admins lookup failed, continuing", err);
+}
 
 const role = adminRow?.data?.role || (isDeveloper ? "developer" : null);
 const isAdminOrHigher = role === "admin" || role === "developer";
