@@ -76,10 +76,44 @@ of employee-login columns on `users`.
 | Employee being onboarded | Their admin adds them via `public.users` with their work email. Employee visits `/signup.html`, enters the same email + a password. `claim_employee_by_email()` RPC auto-links the new auth user to their existing roster row. |
 | Employee who signed up *before* their admin added them | `/welcome.html` shows "not on the roster" message. When the admin adds them later, employee clicks "Try again" and the claim RPC picks it up. |
 
+### ✅ Unit 2 — Staff management
+
+- `supabase/migrations/025_staff_management.sql`
+  - `users.department_id` FK (backfilled from existing free-text
+    `users.department`, which is kept for backwards compatibility with
+    Attendium)
+  - `departments.manager_id` FK (each department has one manager)
+  - `create_employee()` RPC — auto-generates a 32-hex `qr_token` so the
+    employee is kiosk-ready if Attendium is later installed
+- `public/staff.html` + `public/js/staff.js`
+  - **Employees tab:** searchable list, "Show inactive" and "Only
+    incomplete" filters, summary badge showing how many profiles are
+    incomplete
+  - **Add / Edit dialog** with name, email, department dropdown,
+    employment type, employee code, OT threshold, cost + sell rates.
+    Admin-only writes; managers see read-only.
+  - **Soft-delete** (`users.active = false`) — history preserved; toggle
+    "Show inactive" to see deactivated employees and Reactivate from the
+    same dialog.
+  - **Organisation tab** with two sub-views:
+    - *Departments view:* one column per department, draggable employee
+      cards (native HTML5 drag-drop), per-column "Manager" dropdown. An
+      "Unassigned" column catches anyone with no department. Dropping a
+      manager into a different department clears their old dept's
+      manager slot automatically.
+    - *Reporting tree view:* one panel per department manager with their
+      direct reports underneath.
+  - **"Incomplete profile" rule** (per Unit 2 choice 1b): missing any of
+    department, cost rate, sell rate, employment type, or employee code.
+    Incomplete cards get a warning stripe + inline list of missing fields.
+- **Shared topbar** (`renderTopbar` in `shared.js`) — Admin / Staff nav
+  links, developer org switcher, sign-out. Used by both `/admin.html` and
+  `/staff.html`.
+
 ### ⏭ Later units (not yet built)
 
 - Tasks + holidays (admin UI + migrations)
-- Employee auth linkage + sign-in page
+- Projects admin UI (list + manual "Sync now" button)
 - `timesheet_submissions` + `timesheet_entries` + weekly grid UI for employees
 - Approval dashboard for managers; email notifications via Attendium's
   `pending_notifications` outbox
@@ -192,11 +226,13 @@ public/
   signin.html            # email+password sign in
   signup.html            # employee self-signup (email-matched claim)
   welcome.html           # landing for signed-in employees (no admin role)
-  admin.html             # Departments CRUD (this unit)
+  admin.html             # Departments CRUD
+  staff.html             # Employees + Organisation tabs
   css/style.css
   js/
-    admin.js             # role-aware Departments logic + developer org switcher
-    shared.js            # notice(), escapeHtml(), routeAfterAuth()
+    admin.js             # role-aware Departments logic
+    staff.js             # employees list, dialog, org columns, tree
+    shared.js            # notice(), escapeHtml(), renderTopbar(), requireAdmin(), routeAfterAuth()
     supabase-client.js   # lazy loads /config.json + createClient()
 worker.js                # Cloudflare Worker (static + /config.json)
 wrangler.toml
@@ -206,6 +242,7 @@ supabase/
     022_temporium_core_extensions.sql
     023_departments_and_projects.sql
     024_employee_signup.sql
+    025_staff_management.sql
   functions/
     sync-infusion-projects/
       index.ts

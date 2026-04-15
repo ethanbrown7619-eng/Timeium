@@ -1,118 +1,42 @@
 // Temporium admin page — Unit 1: Departments CRUD for the current organisation.
-//
-// Auth model: Temporium reuses Attendium's shared core (organisations, users,
-// admins). This page is accessible to admin, manager, and developer roles.
-// (Manager is currently a read-only role for lookup tables; only admin and
-// developer can modify. Manager-specific approval UI lands in a later unit.)
-//
-// Developer: cross-org via the org switcher (value persisted in localStorage).
-// Admin / Manager: locked to their own org (derived from their admins row).
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml } from "/js/shared.js";
+import { notice, escapeHtml, renderTopbar, requireAdmin } from "/js/shared.js";
 
 const sb = await getSupabase();
+const ctx = await requireAdmin(sb);
+let currentOrgId = ctx.currentOrgId;
 
-/* -------------------------------------------------------- auth gate */
-
-const { data: { session } } = await sb.auth.getSession();
-if (!session) {
-  location.replace("/signin.html");
-  throw new Error("not signed in");
-}
-
-// Supabase's rpc() / from() return a PromiseLike, not a real Promise — they
-// expose .then() but NOT .catch(). Await each inside its own try/catch.
-let isDeveloper = false;
-let adminRow = null;
-try {
-  const res = await sb.rpc("is_developer");
-  isDeveloper = !!res.data;
-} catch (err) {
-  console.warn("is_developer failed, continuing", err);
-}
-try {
-  const res = await sb
-    .from("admins")
-    .select("organisation_id, role")
-    .eq("user_id", session.user.id)
-    .maybeSingle();
-  adminRow = res;
-} catch (err) {
-  console.warn("admins lookup failed, continuing", err);
-}
-
-const role = adminRow?.data?.role || (isDeveloper ? "developer" : null);
-const isAdminOrHigher = role === "admin" || role === "developer";
-const canView = isDeveloper || role === "admin" || role === "manager";
-
-if (!canView) {
-  // Employee account — send them to the welcome page where the claim RPC
-  // can be re-checked / a future /timesheet.html will land them.
-  location.replace("/welcome.html");
-  throw new Error("not admin");
-}
-
-document.getElementById("whoami").textContent = session.user.email || "";
-document.getElementById("signout-link").addEventListener("click", async (e) => {
-  e.preventDefault();
-  await sb.auth.signOut();
-  location.href = "/signin.html";
+renderTopbar({
+  session: ctx.session,
+  isDeveloper: ctx.isDeveloper,
+  adminRow: ctx.adminRow,
+  orgs: ctx.orgs,
+  currentOrgId,
+  onOrgChange: (id) => {
+    currentOrgId = id;
+    localStorage.setItem("temporium-dev-org-id", String(id));
+    loadDepartments();
+  },
+  active: "admin",
 });
 
-/* -------------------------------------------------------- org context */
-
-let currentOrgId = null;
-await initOrgContext();
-
-async function initOrgContext() {
-  if (isDeveloper) {
-    const { data: orgs, error } = await sb
-      .from("organisations")
-      .select("id, name, slug, active")
-      .order("id");
-    if (error) return notice(error.message, "error");
-
-    const sel = document.getElementById("org-switcher");
-    sel.classList.remove("hidden");
-    sel.innerHTML = (orgs || [])
-      .map(
-        (o) =>
-          `<option value="${o.id}">${escapeHtml(o.name)}${o.active ? "" : " (inactive)"}</option>`
-      )
-      .join("");
-
-    const saved = Number(localStorage.getItem("temporium-dev-org-id"));
-    currentOrgId = orgs?.find((o) => o.id === saved)?.id || orgs?.[0]?.id || null;
-    if (currentOrgId) sel.value = String(currentOrgId);
-
-    sel.addEventListener("change", () => {
-      currentOrgId = Number(sel.value);
-      localStorage.setItem("temporium-dev-org-id", String(currentOrgId));
-      loadDepartments();
-    });
-  } else {
-    currentOrgId = adminRow?.data?.organisation_id || null;
-  }
-
-  if (!currentOrgId) {
-    notice(
-      "No organisation on this account — contact a developer.",
-      "error",
-      { sticky: true }
-    );
-  }
+if (!currentOrgId) {
+  notice(
+    "No organisation on this account — contact a developer.",
+    "error",
+    { sticky: true }
+  );
 }
 
 /* -------------------------------------------------------- departments */
 
-if (isAdminOrHigher) {
+if (ctx.isAdminOrHigher) {
   document.getElementById("add-department").addEventListener("click", addDepartment);
   document
     .getElementById("new-department")
     .addEventListener("keydown", (e) => e.key === "Enter" && addDepartment());
 } else {
-  // Manager: hide the write controls.
   document.getElementById("add-department").disabled = true;
   document.getElementById("new-department").disabled = true;
 }
@@ -139,7 +63,7 @@ async function loadDepartments() {
     `${data?.length || 0} department${data?.length === 1 ? "" : "s"}`;
 
   if (!data || data.length === 0) {
-    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center;padding:16px">No departments yet — ${isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center;padding:16px">No departments yet — ${ctx.isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
     return;
   }
 
@@ -147,11 +71,11 @@ async function loadDepartments() {
     .map(
       (d) => `
         <tr data-dept="${d.id}">
-          <td><input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" ${isAdminOrHigher ? "" : "disabled"} /></td>
-          <td><input type="checkbox" data-field="active" ${d.active ? "checked" : ""} ${isAdminOrHigher ? "" : "disabled"} /></td>
+          <td><input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" ${ctx.isAdminOrHigher ? "" : "disabled"} /></td>
+          <td><input type="checkbox" data-field="active" ${d.active ? "checked" : ""} ${ctx.isAdminOrHigher ? "" : "disabled"} /></td>
           <td class="row-flex">
-            ${isAdminOrHigher ? `<button data-save-dept="${d.id}" class="ghost">Save</button>` : ""}
-            ${isAdminOrHigher ? `<button data-del-dept="${d.id}" class="danger">Delete</button>` : ""}
+            ${ctx.isAdminOrHigher ? `<button data-save-dept="${d.id}" class="ghost">Save</button>` : ""}
+            ${ctx.isAdminOrHigher ? `<button data-del-dept="${d.id}" class="danger">Delete</button>` : ""}
           </td>
         </tr>`
     )
@@ -190,7 +114,7 @@ async function saveDepartment(id) {
     .from("departments")
     .update({ name, active })
     .eq("id", id)
-    .eq("organisation_id", currentOrgId); // defence-in-depth against stale currentOrgId
+    .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
   notice("Saved", "success");
 }
@@ -205,4 +129,3 @@ async function deleteDepartment(id) {
   if (error) return notice(error.message, "error");
   loadDepartments();
 }
-

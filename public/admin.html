@@ -7,19 +7,7 @@
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">Temporium</div>
-      <nav>
-        <a href="/admin.html" class="active">Admin</a>
-      </nav>
-      <div class="grow"></div>
-      <div class="row-flex">
-        <!-- Developer-only org switcher. Hidden for regular admins/managers. -->
-        <select id="org-switcher" class="hidden"></select>
-        <span id="whoami" class="who"></span>
-        <a href="#" id="signout-link" class="muted">Sign out</a>
-      </div>
-    </header>
+    <header class="topbar" id="topbar"></header>
 
     <main class="container">
       <div id="notice" class="notice hidden"></div>
@@ -50,7 +38,7 @@
       </div>
 
       <div class="card muted small">
-        <strong>Coming next:</strong> tasks, holidays, employee auth, the weekly
+        <strong>Coming next:</strong> tasks, holidays, the weekly
         timesheet grid, the approval flow, and the IMS + Infusion exports —
         shipping one reviewable unit at a time.
       </div>
