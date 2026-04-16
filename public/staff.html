@@ -81,10 +81,10 @@
 
           <table>
             <thead>
-              <tr><th>Name</th><th>Active</th><th></th></tr>
+              <tr><th>Name</th><th class="num">Cost $/hr</th><th class="num">Sell $/hr</th><th>Active</th><th></th></tr>
             </thead>
             <tbody id="departments-body">
-              <tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>
+              <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
             </tbody>
           </table>
         </div>
@@ -169,7 +169,15 @@
             <input id="f-ot" type="number" step="0.5" min="0" max="168" style="width:100%" />
           </div>
         </div>
-        <div class="row-flex mb-sm">
+        <div class="mb-sm">
+          <label class="row-flex" style="gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-specific-rate" />
+            <span>Specific cost / sell rate</span>
+            <span class="small muted">— overrides the department default</span>
+          </label>
+          <div id="rate-ref" class="small muted mt-sm" style="display:none"></div>
+        </div>
+        <div id="rate-fields" class="row-flex mb-sm" style="display:none">
           <div class="grow">
             <label for="f-cost">Cost rate $/hr</label>
             <input id="f-cost" type="number" step="0.01" min="0" style="width:100%" />

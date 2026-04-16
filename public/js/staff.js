@@ -155,7 +155,7 @@ async function loadEmployees() {
 async function loadDepartments() {
   const { data, error } = await sb
     .from("departments")
-    .select("id, name, active, manager_id")
+    .select("id, name, active, manager_id, cost_rate, sell_rate")
     .eq("organisation_id", currentOrgId)
     .order("name");
   if (error) {
@@ -171,11 +171,28 @@ async function loadDepartments() {
 function missingFields(emp) {
   const missing = [];
   if (!emp.department_id) missing.push("department");
-  if (emp.cost_rate == null) missing.push("cost rate");
-  if (emp.sell_rate == null) missing.push("sell rate");
+  const dept = emp.department_id ? departments.find((d) => d.id === emp.department_id) : null;
+  const effectiveCost = emp.cost_rate ?? dept?.cost_rate ?? null;
+  const effectiveSell = emp.sell_rate ?? dept?.sell_rate ?? null;
+  if (effectiveCost == null) missing.push("cost rate");
+  if (effectiveSell == null) missing.push("sell rate");
   if (!emp.employment_type) missing.push("employment type");
   if (!emp.employee_code || emp.employee_code.trim() === "") missing.push("employee code");
   return missing;
+}
+
+function effectiveRate(emp, field) {
+  if (emp[field] != null) return { value: Number(emp[field]), source: "employee" };
+  const dept = emp.department_id ? departments.find((d) => d.id === emp.department_id) : null;
+  if (dept && dept[field] != null) return { value: Number(dept[field]), source: "dept" };
+  return null;
+}
+
+function fmtRate(r) {
+  if (!r) return '<span class="muted">—</span>';
+  return r.source === "dept"
+    ? `<span title="From department">${r.value.toFixed(2)} <span class="small muted">(dept)</span></span>`
+    : r.value.toFixed(2);
 }
 
 function deptName(id) {
@@ -230,8 +247,8 @@ function renderEmployees() {
           <td>${deptCell}</td>
           <td class="small">${escapeHtml(e.employment_type || "")}</td>
           <td class="small muted">${escapeHtml(e.employee_code || "")}</td>
-          <td class="num">${e.cost_rate != null ? Number(e.cost_rate).toFixed(2) : "<span class=\"muted\">—</span>"}</td>
-          <td class="num">${e.sell_rate != null ? Number(e.sell_rate).toFixed(2) : "<span class=\"muted\">—</span>"}</td>
+          <td class="num">${fmtRate(effectiveRate(e, "cost_rate"))}</td>
+          <td class="num">${fmtRate(effectiveRate(e, "sell_rate"))}</td>
           <td>${statusChip}</td>
           <td><button class="ghost" data-edit="${e.id}">${ctx.isAdminOrHigher ? "Edit" : "View"}</button></td>
         </tr>`;
@@ -251,7 +268,7 @@ function renderDepartments() {
     `${departments.length} department${departments.length === 1 ? "" : "s"}`;
 
   if (!departments.length) {
-    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center;padding:16px">No departments yet — ${ctx.isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">No departments yet — ${ctx.isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
     return;
   }
 
@@ -261,6 +278,16 @@ function renderDepartments() {
       const nameCell = isEditing
         ? `<input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" />`
         : escapeHtml(d.name);
+      const costCell = isEditing
+        ? `<input data-field="cost_rate" type="number" step="0.01" min="0" value="${d.cost_rate ?? ""}" style="width:90px" />`
+        : d.cost_rate != null
+          ? Number(d.cost_rate).toFixed(2)
+          : `<span class="muted">—</span>`;
+      const sellCell = isEditing
+        ? `<input data-field="sell_rate" type="number" step="0.01" min="0" value="${d.sell_rate ?? ""}" style="width:90px" />`
+        : d.sell_rate != null
+          ? Number(d.sell_rate).toFixed(2)
+          : `<span class="muted">—</span>`;
       const activeCell = isEditing
         ? `<input type="checkbox" data-field="active" ${d.active ? "checked" : ""} />`
         : d.active
@@ -277,6 +304,8 @@ function renderDepartments() {
       return `
         <tr data-dept="${d.id}">
           <td>${nameCell}</td>
+          <td class="num">${costCell}</td>
+          <td class="num">${sellCell}</td>
           <td>${activeCell}</td>
           <td class="row-flex">${actions}</td>
         </tr>`;
@@ -322,11 +351,18 @@ async function saveDepartmentRow(id) {
   const tr = document.querySelector(`tr[data-dept="${id}"]`);
   const name = tr.querySelector('[data-field="name"]').value.trim();
   const active = tr.querySelector('[data-field="active"]').checked;
+  const costVal = tr.querySelector('[data-field="cost_rate"]').value;
+  const sellVal = tr.querySelector('[data-field="sell_rate"]').value;
   if (!name) return notice("Name required", "warn");
 
   const { error } = await sb
     .from("departments")
-    .update({ name, active })
+    .update({
+      name,
+      active,
+      cost_rate: costVal === "" ? null : Number(costVal),
+      sell_rate: sellVal === "" ? null : Number(sellVal),
+    })
     .eq("id", id)
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
@@ -354,6 +390,26 @@ async function deleteDepartmentRow(id) {
 
 /* ---------------------------------------------------------------- dialog */
 
+function updateRateRef(deptId) {
+  const ref = document.getElementById("rate-ref");
+  const isSpecific = document.getElementById("f-specific-rate").checked;
+  if (isSpecific) {
+    ref.style.display = "none";
+    return;
+  }
+  const dept = deptId ? departments.find((d) => d.id === deptId) : null;
+  if (dept && (dept.cost_rate != null || dept.sell_rate != null)) {
+    ref.textContent = `Department default: cost $${Number(dept.cost_rate ?? 0).toFixed(2)}/hr · sell $${Number(dept.sell_rate ?? 0).toFixed(2)}/hr`;
+    ref.style.display = "";
+  } else if (dept) {
+    ref.textContent = `Department "${dept.name}" has no default rates set.`;
+    ref.style.display = "";
+  } else {
+    ref.textContent = "No department selected — no default rate available.";
+    ref.style.display = "";
+  }
+}
+
 function openDialog(empId) {
   const dialog = document.getElementById("employee-dialog");
   const isEdit = empId != null;
@@ -364,10 +420,22 @@ function openDialog(empId) {
   document.getElementById("f-email").value = emp?.email || "";
   document.getElementById("f-code").value = emp?.employee_code || "";
   document.getElementById("f-employment").value = emp?.employment_type || "waged";
+  const hasSpecificRate = emp ? (emp.cost_rate != null || emp.sell_rate != null) : false;
+  document.getElementById("f-specific-rate").checked = hasSpecificRate;
   document.getElementById("f-cost").value = emp?.cost_rate ?? "";
   document.getElementById("f-sell").value = emp?.sell_rate ?? "";
+  document.getElementById("rate-fields").style.display = hasSpecificRate ? "" : "none";
+  updateRateRef(emp?.department_id);
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
   document.getElementById("f-manager").checked = emp?.is_manager || false;
+
+  document.getElementById("f-specific-rate").onchange = (e) => {
+    document.getElementById("rate-fields").style.display = e.target.checked ? "" : "none";
+    updateRateRef(Number(document.getElementById("f-department").value) || null);
+  };
+  document.getElementById("f-department").addEventListener("change", () => {
+    updateRateRef(Number(document.getElementById("f-department").value) || null);
+  });
 
   const deptSel = document.getElementById("f-department");
   deptSel.innerHTML =
@@ -421,8 +489,10 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       : null,
     employment_type: document.getElementById("f-employment").value,
     employee_code: document.getElementById("f-code").value.trim() || null,
-    cost_rate: document.getElementById("f-cost").value === "" ? null : Number(document.getElementById("f-cost").value),
-    sell_rate: document.getElementById("f-sell").value === "" ? null : Number(document.getElementById("f-sell").value),
+    cost_rate: document.getElementById("f-specific-rate").checked && document.getElementById("f-cost").value !== ""
+      ? Number(document.getElementById("f-cost").value) : null,
+    sell_rate: document.getElementById("f-specific-rate").checked && document.getElementById("f-sell").value !== ""
+      ? Number(document.getElementById("f-sell").value) : null,
     overtime_threshold_hours:
       document.getElementById("f-ot").value === ""
         ? null
