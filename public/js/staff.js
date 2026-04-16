@@ -177,7 +177,6 @@ function missingFields(emp) {
   if (effectiveCost == null) missing.push("cost rate");
   if (effectiveSell == null) missing.push("sell rate");
   if (!emp.employment_type) missing.push("employment type");
-  if (!emp.employee_code || emp.employee_code.trim() === "") missing.push("employee code");
   return missing;
 }
 
@@ -522,7 +521,12 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       .update(updatePayload)
       .eq("id", empId)
       .eq("organisation_id", currentOrgId);
-    if (error) return notice(error.message, "error");
+    if (error) return notice(
+      error.message?.includes("users_org_employee_code_uniq")
+        ? `Employee code "${payload.employee_code}" is already in use by another employee in this organisation.`
+        : error.message,
+      "error"
+    );
     notice("Saved", "success");
   } else {
     const { error } = await sb.rpc("create_employee", {
@@ -536,7 +540,12 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       p_employee_code: payload.employee_code,
       p_overtime_threshold_hours: payload.overtime_threshold_hours,
     });
-    if (error) return notice(error.message, "error");
+    if (error) return notice(
+      error.message?.includes("users_org_employee_code_uniq")
+        ? `Employee code "${payload.employee_code}" is already in use by another employee in this organisation.`
+        : error.message,
+      "error"
+    );
     notice("Employee created", "success");
   }
 
