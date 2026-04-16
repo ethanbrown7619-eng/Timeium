@@ -14,6 +14,7 @@
 
       <div class="tabs">
         <button class="tab active" data-tab="employees">Employees</button>
+        <button class="tab" data-tab="departments">Departments</button>
         <button class="tab" data-tab="org">Organisation</button>
       </div>
 
@@ -55,6 +56,36 @@
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Departments tab                                              -->
+      <!-- ============================================================ -->
+      <section id="tab-departments" class="tab-panel" style="display:none">
+        <div class="card">
+          <h2>Departments</h2>
+          <p class="muted small">
+            Department dropdown used throughout the app. Existing free-text
+            <code>users.department</code> values were seeded by migration 023.
+            Rename, deactivate, or delete departments here.
+          </p>
+
+          <div class="row-flex mb-md">
+            <input id="new-department" placeholder="New department name" style="width:280px" />
+            <button id="add-department">Add</button>
+            <div class="grow"></div>
+            <span id="dept-count" class="muted small"></span>
+          </div>
+
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Active</th><th></th></tr>
+            </thead>
+            <tbody id="departments-body">
+              <tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 

@@ -66,9 +66,11 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
-    document.getElementById("tab-employees").style.display = activeTab === "employees" ? "" : "none";
-    document.getElementById("tab-org").style.display = activeTab === "org" ? "" : "none";
-    if (activeTab === "org") renderOrg();
+    document.getElementById("tab-employees").style.display   = activeTab === "employees"   ? "" : "none";
+    document.getElementById("tab-departments").style.display = activeTab === "departments" ? "" : "none";
+    document.getElementById("tab-org").style.display         = activeTab === "org"         ? "" : "none";
+    if (activeTab === "org")         renderOrg();
+    if (activeTab === "departments") renderDepartments();
   });
 });
 
@@ -107,6 +109,18 @@ if (!ctx.isAdminOrHigher) {
   document.getElementById("add-employee-btn").disabled = true;
 }
 
+/* ---------------------------------------------------------------- departments tab */
+
+if (ctx.isAdminOrHigher) {
+  document.getElementById("add-department").addEventListener("click", addDepartment);
+  document
+    .getElementById("new-department")
+    .addEventListener("keydown", (e) => e.key === "Enter" && addDepartment());
+} else {
+  document.getElementById("add-department").disabled = true;
+  document.getElementById("new-department").disabled = true;
+}
+
 /* ---------------------------------------------------------------- load */
 
 await reloadAll();
@@ -115,6 +129,7 @@ async function reloadAll() {
   if (!currentOrgId) return;
   await Promise.all([loadDepartments(), loadEmployees()]);
   renderEmployees();
+  if (activeTab === "departments") renderDepartments();
   if (activeTab === "org") renderOrg();
 }
 
@@ -223,6 +238,87 @@ function renderEmployees() {
   body.querySelectorAll("[data-edit]").forEach((b) =>
     b.addEventListener("click", () => openDialog(Number(b.dataset.edit)))
   );
+}
+
+/* ---------------------------------------------------------------- departments tab render */
+
+function renderDepartments() {
+  const body = document.getElementById("departments-body");
+  document.getElementById("dept-count").textContent =
+    `${departments.length} department${departments.length === 1 ? "" : "s"}`;
+
+  if (!departments.length) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center;padding:16px">No departments yet — ${ctx.isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = departments
+    .map(
+      (d) => `
+        <tr data-dept="${d.id}">
+          <td><input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" ${ctx.isAdminOrHigher ? "" : "disabled"} /></td>
+          <td><input type="checkbox" data-field="active" ${d.active ? "checked" : ""} ${ctx.isAdminOrHigher ? "" : "disabled"} /></td>
+          <td class="row-flex">
+            ${ctx.isAdminOrHigher ? `<button data-save-dept="${d.id}" class="ghost">Save</button>` : ""}
+            ${ctx.isAdminOrHigher ? `<button data-del-dept="${d.id}" class="danger">Delete</button>` : ""}
+          </td>
+        </tr>`
+    )
+    .join("");
+
+  body.querySelectorAll("[data-save-dept]").forEach((b) =>
+    b.addEventListener("click", () => saveDepartmentRow(Number(b.dataset.saveDept)))
+  );
+  body.querySelectorAll("[data-del-dept]").forEach((b) =>
+    b.addEventListener("click", () => deleteDepartmentRow(Number(b.dataset.delDept)))
+  );
+}
+
+async function addDepartment() {
+  const input = document.getElementById("new-department");
+  const name = input.value.trim();
+  if (!name) return;
+  if (!currentOrgId) return notice("No organisation selected", "error");
+
+  const { error } = await sb
+    .from("departments")
+    .insert({ organisation_id: currentOrgId, name });
+  if (error) return notice(error.message, "error");
+  input.value = "";
+  notice(`Added "${name}"`, "success");
+  await reloadAll();
+}
+
+async function saveDepartmentRow(id) {
+  const tr = document.querySelector(`tr[data-dept="${id}"]`);
+  const name = tr.querySelector('[data-field="name"]').value.trim();
+  const active = tr.querySelector('[data-field="active"]').checked;
+  if (!name) return notice("Name required", "warn");
+
+  const { error } = await sb
+    .from("departments")
+    .update({ name, active })
+    .eq("id", id)
+    .eq("organisation_id", currentOrgId);
+  if (error) return notice(error.message, "error");
+  notice("Saved", "success");
+  await reloadAll();
+}
+
+async function deleteDepartmentRow(id) {
+  const d = departments.find((x) => x.id === id);
+  const inUse = employees.some((e) => e.department_id === id);
+  const msg = inUse
+    ? `Delete "${d?.name}"? ${employees.filter((e) => e.department_id === id).length} employee(s) will be left unassigned.`
+    : `Delete "${d?.name}"?`;
+  if (!confirm(msg)) return;
+  const { error } = await sb
+    .from("departments")
+    .delete()
+    .eq("id", id)
+    .eq("organisation_id", currentOrgId);
+  if (error) return notice(error.message, "error");
+  await reloadAll();
 }
 
 /* ---------------------------------------------------------------- dialog */
