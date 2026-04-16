@@ -1,11 +1,10 @@
-// Temporium Staff page — Unit 2.
+// Temporium Staff page.
 //
-// Two tabs:
-//   1. Employees — list + add + edit + soft-delete
-//   2. Organisation — two sub-views:
-//        a) Department columns, drag-drop to move an employee between depts,
-//           dropdown per column to set the department manager.
-//        b) Reporting tree — managers at the top, their dept members underneath.
+// Four tabs:
+//   1. Employees     — list + add + edit + soft-delete
+//   2. Departments   — CRUD for the department dropdown
+//   3. Organisation  — department columns with drag-drop employee cards
+//   4. Management    — manager columns with drag-drop department cards
 //
 // "Complete profile" (Unit 2 choice 1b): department_id + cost_rate +
 // sell_rate + employment_type + employee_code. Incomplete profiles show a
@@ -70,8 +69,10 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-employees").style.display   = activeTab === "employees"   ? "" : "none";
     document.getElementById("tab-departments").style.display = activeTab === "departments" ? "" : "none";
     document.getElementById("tab-org").style.display         = activeTab === "org"         ? "" : "none";
+    document.getElementById("tab-management").style.display  = activeTab === "management"  ? "" : "none";
     if (activeTab === "org")         renderOrg();
     if (activeTab === "departments") renderDepartments();
+    if (activeTab === "management")  renderManagement();
   });
 });
 
@@ -132,13 +133,14 @@ async function reloadAll() {
   renderEmployees();
   if (activeTab === "departments") renderDepartments();
   if (activeTab === "org") renderOrg();
+  if (activeTab === "management") renderManagement();
 }
 
 async function loadEmployees() {
   const { data, error } = await sb
     .from("users")
     .select(
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id"
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id, is_manager"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
@@ -365,6 +367,7 @@ function openDialog(empId) {
   document.getElementById("f-cost").value = emp?.cost_rate ?? "";
   document.getElementById("f-sell").value = emp?.sell_rate ?? "";
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
+  document.getElementById("f-manager").checked = emp?.is_manager || false;
 
   const deptSel = document.getElementById("f-department");
   deptSel.innerHTML =
@@ -424,6 +427,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       document.getElementById("f-ot").value === ""
         ? null
         : Number(document.getElementById("f-ot").value),
+    is_manager: document.getElementById("f-manager").checked,
   };
 
   if (!payload.name) {
@@ -515,23 +519,12 @@ function renderOrgColumns() {
     .filter((d) => d.active)
     .map((d) => {
       const members = active.filter((e) => e.department_id === d.id);
-      const managerOptions =
-        `<option value="">No manager</option>` +
-        members
-          .map(
-            (m) =>
-              `<option value="${m.id}"${m.id === d.manager_id ? " selected" : ""}>${escapeHtml(m.name)}</option>`
-          )
-          .join("");
+      const manager = d.manager_id ? active.find((e) => e.id === d.manager_id) : null;
       return `
         <div class="org-column" data-drop-dept="${d.id}">
           <div class="org-column-header">
             <div><strong>${escapeHtml(d.name)}</strong></div>
-            <label class="small muted">Manager
-              <select data-set-manager="${d.id}" ${ctx.isAdminOrHigher ? "" : "disabled"}>
-                ${managerOptions}
-              </select>
-            </label>
+            <div class="small muted">${manager ? `Manager: ${escapeHtml(manager.name)}` : "No manager"}</div>
             <div class="small muted">${members.length} member${members.length === 1 ? "" : "s"}</div>
           </div>
           <div class="org-column-body">
@@ -556,21 +549,6 @@ function renderOrgColumns() {
 
   if (ctx.isAdminOrHigher) {
     wireDragDrop();
-    container.querySelectorAll("[data-set-manager]").forEach((sel) => {
-      sel.addEventListener("change", async (e) => {
-        const deptId = Number(e.target.dataset.setManager);
-        const managerId = e.target.value ? Number(e.target.value) : null;
-        const { error } = await sb
-          .from("departments")
-          .update({ manager_id: managerId })
-          .eq("id", deptId)
-          .eq("organisation_id", currentOrgId);
-        if (error) return notice(error.message, "error");
-        notice("Manager updated", "success");
-        await loadDepartments();
-        renderOrg();
-      });
-    });
   }
 }
 
@@ -707,4 +685,115 @@ function renderOrgTree() {
           </div>
         </div>`
       : "");
+}
+
+/* ---------------------------------------------------------------- management tab */
+
+function renderManagement() {
+  const container = document.getElementById("mgmt-columns");
+  const managers = employees.filter((e) => e.active && e.is_manager);
+  const activeDepts = departments.filter((d) => d.active);
+
+  if (managers.length === 0) {
+    container.innerHTML = `
+      <p class="muted small">
+        No managers yet. Edit an employee's profile and check the
+        <strong>Manager</strong> box to make them available here.
+      </p>`;
+    return;
+  }
+
+  const deptCardHtml = (d) => {
+    const memberCount = employees.filter((e) => e.active && e.department_id === d.id).length;
+    return `
+      <div class="org-card" draggable="${ctx.isAdminOrHigher ? "true" : "false"}"
+           data-dept-card="${d.id}">
+        <div class="org-card-name">${escapeHtml(d.name)}</div>
+        <div class="small muted">${memberCount} member${memberCount === 1 ? "" : "s"}</div>
+      </div>`;
+  };
+
+  const managerCols = managers
+    .map((m) => {
+      const theirDepts = activeDepts.filter((d) => d.manager_id === m.id);
+      return `
+        <div class="org-column" data-drop-mgr="${m.id}">
+          <div class="org-column-header">
+            <div><strong>${escapeHtml(m.name)}</strong></div>
+            <div class="small muted">${theirDepts.length} department${theirDepts.length === 1 ? "" : "s"}</div>
+          </div>
+          <div class="org-column-body">
+            ${theirDepts.map(deptCardHtml).join("") || '<div class="small muted" style="padding:8px">No departments assigned.</div>'}
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  const unmanaged = activeDepts.filter(
+    (d) => !d.manager_id || !managers.some((m) => m.id === d.manager_id)
+  );
+
+  const unmanagedCol = `
+    <div class="org-column org-column-unassigned" data-drop-mgr="">
+      <div class="org-column-header">
+        <div><strong>Unmanaged</strong></div>
+        <div class="small muted">${unmanaged.length} department${unmanaged.length === 1 ? "" : "s"}</div>
+      </div>
+      <div class="org-column-body">
+        ${unmanaged.map(deptCardHtml).join("") || '<div class="small muted" style="padding:8px">All departments assigned.</div>'}
+      </div>
+    </div>`;
+
+  container.innerHTML = managerCols + unmanagedCol;
+
+  if (ctx.isAdminOrHigher) {
+    wireMgmtDragDrop();
+  }
+}
+
+function wireMgmtDragDrop() {
+  const cards = document.querySelectorAll("[data-dept-card]");
+  const cols = document.querySelectorAll("[data-drop-mgr]");
+
+  cards.forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/dept", card.dataset.deptCard);
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => card.classList.remove("dragging"));
+  });
+
+  cols.forEach((col) => {
+    col.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      col.classList.add("drop-hover");
+    });
+    col.addEventListener("dragleave", () => col.classList.remove("drop-hover"));
+    col.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      col.classList.remove("drop-hover");
+      const deptId = Number(e.dataTransfer.getData("text/dept"));
+      const managerId = col.dataset.dropMgr ? Number(col.dataset.dropMgr) : null;
+      if (!deptId) return;
+
+      const dept = departments.find((d) => d.id === deptId);
+      if (!dept) return;
+      if (dept.manager_id === managerId) return;
+
+      const { error } = await sb
+        .from("departments")
+        .update({ manager_id: managerId })
+        .eq("id", deptId)
+        .eq("organisation_id", currentOrgId);
+
+      if (error) return notice(error.message, "error");
+
+      const mgrName = managerId
+        ? employees.find((m) => m.id === managerId)?.name || "manager"
+        : "Unmanaged";
+      notice(`Moved ${dept.name} to ${mgrName}`, "success");
+      await loadDepartments();
+      renderManagement();
+    });
+  });
 }

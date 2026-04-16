@@ -16,6 +16,7 @@
         <button class="tab active" data-tab="employees">Employees</button>
         <button class="tab" data-tab="departments">Departments</button>
         <button class="tab" data-tab="org">Organisation</button>
+        <button class="tab" data-tab="management">Management</button>
       </div>
 
       <!-- ============================================================ -->
@@ -110,6 +111,23 @@
           <div id="org-tree" class="org-tree" style="display:none"></div>
         </div>
       </section>
+      <!-- ============================================================ -->
+      <!-- Management tab                                               -->
+      <!-- ============================================================ -->
+      <section id="tab-management" class="tab-panel" style="display:none">
+        <div class="card">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Department assignments</h2>
+            <div class="grow"></div>
+            <span class="muted small">
+              Drag department cards between managers to reassign them.
+              To make someone a manager, edit their employee profile and
+              check the <strong>Manager</strong> box.
+            </span>
+          </div>
+          <div id="mgmt-columns" class="org-columns"></div>
+        </div>
+      </section>
     </main>
 
     <!-- ============================================================ -->
@@ -151,7 +169,7 @@
             <input id="f-ot" type="number" step="0.5" min="0" max="168" style="width:100%" />
           </div>
         </div>
-        <div class="row-flex mb-md">
+        <div class="row-flex mb-sm">
           <div class="grow">
             <label for="f-cost">Cost rate $/hr</label>
             <input id="f-cost" type="number" step="0.01" min="0" style="width:100%" />
@@ -160,6 +178,14 @@
             <label for="f-sell">Sell rate $/hr</label>
             <input id="f-sell" type="number" step="0.01" min="0" style="width:100%" />
           </div>
+        </div>
+
+        <div class="mb-md">
+          <label class="row-flex" style="gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-manager" />
+            <span>Manager</span>
+            <span class="small muted">— this employee can manage departments and approve timesheets</span>
+          </label>
         </div>
 
         <div class="row-flex mt-md">
