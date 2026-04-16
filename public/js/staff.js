@@ -54,6 +54,7 @@ let filter = {
 };
 let activeTab = "employees";
 let activeOrgView = "columns";
+let editingDeptId = null;  // which department row is in edit mode, if any
 
 /* ---------------------------------------------------------------- tabs */
 
@@ -253,19 +254,45 @@ function renderDepartments() {
   }
 
   body.innerHTML = departments
-    .map(
-      (d) => `
+    .map((d) => {
+      const isEditing = editingDeptId === d.id;
+      const nameCell = isEditing
+        ? `<input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" />`
+        : escapeHtml(d.name);
+      const activeCell = isEditing
+        ? `<input type="checkbox" data-field="active" ${d.active ? "checked" : ""} />`
+        : d.active
+          ? `<span class="small muted">Yes</span>`
+          : `<span class="chip">Inactive</span>`;
+      const actions = !ctx.isAdminOrHigher
+        ? ""
+        : isEditing
+          ? `
+              <button data-save-dept="${d.id}">Save</button>
+              <button data-cancel-dept="${d.id}" class="ghost">Cancel</button>
+              <button data-del-dept="${d.id}" class="danger">Delete</button>`
+          : `<button data-edit-dept="${d.id}" class="ghost">Edit</button>`;
+      return `
         <tr data-dept="${d.id}">
-          <td><input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" ${ctx.isAdminOrHigher ? "" : "disabled"} /></td>
-          <td><input type="checkbox" data-field="active" ${d.active ? "checked" : ""} ${ctx.isAdminOrHigher ? "" : "disabled"} /></td>
-          <td class="row-flex">
-            ${ctx.isAdminOrHigher ? `<button data-save-dept="${d.id}" class="ghost">Save</button>` : ""}
-            ${ctx.isAdminOrHigher ? `<button data-del-dept="${d.id}" class="danger">Delete</button>` : ""}
-          </td>
-        </tr>`
-    )
+          <td>${nameCell}</td>
+          <td>${activeCell}</td>
+          <td class="row-flex">${actions}</td>
+        </tr>`;
+    })
     .join("");
 
+  body.querySelectorAll("[data-edit-dept]").forEach((b) =>
+    b.addEventListener("click", () => {
+      editingDeptId = Number(b.dataset.editDept);
+      renderDepartments();
+    })
+  );
+  body.querySelectorAll("[data-cancel-dept]").forEach((b) =>
+    b.addEventListener("click", () => {
+      editingDeptId = null;
+      renderDepartments();
+    })
+  );
   body.querySelectorAll("[data-save-dept]").forEach((b) =>
     b.addEventListener("click", () => saveDepartmentRow(Number(b.dataset.saveDept)))
   );
@@ -302,6 +329,7 @@ async function saveDepartmentRow(id) {
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
   notice("Saved", "success");
+  editingDeptId = null;
   await reloadAll();
 }
 
@@ -318,6 +346,7 @@ async function deleteDepartmentRow(id) {
     .eq("id", id)
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
+  editingDeptId = null;
   await reloadAll();
 }
 
