@@ -57,9 +57,13 @@ let activeOrgView = "columns";
 
 /* ---------------------------------------------------------------- tabs */
 
-document.querySelectorAll(".tabs > .tab").forEach((btn) => {
+// Outer tabs (Employees / Organisation) — selected by [data-tab] only.
+// IMPORTANT: don't use `.tabs > .tab`; the sub-tabs (.tabs.sub) also match
+// that selector, which caused "Reporting tree" clicks to collapse the whole
+// panel because btn.dataset.tab was undefined.
+document.querySelectorAll("[data-tab]").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tabs > .tab").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
     document.getElementById("tab-employees").style.display = activeTab === "employees" ? "" : "none";
@@ -68,6 +72,7 @@ document.querySelectorAll(".tabs > .tab").forEach((btn) => {
   });
 });
 
+// Sub-tabs inside the Organisation panel (Departments view / Reporting tree).
 document.querySelectorAll("[data-org-view]").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("[data-org-view]").forEach((b) => b.classList.remove("active"));
