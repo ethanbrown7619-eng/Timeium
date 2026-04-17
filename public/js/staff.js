@@ -53,7 +53,6 @@ let filter = {
 };
 let activeTab = "employees";
 let activeOrgView = "columns";
-let editingDeptId = null;  // which department row is in edit mode, if any
 
 /* ---------------------------------------------------------------- tabs */
 
@@ -113,14 +112,12 @@ if (!ctx.isAdminOrHigher) {
 
 /* ---------------------------------------------------------------- departments tab */
 
-if (ctx.isAdminOrHigher) {
-  document.getElementById("add-department").addEventListener("click", addDepartment);
-  document
-    .getElementById("new-department")
-    .addEventListener("keydown", (e) => e.key === "Enter" && addDepartment());
-} else {
-  document.getElementById("add-department").disabled = true;
-  document.getElementById("new-department").disabled = true;
+document.getElementById("add-department-btn").addEventListener("click", () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  openDeptDialog(null);
+});
+if (!ctx.isAdminOrHigher) {
+  document.getElementById("add-department-btn").disabled = true;
 }
 
 /* ---------------------------------------------------------------- load */
@@ -155,7 +152,7 @@ async function loadEmployees() {
 async function loadDepartments() {
   const { data, error } = await sb
     .from("departments")
-    .select("id, name, active, manager_id, cost_rate, sell_rate")
+    .select("id, name, active, manager_id, cost_rate, sell_rate, is_overhead")
     .eq("organisation_id", currentOrgId)
     .order("name");
   if (error) {
@@ -172,23 +169,28 @@ function missingFields(emp) {
   const missing = [];
   if (!emp.department_id) missing.push("department");
   const dept = emp.department_id ? departments.find((d) => d.id === emp.department_id) : null;
-  const effectiveCost = emp.cost_rate ?? dept?.cost_rate ?? null;
-  const effectiveSell = emp.sell_rate ?? dept?.sell_rate ?? null;
-  if (effectiveCost == null) missing.push("cost rate");
-  if (effectiveSell == null) missing.push("sell rate");
+  const isOverhead = dept?.is_overhead || false;
+  if (!isOverhead) {
+    const effectiveCost = emp.cost_rate ?? dept?.cost_rate ?? null;
+    const effectiveSell = emp.sell_rate ?? dept?.sell_rate ?? null;
+    if (effectiveCost == null) missing.push("cost rate");
+    if (effectiveSell == null) missing.push("sell rate");
+  }
   if (!emp.employment_type) missing.push("employment type");
   return missing;
 }
 
 function effectiveRate(emp, field) {
-  if (emp[field] != null) return { value: Number(emp[field]), source: "employee" };
   const dept = emp.department_id ? departments.find((d) => d.id === emp.department_id) : null;
+  if (dept?.is_overhead) return { value: null, source: "overhead" };
+  if (emp[field] != null) return { value: Number(emp[field]), source: "employee" };
   if (dept && dept[field] != null) return { value: Number(dept[field]), source: "dept" };
   return null;
 }
 
 function fmtRate(r) {
   if (!r) return '<span class="muted">—</span>';
+  if (r.source === "overhead") return '<span class="muted">N/A</span>';
   return r.source === "dept"
     ? `<span title="From department">${r.value.toFixed(2)} <span class="small muted">(dept)</span></span>`
     : r.value.toFixed(2);
@@ -267,114 +269,127 @@ function renderDepartments() {
     `${departments.length} department${departments.length === 1 ? "" : "s"}`;
 
   if (!departments.length) {
-    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">No departments yet — ${ctx.isAdminOrHigher ? "add one above" : "an admin can add one"}.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No departments yet — ${ctx.isAdminOrHigher ? 'click "+ Add department"' : "an admin can add one"}.</td></tr>`;
     return;
   }
 
   body.innerHTML = departments
     .map((d) => {
-      const isEditing = editingDeptId === d.id;
-      const nameCell = isEditing
-        ? `<input data-field="name" value="${escapeHtml(d.name)}" style="width:280px" />`
-        : escapeHtml(d.name);
-      const costCell = isEditing
-        ? `<input data-field="cost_rate" type="number" step="0.01" min="0" value="${d.cost_rate ?? ""}" style="width:90px" />`
-        : d.cost_rate != null
-          ? Number(d.cost_rate).toFixed(2)
-          : `<span class="muted">—</span>`;
-      const sellCell = isEditing
-        ? `<input data-field="sell_rate" type="number" step="0.01" min="0" value="${d.sell_rate ?? ""}" style="width:90px" />`
-        : d.sell_rate != null
-          ? Number(d.sell_rate).toFixed(2)
-          : `<span class="muted">—</span>`;
-      const activeCell = isEditing
-        ? `<input type="checkbox" data-field="active" ${d.active ? "checked" : ""} />`
-        : d.active
-          ? `<span class="small muted">Yes</span>`
-          : `<span class="chip">Inactive</span>`;
-      const actions = !ctx.isAdminOrHigher
-        ? ""
-        : isEditing
-          ? `
-              <button data-save-dept="${d.id}">Save</button>
-              <button data-cancel-dept="${d.id}" class="ghost">Cancel</button>
-              <button data-del-dept="${d.id}" class="danger">Delete</button>`
-          : `<button data-edit-dept="${d.id}" class="ghost">Edit</button>`;
+      const typeChip = d.is_overhead
+        ? `<span class="chip missing">Overhead</span>`
+        : `<span class="small muted">Billable</span>`;
+      const costCell = d.is_overhead
+        ? `<span class="muted">N/A</span>`
+        : d.cost_rate != null ? Number(d.cost_rate).toFixed(2) : `<span class="muted">—</span>`;
+      const sellCell = d.is_overhead
+        ? `<span class="muted">N/A</span>`
+        : d.sell_rate != null ? Number(d.sell_rate).toFixed(2) : `<span class="muted">—</span>`;
+      const activeCell = d.active
+        ? `<span class="small muted">Yes</span>`
+        : `<span class="chip">Inactive</span>`;
       return `
-        <tr data-dept="${d.id}">
-          <td>${nameCell}</td>
+        <tr>
+          <td>${escapeHtml(d.name)}</td>
+          <td>${typeChip}</td>
           <td class="num">${costCell}</td>
           <td class="num">${sellCell}</td>
           <td>${activeCell}</td>
-          <td class="row-flex">${actions}</td>
+          <td><button class="ghost" data-edit-dept="${d.id}">${ctx.isAdminOrHigher ? "Edit" : "View"}</button></td>
         </tr>`;
     })
     .join("");
 
   body.querySelectorAll("[data-edit-dept]").forEach((b) =>
-    b.addEventListener("click", () => {
-      editingDeptId = Number(b.dataset.editDept);
-      renderDepartments();
-    })
-  );
-  body.querySelectorAll("[data-cancel-dept]").forEach((b) =>
-    b.addEventListener("click", () => {
-      editingDeptId = null;
-      renderDepartments();
-    })
-  );
-  body.querySelectorAll("[data-save-dept]").forEach((b) =>
-    b.addEventListener("click", () => saveDepartmentRow(Number(b.dataset.saveDept)))
-  );
-  body.querySelectorAll("[data-del-dept]").forEach((b) =>
-    b.addEventListener("click", () => deleteDepartmentRow(Number(b.dataset.delDept)))
+    b.addEventListener("click", () => openDeptDialog(Number(b.dataset.editDept)))
   );
 }
 
-async function addDepartment() {
-  const input = document.getElementById("new-department");
-  const name = input.value.trim();
-  if (!name) return;
+/* ---------------------------------------------------------------- department dialog */
+
+function openDeptDialog(deptId) {
+  const dialog = document.getElementById("dept-dialog");
+  const isEdit = deptId != null;
+  const dept = isEdit ? departments.find((d) => d.id === deptId) : null;
+
+  document.getElementById("dept-dialog-title").textContent = isEdit ? "Edit department" : "Add department";
+  document.getElementById("fd-name").value = dept?.name || "";
+  document.getElementById("fd-overhead").checked = dept?.is_overhead || false;
+  document.getElementById("fd-cost").value = dept?.cost_rate ?? "";
+  document.getElementById("fd-sell").value = dept?.sell_rate ?? "";
+  document.getElementById("fd-active").checked = dept?.active ?? true;
+  document.getElementById("fd-rate-fields").style.display = dept?.is_overhead ? "none" : "";
+
+  document.getElementById("fd-overhead").onchange = (e) => {
+    document.getElementById("fd-rate-fields").style.display = e.target.checked ? "none" : "";
+  };
+
+  const delBtn = document.getElementById("dept-delete-btn");
+  if (isEdit && ctx.isAdminOrHigher) {
+    delBtn.classList.remove("hidden");
+    delBtn.onclick = () => deleteDept(deptId);
+  } else {
+    delBtn.classList.add("hidden");
+  }
+
+  const form = document.getElementById("dept-form");
+  form.querySelectorAll("input,button[type=submit]").forEach((el) => {
+    el.disabled = !ctx.isAdminOrHigher;
+  });
+  document.getElementById("dept-cancel").disabled = false;
+  form.dataset.deptId = isEdit ? String(deptId) : "";
+
+  dialog.showModal();
+}
+
+document.getElementById("dept-cancel").addEventListener("click", () =>
+  document.getElementById("dept-dialog").close()
+);
+
+document.getElementById("dept-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!ctx.isAdminOrHigher) return;
   if (!currentOrgId) return notice("No organisation selected", "error");
 
-  const { error } = await sb
-    .from("departments")
-    .insert({ organisation_id: currentOrgId, name });
-  if (error) return notice(error.message, "error");
-  input.value = "";
-  notice(`Added "${name}"`, "success");
+  const name = document.getElementById("fd-name").value.trim();
+  if (!name) return notice("Name is required", "warn");
+
+  const isOverhead = document.getElementById("fd-overhead").checked;
+  const payload = {
+    name,
+    is_overhead: isOverhead,
+    cost_rate: isOverhead ? null : (document.getElementById("fd-cost").value === "" ? null : Number(document.getElementById("fd-cost").value)),
+    sell_rate: isOverhead ? null : (document.getElementById("fd-sell").value === "" ? null : Number(document.getElementById("fd-sell").value)),
+    active: document.getElementById("fd-active").checked,
+  };
+
+  const form = e.currentTarget;
+  const deptId = form.dataset.deptId ? Number(form.dataset.deptId) : null;
+
+  if (deptId) {
+    const { error } = await sb
+      .from("departments")
+      .update(payload)
+      .eq("id", deptId)
+      .eq("organisation_id", currentOrgId);
+    if (error) return notice(error.message, "error");
+    notice("Saved", "success");
+  } else {
+    const { error } = await sb
+      .from("departments")
+      .insert({ organisation_id: currentOrgId, ...payload });
+    if (error) return notice(error.message, "error");
+    notice(`Added "${name}"`, "success");
+  }
+
+  document.getElementById("dept-dialog").close();
   await reloadAll();
-}
+});
 
-async function saveDepartmentRow(id) {
-  const tr = document.querySelector(`tr[data-dept="${id}"]`);
-  const name = tr.querySelector('[data-field="name"]').value.trim();
-  const active = tr.querySelector('[data-field="active"]').checked;
-  const costVal = tr.querySelector('[data-field="cost_rate"]').value;
-  const sellVal = tr.querySelector('[data-field="sell_rate"]').value;
-  if (!name) return notice("Name required", "warn");
-
-  const { error } = await sb
-    .from("departments")
-    .update({
-      name,
-      active,
-      cost_rate: costVal === "" ? null : Number(costVal),
-      sell_rate: sellVal === "" ? null : Number(sellVal),
-    })
-    .eq("id", id)
-    .eq("organisation_id", currentOrgId);
-  if (error) return notice(error.message, "error");
-  notice("Saved", "success");
-  editingDeptId = null;
-  await reloadAll();
-}
-
-async function deleteDepartmentRow(id) {
+async function deleteDept(id) {
   const d = departments.find((x) => x.id === id);
-  const inUse = employees.some((e) => e.department_id === id);
+  const inUse = employees.filter((e) => e.active && e.department_id === id).length;
   const msg = inUse
-    ? `Delete "${d?.name}"? ${employees.filter((e) => e.department_id === id).length} employee(s) will be left unassigned.`
+    ? `Delete "${d?.name}"? ${inUse} employee(s) will be left unassigned.`
     : `Delete "${d?.name}"?`;
   if (!confirm(msg)) return;
   const { error } = await sb
@@ -383,7 +398,7 @@ async function deleteDepartmentRow(id) {
     .eq("id", id)
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
-  editingDeptId = null;
+  document.getElementById("dept-dialog").close();
   await reloadAll();
 }
 
