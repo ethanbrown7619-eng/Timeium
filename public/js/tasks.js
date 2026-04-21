@@ -8,6 +8,7 @@ import {
   renderTopbar,
   requireAdmin,
 } from "/js/shared.js";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const sb  = await getSupabase();
 const cfg = await getConfig();
@@ -319,6 +320,192 @@ document.querySelectorAll("[data-copy]").forEach((btn) => {
       document.execCommand("copy");
     }
   });
+});
+
+/* ---------------------------------------------------------------- file upload */
+
+let uploadedRows = [];
+let uploadedHeaders = [];
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const preview = document.getElementById("upload-preview");
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    if (!json.length) return notice("Sheet is empty", "warn");
+
+    uploadedRows = json;
+    uploadedHeaders = Object.keys(json[0]);
+
+    document.getElementById("upload-filename").textContent = file.name;
+    document.getElementById("upload-row-count").textContent = `${json.length} rows`;
+    document.getElementById("upload-columns").textContent = uploadedHeaders.join(", ");
+
+    for (const selId of ["up-code", "up-desc", "up-status"]) {
+      const sel = document.getElementById(selId);
+      const allowNone = selId !== "up-code";
+      sel.innerHTML = (allowNone ? `<option value="">(none)</option>` : "") +
+        uploadedHeaders.map((h) => `<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`).join("");
+    }
+
+    for (const h of uploadedHeaders) {
+      const hl = h.toLowerCase();
+      if (hl.includes("task") && (hl.includes("code") || hl.includes("id")))
+        document.getElementById("up-code").value = h;
+      else if (hl === "code" || hl === "id")
+        document.getElementById("up-code").value = h;
+      if (hl.includes("desc") || hl.includes("title"))
+        document.getElementById("up-desc").value = h;
+      if (hl.includes("status"))
+        document.getElementById("up-status").value = h;
+    }
+
+    const statusCol = document.getElementById("up-status").value;
+    if (statusCol) {
+      const unique = [...new Set(uploadedRows.map((r) => String(r[statusCol] || "").trim()).filter(Boolean))];
+      const mapEl = document.getElementById("upload-status-map");
+      mapEl.innerHTML = unique.map((v) => renderUploadStatusRow(v, guessTaskStatus(v))).join("");
+    }
+
+    dropZone.style.display = "none";
+    preview.style.display = "";
+  } catch (err) {
+    console.error(err);
+    notice("Failed to parse file: " + (err.message || err), "error");
+  }
+}
+
+function guessTaskStatus(raw) {
+  const v = raw.replace(/\*/g, "").trim().toUpperCase();
+  if (TASK_STATUSES.includes(v)) return v;
+  if (v.startsWith("COMP")) return "COMPLETED";
+  return "ACTIVE";
+}
+
+function renderUploadStatusRow(from, to) {
+  return `
+    <div class="row-flex mb-sm status-map-row" style="gap:8px">
+      <input class="sm-from" value="${escapeHtml(from)}" readonly style="flex:1;background:var(--surface-alt)" />
+      <span class="muted">→</span>
+      <select class="sm-to" style="width:200px">
+        ${TASK_STATUSES.map((s) =>
+          `<option value="${s}"${s === to ? " selected" : ""}>${s}</option>`
+        ).join("")}
+      </select>
+    </div>
+  `;
+}
+
+document.getElementById("up-status")?.addEventListener("change", () => {
+  const statusCol = document.getElementById("up-status").value;
+  const mapEl = document.getElementById("upload-status-map");
+  if (!statusCol) { mapEl.innerHTML = ""; return; }
+  const unique = [...new Set(uploadedRows.map((r) => String(r[statusCol] || "").trim()).filter(Boolean))];
+  mapEl.innerHTML = unique.map((v) => renderUploadStatusRow(v, guessTaskStatus(v))).join("");
+});
+
+document.getElementById("upload-add-status-row")?.addEventListener("click", () => {
+  document.getElementById("upload-status-map")
+    .insertAdjacentHTML("beforeend", renderUploadStatusRow("", "ACTIVE"));
+  const lastRow = document.getElementById("upload-status-map").lastElementChild;
+  lastRow.querySelector(".sm-from").removeAttribute("readonly");
+  lastRow.querySelector(".sm-from").style.background = "";
+});
+
+document.getElementById("upload-clear").addEventListener("click", () => {
+  uploadedRows = [];
+  uploadedHeaders = [];
+  preview.style.display = "none";
+  dropZone.style.display = "";
+  fileInput.value = "";
+  document.getElementById("upload-progress").textContent = "";
+});
+
+document.getElementById("upload-import-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!uploadedRows.length) return notice("No rows to import", "warn");
+
+  const codeCol   = document.getElementById("up-code").value;
+  const descCol   = document.getElementById("up-desc").value;
+  const statusCol = document.getElementById("up-status").value;
+  if (!codeCol) return notice("Select a code column", "warn");
+
+  const statusMap = {};
+  document.querySelectorAll("#upload-status-map .status-map-row").forEach((row) => {
+    const from = row.querySelector(".sm-from").value.trim();
+    const to   = row.querySelector(".sm-to").value;
+    if (from) statusMap[from] = to;
+  });
+
+  const resolveStatus = (raw) => {
+    const trimmed = String(raw || "").trim();
+    if (statusMap[trimmed]) return statusMap[trimmed];
+    const upper = trimmed.replace(/\*/g, "").toUpperCase();
+    if (TASK_STATUSES.includes(upper)) return upper;
+    return "ACTIVE";
+  };
+
+  const progress = document.getElementById("upload-progress");
+  const btn = document.getElementById("upload-import-btn");
+  btn.disabled = true;
+
+  const BATCH = 500;
+  let imported = 0;
+  let errors = 0;
+
+  for (let i = 0; i < uploadedRows.length; i += BATCH) {
+    const batch = uploadedRows.slice(i, i + BATCH);
+    const rows = batch
+      .map((r) => {
+        const code = String(r[codeCol] || "").trim();
+        if (!code) return null;
+        return {
+          organisation_id: currentOrgId,
+          task_code: code,
+          description: descCol ? (String(r[descCol] || "").trim() || null) : null,
+          status: statusCol ? resolveStatus(r[statusCol]) : "ACTIVE",
+          source: "import",
+        };
+      })
+      .filter(Boolean);
+
+    if (!rows.length) continue;
+
+    try {
+      const { error } = await sb
+        .from("tasks")
+        .upsert(rows, { onConflict: "organisation_id,task_code" });
+      if (error) throw error;
+      imported += rows.length;
+    } catch (err) {
+      console.error("Batch error", err);
+      errors += rows.length;
+    }
+    progress.textContent = `${imported + errors} / ${uploadedRows.length}…`;
+  }
+
+  btn.disabled = false;
+  progress.textContent = "";
+  notice(`Imported ${imported} tasks` + (errors ? `, ${errors} failed` : ""), errors ? "warn" : "success");
+  await loadTasks();
 });
 
 /* ---------------------------------------------------------------- boot */

@@ -85,13 +85,63 @@
       <!-- Import -->
       <section id="tab-import" class="tab-panel" style="display:none">
         <div class="card" style="max-width:780px">
-          <h2 style="margin-top:0">Live import from Excel on SharePoint</h2>
+          <h2 style="margin-top:0">Upload from Excel</h2>
           <p class="muted">
-            Same Power Automate pattern as Jobs. Build a scheduled flow that
-            POSTs rows from your Excel table into the webhook below.
+            Drop an <code>.xlsx</code> or <code>.xlsm</code> file here (or
+            click to browse). The sheet is parsed in your browser and
+            upserted into the tasks table.
           </p>
 
-          <h3>1. Get your webhook credentials</h3>
+          <div id="drop-zone" class="drop-zone">
+            <span class="drop-zone-text">Drag &amp; drop your Excel file here, or click to browse</span>
+            <input type="file" id="file-input" accept=".xlsx,.xlsm,.csv" style="display:none" />
+          </div>
+          <div id="upload-preview" style="display:none">
+            <div class="row-flex mb-sm">
+              <strong id="upload-filename"></strong>
+              <span id="upload-row-count" class="muted small"></span>
+              <div class="grow"></div>
+              <button type="button" class="ghost" id="upload-clear">Clear</button>
+            </div>
+            <div class="mb-sm">
+              <label>Detected columns</label>
+              <div id="upload-columns" class="small muted"></div>
+            </div>
+
+            <h3>Column mapping</h3>
+            <div class="row-flex mb-sm">
+              <div class="grow">
+                <label for="up-code">Code column *</label>
+                <select id="up-code"></select>
+              </div>
+              <div class="grow">
+                <label for="up-desc">Description column</label>
+                <select id="up-desc"><option value="">(none)</option></select>
+              </div>
+              <div class="grow">
+                <label for="up-status">Status column</label>
+                <select id="up-status"><option value="">(none)</option></select>
+              </div>
+            </div>
+
+            <label>Status value mapping</label>
+            <div id="upload-status-map"></div>
+            <button type="button" class="ghost" id="upload-add-status-row">+ Add mapping</button>
+
+            <div class="row-flex mt-md">
+              <button type="button" id="upload-import-btn">Import rows</button>
+              <span id="upload-progress" class="muted small"></span>
+            </div>
+          </div>
+        </div>
+
+        <details class="card" style="max-width:780px">
+          <summary><strong>Advanced: Power Automate webhook</strong></summary>
+          <p class="muted mt-sm">
+            For automated syncing via Power Automate or Office Scripts.
+          </p>
+
+          <h3>1. Webhook credentials</h3>
           <div class="mb-md">
             <label>Webhook URL</label>
             <div class="row-flex" style="gap:6px">
@@ -115,7 +165,7 @@
             </div>
           </div>
 
-          <h3>2. Map your Excel columns</h3>
+          <h3>2. Column mapping</h3>
           <form id="mapping-form">
             <div class="row-flex mb-sm">
               <div class="grow">
@@ -140,25 +190,7 @@
               <button type="submit">Save mapping</button>
             </div>
           </form>
-
-          <h3>3. Build the flow in Power Automate</h3>
-          <ol class="small">
-            <li>Scheduled cloud flow → Recurrence every 10 min.</li>
-            <li>
-              Excel Online (Business) → <strong>List rows present in a
-              table</strong>, pointed at your SharePoint file.
-            </li>
-            <li>
-              HTTP POST to the Webhook URL with headers
-              <code>apikey: &lt;anon key&gt;</code>,
-              <code>Content-Type: application/json</code>, and body:
-              <pre><code>{
-  "p_api_key": "&lt;Temporium API key&gt;",
-  "p_rows": @{body('List_rows_present_in_a_table')?['value']}
-}</code></pre>
-            </li>
-          </ol>
-        </div>
+        </details>
       </section>
     </main>
 

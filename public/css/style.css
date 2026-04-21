@@ -373,3 +373,30 @@ button.small {
 .card pre code { background: transparent; padding: 0; }
 
 .card ol li { margin-bottom: 8px; }
+
+/* -------- drop zone -------- */
+
+.drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: border-color 0.15s, background 0.15s;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--primary);
+  background: rgba(36, 96, 199, 0.04);
+}
+.drop-zone-text { font-size: 14px; }
+
+details.card { cursor: default; }
+details.card > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+}
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary::before { content: "▸ "; }
+details.card[open] > summary::before { content: "▾ "; }
