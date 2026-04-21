@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tasks · Temporium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="view">View all</button>
+        <button class="tab" data-tab="add">Add</button>
+        <button class="tab" data-tab="import">Import</button>
+      </div>
+
+      <!-- View all -->
+      <section id="tab-view" class="tab-panel">
+        <div class="card">
+          <div class="row-flex mb-md">
+            <input id="search-input" placeholder="Search code or description…" style="width:320px" />
+            <select id="status-filter">
+              <option value="">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="COMPLETED">Completed</option>
+            </select>
+            <div class="grow"></div>
+            <span id="tasks-summary" class="muted small"></span>
+          </div>
+
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Source</th>
+                  <th>Last synced</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tasks-body">
+                <tr><td colspan="6" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Add (manual) -->
+      <section id="tab-add" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:560px">
+          <h2 style="margin-top:0">Add a task</h2>
+          <p class="muted small">
+            Manual tasks are marked with source <code>manual</code> and won't
+            be overwritten unless a webhook row arrives with the same code.
+          </p>
+
+          <form id="add-task-form">
+            <div class="mb-sm">
+              <label for="at-code">Task code *</label>
+              <input id="at-code" required style="width:100%" />
+            </div>
+            <div class="mb-sm">
+              <label for="at-desc">Description</label>
+              <input id="at-desc" style="width:100%" />
+            </div>
+            <div class="mb-md">
+              <label for="at-status">Status</label>
+              <select id="at-status" style="width:100%">
+                <option value="ACTIVE" selected>ACTIVE</option>
+                <option value="COMPLETED">COMPLETED</option>
+              </select>
+            </div>
+            <button type="submit">Add task</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Import -->
+      <section id="tab-import" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:780px">
+          <h2 style="margin-top:0">Live import from Excel on SharePoint</h2>
+          <p class="muted">
+            Same Power Automate pattern as Jobs. Build a scheduled flow that
+            POSTs rows from your Excel table into the webhook below.
+          </p>
+
+          <h3>1. Get your webhook credentials</h3>
+          <div class="mb-md">
+            <label>Webhook URL</label>
+            <div class="row-flex" style="gap:6px">
+              <input id="webhook-url" readonly style="flex:1;font-family:monospace;font-size:12px" />
+              <button type="button" class="ghost" data-copy="webhook-url">Copy</button>
+            </div>
+          </div>
+          <div class="mb-md">
+            <label>Supabase anon key</label>
+            <div class="row-flex" style="gap:6px">
+              <input id="anon-key" readonly style="flex:1;font-family:monospace;font-size:12px" />
+              <button type="button" class="ghost" data-copy="anon-key">Copy</button>
+            </div>
+          </div>
+          <div class="mb-md">
+            <label>Temporium API key</label>
+            <div class="row-flex" style="gap:6px">
+              <input id="api-key" readonly style="flex:1;font-family:monospace;font-size:12px" placeholder="Not generated yet" />
+              <button type="button" class="ghost" data-copy="api-key">Copy</button>
+              <button type="button" id="rotate-key-btn">Generate / rotate</button>
+            </div>
+          </div>
+
+          <h3>2. Map your Excel columns</h3>
+          <form id="mapping-form">
+            <div class="row-flex mb-sm">
+              <div class="grow">
+                <label for="mp-code">Code column *</label>
+                <input id="mp-code" placeholder="e.g. Task Code" />
+              </div>
+              <div class="grow">
+                <label for="mp-desc">Description column</label>
+                <input id="mp-desc" placeholder="e.g. Description" />
+              </div>
+              <div class="grow">
+                <label for="mp-status">Status column</label>
+                <input id="mp-status" placeholder="e.g. Status" />
+              </div>
+            </div>
+
+            <label>Status value mapping</label>
+            <div id="status-map-rows"></div>
+            <button type="button" class="ghost" id="add-status-row">+ Add mapping</button>
+
+            <div class="row-flex mt-md">
+              <button type="submit">Save mapping</button>
+            </div>
+          </form>
+
+          <h3>3. Build the flow in Power Automate</h3>
+          <ol class="small">
+            <li>Scheduled cloud flow → Recurrence every 10 min.</li>
+            <li>
+              Excel Online (Business) → <strong>List rows present in a
+              table</strong>, pointed at your SharePoint file.
+            </li>
+            <li>
+              HTTP POST to the Webhook URL with headers
+              <code>apikey: &lt;anon key&gt;</code>,
+              <code>Content-Type: application/json</code>, and body:
+              <pre><code>{
+  "p_api_key": "&lt;Temporium API key&gt;",
+  "p_rows": @{body('List_rows_present_in_a_table')?['value']}
+}</code></pre>
+            </li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/js/tasks.js"></script>
+  </body>
+</html>

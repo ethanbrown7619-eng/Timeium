@@ -345,3 +345,31 @@ dialog {
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
 }
+
+/* -------- jobs / tasks import helpers -------- */
+
+button.small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.card pre {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin: 6px 0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.card code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--surface-alt);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.card pre code { background: transparent; padding: 0; }
+
+.card ol li { margin-bottom: 8px; }

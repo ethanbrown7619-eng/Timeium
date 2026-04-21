@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jobs · Temporium</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="view">View all</button>
+        <button class="tab" data-tab="add">Add</button>
+        <button class="tab" data-tab="import">Import</button>
+      </div>
+
+      <!-- ============================================================ -->
+      <!-- View all                                                     -->
+      <!-- ============================================================ -->
+      <section id="tab-view" class="tab-panel">
+        <div class="card">
+          <div class="row-flex mb-md">
+            <input id="search-input" placeholder="Search code or description…" style="width:320px" />
+            <select id="status-filter">
+              <option value="">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="PARTIAL">Partial</option>
+              <option value="DISPATCHED">Dispatched</option>
+              <option value="INVOICED">Invoiced</option>
+              <option value="DEP">DEP</option>
+              <option value="COMPLETED">Completed</option>
+            </select>
+            <div class="grow"></div>
+            <span id="jobs-summary" class="muted small"></span>
+          </div>
+
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Description</th>
+                  <th>Status</th>
+                  <th>Source</th>
+                  <th>Last synced</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="jobs-body">
+                <tr><td colspan="6" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Add (manual)                                                 -->
+      <!-- ============================================================ -->
+      <section id="tab-add" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:560px">
+          <h2 style="margin-top:0">Add a job</h2>
+          <p class="muted small">
+            Manual jobs are marked with source
+            <code>manual</code> and won't be overwritten unless a webhook row
+            arrives with the same code.
+          </p>
+
+          <form id="add-job-form">
+            <div class="mb-sm">
+              <label for="aj-code">Job code *</label>
+              <input id="aj-code" required style="width:100%" />
+            </div>
+            <div class="mb-sm">
+              <label for="aj-desc">Description</label>
+              <input id="aj-desc" style="width:100%" placeholder="Shown in the timesheet autosuggest" />
+            </div>
+            <div class="mb-md">
+              <label for="aj-status">Status</label>
+              <select id="aj-status" style="width:100%">
+                <option value="ACTIVE" selected>ACTIVE</option>
+                <option value="PARTIAL">PARTIAL</option>
+                <option value="DISPATCHED">DISPATCHED</option>
+                <option value="INVOICED">INVOICED</option>
+                <option value="DEP">DEP</option>
+                <option value="COMPLETED">COMPLETED</option>
+              </select>
+            </div>
+            <button type="submit">Add job</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Import (Power Automate webhook config)                        -->
+      <!-- ============================================================ -->
+      <section id="tab-import" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:780px">
+          <h2 style="margin-top:0">Live import from Excel on SharePoint</h2>
+          <p class="muted">
+            Temporium exposes a webhook that Power Automate can POST rows to
+            on a schedule. Set it up once in Microsoft Flow and the jobs
+            table stays in sync every 10 minutes — no local agent, no Azure
+            app registration.
+          </p>
+
+          <h3>1. Get your webhook credentials</h3>
+          <p class="small muted">
+            These are org-specific. Keep them private — anyone with both
+            values can write to your jobs table. Rotate the key if it leaks.
+          </p>
+          <div class="mb-md">
+            <label>Webhook URL</label>
+            <div class="row-flex" style="gap:6px">
+              <input id="webhook-url" readonly style="flex:1;font-family:monospace;font-size:12px" />
+              <button type="button" class="ghost" data-copy="webhook-url">Copy</button>
+            </div>
+          </div>
+          <div class="mb-md">
+            <label>Supabase anon key <span class="muted small">(the <code>apikey</code> header)</span></label>
+            <div class="row-flex" style="gap:6px">
+              <input id="anon-key" readonly style="flex:1;font-family:monospace;font-size:12px" />
+              <button type="button" class="ghost" data-copy="anon-key">Copy</button>
+            </div>
+          </div>
+          <div class="mb-md">
+            <label>
+              Temporium API key
+              <span class="muted small">(goes in the POST body as <code>p_api_key</code>)</span>
+            </label>
+            <div class="row-flex" style="gap:6px">
+              <input id="api-key" readonly style="flex:1;font-family:monospace;font-size:12px" placeholder="Not generated yet" />
+              <button type="button" class="ghost" data-copy="api-key">Copy</button>
+              <button type="button" id="rotate-key-btn">Generate / rotate</button>
+            </div>
+          </div>
+
+          <h3>2. Map your Excel columns</h3>
+          <p class="small muted">
+            Enter the exact column names from your sheet. In Power Automate,
+            "List rows present in a table" returns each row with the header
+            text as keys — these must match.
+          </p>
+          <form id="mapping-form">
+            <div class="row-flex mb-sm">
+              <div class="grow">
+                <label for="mp-code">Code column *</label>
+                <input id="mp-code" placeholder="e.g. Job Number" />
+              </div>
+              <div class="grow">
+                <label for="mp-desc">Description column</label>
+                <input id="mp-desc" placeholder="e.g. Description" />
+              </div>
+              <div class="grow">
+                <label for="mp-status">Status column</label>
+                <input id="mp-status" placeholder="e.g. Status" />
+              </div>
+            </div>
+
+            <label>Status value mapping <span class="muted small">(source value → Temporium status)</span></label>
+            <div id="status-map-rows"></div>
+            <button type="button" class="ghost" id="add-status-row">+ Add mapping</button>
+
+            <div class="row-flex mt-md">
+              <button type="submit">Save mapping</button>
+            </div>
+          </form>
+
+          <h3>3. Build the flow in Power Automate</h3>
+          <ol class="small">
+            <li>
+              Open <a href="https://make.powerautomate.com" target="_blank" rel="noopener">make.powerautomate.com</a>
+              → Create → <strong>Scheduled cloud flow</strong>. Set recurrence to 10 minutes.
+            </li>
+            <li>
+              Add step: <strong>Excel Online (Business) → List rows present
+              in a table</strong>. Point it at your SharePoint file and pick
+              the table.
+            </li>
+            <li>
+              Add step: <strong>HTTP</strong> → method <code>POST</code>,
+              URI = the Webhook URL above.
+              <br />
+              Headers:
+              <pre><code>apikey: &lt;Supabase anon key&gt;
+Content-Type: application/json</code></pre>
+              Body:
+              <pre><code>{
+  "p_api_key": "&lt;Temporium API key&gt;",
+  "p_rows": @{body('List_rows_present_in_a_table')?['value']}
+}</code></pre>
+            </li>
+            <li>
+              Save &amp; test. Rows appear under <em>View all</em> with
+              source <code>webhook</code> and a live <em>Last synced</em>
+              timestamp.
+            </li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/js/jobs.js"></script>
+  </body>
+</html>

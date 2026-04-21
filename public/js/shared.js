@@ -56,6 +56,8 @@ export function renderTopbar(opts) {
   const links = [
     { key: "admin", href: "/admin.html", label: "Admin", show: canSeeAdminNav },
     { key: "staff", href: "/staff.html", label: "Staff", show: canSeeAdminNav },
+    { key: "jobs",  href: "/jobs.html",  label: "Jobs",  show: canSeeAdminNav },
+    { key: "tasks", href: "/tasks.html", label: "Tasks", show: canSeeAdminNav },
   ];
 
   const orgSwitcher =
