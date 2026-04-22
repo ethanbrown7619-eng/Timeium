@@ -457,6 +457,54 @@ dialog::backdrop {
 .ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
 .ts-grid .row-total { background: var(--surface-alt); }
 
+/* -------- autocomplete -------- */
+
+.ac-wrap { position: relative; }
+.ac-wrap input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  font: inherit;
+  background: var(--surface);
+}
+.ac-wrap input:focus { outline: 2px solid var(--ptl-lime); outline-offset: -1px; }
+.ac-list {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-box) var(--radius-box);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+.ac-list.open { display: block; }
+.ac-item {
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ac-item:hover, .ac-item.highlighted { background: var(--ptl-lime); color: var(--ptl-black); }
+.ac-item .ac-desc { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-item:hover .ac-desc, .ac-item.highlighted .ac-desc { color: var(--ptl-black); opacity: 0.7; }
+.ac-clear {
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+.ac-clear:hover { background: var(--surface-alt); }
+
 .status-badge {
   display: inline-block;
   padding: 2px 10px;

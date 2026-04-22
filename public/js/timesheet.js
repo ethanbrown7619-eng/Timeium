@@ -176,6 +176,83 @@ async function loadWeek() {
   renderGrid();
 }
 
+/* ---------------------------------------------------------------- autocomplete helper */
+
+function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
+  const wrap = input.closest(".ac-wrap");
+  const list = wrap.querySelector(".ac-list");
+  let highlighted = -1;
+
+  function render(query) {
+    const q = (query || "").toLowerCase();
+    const filtered = q
+      ? items.filter((it) => it._label.toLowerCase().includes(q) || (it._desc || "").toLowerCase().includes(q))
+      : items;
+    const show = filtered.slice(0, 30);
+    highlighted = -1;
+    list.innerHTML =
+      show.map((it, i) =>
+        `<div class="ac-item" data-idx="${i}" data-id="${it.id}">
+          <span>${escapeHtml(it._label)}</span>
+          ${it._desc ? `<span class="ac-desc">${escapeHtml(it._desc)}</span>` : ""}
+        </div>`
+      ).join("") +
+      `<div class="ac-clear" data-action="clear">(clear selection)</div>`;
+    list.classList.add("open");
+    list._items = show;
+  }
+
+  input.addEventListener("focus", () => render(input.value));
+  input.addEventListener("input", () => render(input.value));
+
+  input.addEventListener("keydown", (e) => {
+    const els = list.querySelectorAll(".ac-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      highlighted = Math.min(highlighted + 1, els.length - 1);
+      els.forEach((el, i) => el.classList.toggle("highlighted", i === highlighted));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      highlighted = Math.max(highlighted - 1, 0);
+      els.forEach((el, i) => el.classList.toggle("highlighted", i === highlighted));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlighted >= 0 && list._items[highlighted]) {
+        pick(list._items[highlighted]);
+      }
+    } else if (e.key === "Escape") {
+      list.classList.remove("open");
+    }
+  });
+
+  list.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const clearEl = e.target.closest("[data-action='clear']");
+    if (clearEl) {
+      input.value = "";
+      input.dataset.selectedId = "";
+      list.classList.remove("open");
+      if (onClear) onClear();
+      return;
+    }
+    const item = e.target.closest(".ac-item");
+    if (item && list._items) {
+      pick(list._items[Number(item.dataset.idx)]);
+    }
+  });
+
+  input.addEventListener("blur", () => {
+    setTimeout(() => list.classList.remove("open"), 150);
+  });
+
+  function pick(it) {
+    input.value = it._label;
+    input.dataset.selectedId = String(it.id);
+    list.classList.remove("open");
+    if (onSelect) onSelect(it);
+  }
+}
+
 /* ---------------------------------------------------------------- render */
 
 function renderGrid() {
@@ -191,37 +268,38 @@ function renderGrid() {
     return;
   }
 
+  // Prepare lookup items with _label and _desc for the autocomplete
+  const jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
+  const deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
+  const taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
+
   body.innerHTML = entries.map((e, idx) => {
     const job = jobs.find((j) => j.id === e.job_id);
     const jobStatus = isSubmitted ? (e.job_status_snapshot || job?.status || "") : (job?.status || "");
+    const dept = deptCodes.find((dc) => dc.id === e.dept_code_id);
+    const task = tasks.find((t) => t.id === e.task_id);
     const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
 
     return `
       <tr data-entry-id="${e.id}" data-idx="${idx}">
         <td>
-          <select class="job-select" style="width:100%">
-            <option value="">(select job)</option>
-            ${jobs.map((j) =>
-              `<option value="${j.id}"${j.id === e.job_id ? " selected" : ""}>${escapeHtml(j.job_code)}</option>`
-            ).join("")}
-          </select>
+          <div class="ac-wrap">
+            <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" />
+            <div class="ac-list"></div>
+          </div>
         </td>
         <td><span class="small status-badge status-${jobStatus.toLowerCase()}">${escapeHtml(jobStatus)}</span></td>
         <td>
-          <select class="dept-select" style="width:100%">
-            <option value="">(none)</option>
-            ${deptCodes.map((dc) =>
-              `<option value="${dc.id}"${dc.id === e.dept_code_id ? " selected" : ""}>${escapeHtml(dc.code)}</option>`
-            ).join("")}
-          </select>
+          <div class="ac-wrap">
+            <input class="ac-dept" value="${escapeHtml(dept?.code || "")}" data-selected-id="${e.dept_code_id || ""}" placeholder="Dept…" />
+            <div class="ac-list"></div>
+          </div>
         </td>
         <td>
-          <select class="task-select" style="width:100%">
-            <option value="">(none)</option>
-            ${tasks.map((t) =>
-              `<option value="${t.id}"${t.id === e.task_id ? " selected" : ""}>${escapeHtml(t.task_code)}</option>`
-            ).join("")}
-          </select>
+          <div class="ac-wrap">
+            <input class="ac-task" value="${escapeHtml(task?.task_code || "")}" data-selected-id="${e.task_id || ""}" placeholder="Task…" />
+            <div class="ac-list"></div>
+          </div>
         </td>
         <td>
           <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" />
@@ -242,31 +320,32 @@ function renderGrid() {
   }).join("");
 
   // Event listeners
-  body.querySelectorAll(".job-select").forEach((sel) => {
-    sel.addEventListener("change", (e) => {
-      const row = e.target.closest("tr");
-      const idx = Number(row.dataset.idx);
-      entries[idx].job_id = sel.value ? Number(sel.value) : null;
-      saveEntry(entries[idx]);
-      renderGrid();
-    });
-  });
+  // Wire up autocomplete for each row
+  body.querySelectorAll("tr[data-idx]").forEach((row) => {
+    const idx = Number(row.dataset.idx);
 
-  body.querySelectorAll(".dept-select").forEach((sel) => {
-    sel.addEventListener("change", (e) => {
-      const row = e.target.closest("tr");
-      const idx = Number(row.dataset.idx);
-      entries[idx].dept_code_id = sel.value ? Number(sel.value) : null;
-      saveEntry(entries[idx]);
+    setupAC(row.querySelector(".ac-job"), jobItems, {
+      onSelect: (it) => {
+        entries[idx].job_id = it.id;
+        saveEntry(entries[idx]);
+        // Update status badge
+        const badge = row.querySelector(".status-badge");
+        if (badge) {
+          badge.textContent = it.status || "";
+          badge.className = `small status-badge status-${(it.status || "").toLowerCase()}`;
+        }
+      },
+      onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); },
     });
-  });
 
-  body.querySelectorAll(".task-select").forEach((sel) => {
-    sel.addEventListener("change", (e) => {
-      const row = e.target.closest("tr");
-      const idx = Number(row.dataset.idx);
-      entries[idx].task_id = sel.value ? Number(sel.value) : null;
-      saveEntry(entries[idx]);
+    setupAC(row.querySelector(".ac-dept"), deptItems, {
+      onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
+      onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx]); },
+    });
+
+    setupAC(row.querySelector(".ac-task"), taskItems, {
+      onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx]); },
+      onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx]); },
     });
   });
 
