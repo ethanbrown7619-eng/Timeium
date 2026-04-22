@@ -1,4 +1,4 @@
-// Temporium Configure Timesheet page.
+// PTL Timesheet Configure Timesheet page.
 // Combines Jobs and Tasks management into one page with nested sub-tabs.
 
 import { getSupabase, getConfig } from "/js/supabase-client.js";
@@ -62,6 +62,7 @@ function makeController(kind) {
   const state = {
     rows: [],
     filter: { search: "", status: "" },
+    page: 1,
     subView: "view",
     uploadedRows: [],
     uploadedHeaders: [],
@@ -84,10 +85,12 @@ function makeController(kind) {
   // Filters
   document.getElementById(`${prefix}-search`).addEventListener("input", (e) => {
     state.filter.search = e.target.value.trim().toLowerCase();
+    state.page = 1;
     renderList();
   });
   document.getElementById(`${prefix}-status-filter`).addEventListener("change", (e) => {
     state.filter.status = e.target.value;
+    state.page = 1;
     renderList();
   });
 
@@ -123,9 +126,12 @@ function makeController(kind) {
     }
   }
 
+  const PER_PAGE = 200;
+
   function renderList() {
     const body = document.getElementById(`${prefix}-body`);
-    const rows = state.rows.filter((r) => {
+    const paginationEl = document.getElementById(`${prefix}-pagination`);
+    const filtered = state.rows.filter((r) => {
       if (state.filter.status && r.status !== state.filter.status) return false;
       if (!state.filter.search) return true;
       const q = state.filter.search;
@@ -135,15 +141,21 @@ function makeController(kind) {
       );
     });
 
-    document.getElementById(`${prefix}-summary`).textContent =
-      `${rows.length} shown · ${state.rows.length} total`;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    if (state.page > totalPages) state.page = totalPages;
+    const start = (state.page - 1) * PER_PAGE;
+    const pageRows = filtered.slice(start, start + PER_PAGE);
 
-    if (!rows.length) {
+    document.getElementById(`${prefix}-summary`).textContent =
+      `${filtered.length} total · page ${state.page} of ${totalPages}`;
+
+    if (!pageRows.length) {
       body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center">No ${kind} match.</td></tr>`;
+      paginationEl.innerHTML = "";
       return;
     }
 
-    body.innerHTML = rows.map((r) => `
+    body.innerHTML = pageRows.map((r) => `
       <tr data-id="${r.id}">
         <td><strong>${escapeHtml(r[codeField])}</strong></td>
         <td>${escapeHtml(r.description || "")}</td>
@@ -163,6 +175,23 @@ function makeController(kind) {
         </td>
       </tr>
     `).join("");
+
+    // Pagination controls
+    if (totalPages > 1) {
+      paginationEl.innerHTML = `
+        <button class="ghost" id="${prefix}-prev" ${state.page <= 1 ? "disabled" : ""}>← Prev</button>
+        <span class="page-info">Page ${state.page} of ${totalPages}</span>
+        <button class="ghost" id="${prefix}-next" ${state.page >= totalPages ? "disabled" : ""}>Next →</button>
+      `;
+      document.getElementById(`${prefix}-prev`)?.addEventListener("click", () => {
+        if (state.page > 1) { state.page--; renderList(); }
+      });
+      document.getElementById(`${prefix}-next`)?.addEventListener("click", () => {
+        if (state.page < totalPages) { state.page++; renderList(); }
+      });
+    } else {
+      paginationEl.innerHTML = "";
+    }
 
     body.querySelectorAll(".status-cell").forEach((sel) => {
       sel.addEventListener("change", async (e) => {

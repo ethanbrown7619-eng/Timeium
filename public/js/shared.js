@@ -76,7 +76,7 @@ export function renderTopbar(opts) {
   el.innerHTML = `
     <div class="brand">
       <span class="brand-logo" aria-hidden="true">ptl</span>
-      <span class="brand-name">Temporium</span>
+      <span class="brand-name">Timesheet</span>
     </div>
     <nav>
       ${links

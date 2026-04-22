@@ -1,4 +1,4 @@
-// Temporium Staff page.
+// PTL Timesheet Staff page.
 //
 // Four tabs:
 //   1. Employees     — list + add + edit + soft-delete

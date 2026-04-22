@@ -55,6 +55,23 @@ a:hover { text-decoration: underline; }
   position: sticky;
   top: 0;
   z-index: 10;
+  min-height: 48px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: center;
+}
+.pagination button {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.pagination .page-info {
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .topbar .brand {

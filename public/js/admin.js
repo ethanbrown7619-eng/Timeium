@@ -1,4 +1,4 @@
-// Temporium admin page — placeholder for future admin-only surfaces (tasks,
+// PTL Timesheet admin page — placeholder for future admin-only surfaces (tasks,
 // holidays, timesheet reports). Departments + staff management moved to
 // /staff.html.
 
