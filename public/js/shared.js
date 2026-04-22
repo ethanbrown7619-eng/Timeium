@@ -53,10 +53,14 @@ export function renderTopbar(opts) {
   const canSeeAdminNav =
     role === "admin" || role === "manager" || role === "developer";
 
+  const isAdminOrDev = role === "admin" || role === "developer";
+
   const links = [
-    { key: "admin", href: "/admin.html", label: "Admin", show: canSeeAdminNav },
-    { key: "staff", href: "/staff.html", label: "Staff", show: canSeeAdminNav },
-    { key: "configure", href: "/configure.html", label: "Configure timesheet", show: canSeeAdminNav },
+    { key: "timesheet", href: "/timesheet.html", label: "My Timesheet", show: true },
+    { key: "archive",   href: "/archive.html",   label: "Archive",      show: true },
+    { key: "staff",     href: "/staff.html",      label: "Staff",        show: canSeeAdminNav },
+    { key: "configure", href: "/configure.html",  label: "Configure",    show: isAdminOrDev },
+    { key: "admin",     href: "/admin.html",      label: "Admin",        show: isAdminOrDev },
   ];
 
   const orgSwitcher =
@@ -143,7 +147,7 @@ export async function routeAfterAuth(sb) {
   const isPrivileged = isDeveloper || !!adminRow;
 
   if (isPrivileged) {
-    location.replace("/admin.html");
+    location.replace("/timesheet.html");
     return;
   }
 

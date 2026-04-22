@@ -438,6 +438,39 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* -------- timesheet grid -------- */
+
+.ts-grid { width: 100%; border-collapse: collapse; }
+.ts-grid th, .ts-grid td { padding: 6px 8px; vertical-align: middle; }
+.ts-grid .day-col { text-align: center; width: 64px; min-width: 56px; }
+.ts-grid .hours-input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  padding: 4px 6px;
+  font: inherit;
+  background: var(--surface);
+}
+.ts-grid .hours-input:focus {
+  outline: 2px solid var(--ptl-lime);
+  outline-offset: -1px;
+}
+.ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
+.ts-grid .row-total { background: var(--surface-alt); }
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.status-draft { background: var(--surface-alt); color: var(--text-muted); }
+.status-submitted { background: #e8f0fe; color: #1a56c7; }
+.status-approved { background: #e6f4ea; color: var(--success); }
+.status-rejected { background: var(--flag); color: var(--danger); }
+
 /* -------- jobs / tasks import helpers -------- */
 
 button.small {
