@@ -606,8 +606,19 @@ function renderGrid() {
   const deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
   const taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
 
+  // Show/hide submit bar based on status
+  const submitBar = document.getElementById("submit-bar");
+  const submitBtn = document.getElementById("submit-ts-btn");
+  if (isSubmitted) {
+    submitBar.style.display = "none";
+  } else {
+    submitBar.style.display = "";
+    submitBtn.textContent = "Submit Timesheet";
+    submitBtn.disabled = false;
+  }
+
   if (!entries.length) {
-    body.innerHTML = `<tr><td colspan="14" class="muted small" style="text-align:center">No tasks yet — click "+ Add task" to start.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="14" class="muted small" style="text-align:center;padding:24px">No tasks yet — click "+ Add task" below to start.</td></tr>`;
     updateTotals();
     return;
   }
@@ -803,6 +814,54 @@ document.getElementById("import-last-week").addEventListener("click", async () =
     await loadWeek();
   } catch (err) {
     notice(err.message || "Import failed", "error");
+  }
+});
+
+/* ---------------------------------------------------------------- submit timesheet */
+
+document.getElementById("submit-ts-btn").addEventListener("click", async () => {
+  if (!timesheetId) return;
+  if (tsStatus === "submitted" || tsStatus === "approved") return;
+
+  if (!entries.length) {
+    notice("Add at least one task before submitting", "warn");
+    return;
+  }
+
+  const totalHours = entries.reduce((sum, e) =>
+    sum + DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0), 0);
+
+  if (totalHours === 0) {
+    notice("Log some hours before submitting", "warn");
+    return;
+  }
+
+  if (!confirm(`Submit this timesheet with ${totalHours}h across ${entries.length} task${entries.length !== 1 ? "s" : ""}? You won't be able to edit it after submission.`)) return;
+
+  const btn = document.getElementById("submit-ts-btn");
+  btn.disabled = true;
+  btn.textContent = "Submitting…";
+
+  try {
+    // Snapshot job statuses
+    try {
+      await sb.rpc("snapshot_timesheet_job_statuses", { p_timesheet_id: timesheetId });
+    } catch {}
+
+    const { error } = await sb
+      .from("timesheets")
+      .update({ status: "submitted", submitted_at: new Date().toISOString() })
+      .eq("id", timesheetId);
+    if (error) throw error;
+
+    tsStatus = "submitted";
+    document.getElementById("ts-status").textContent = "Status: submitted";
+    notice("Timesheet submitted", "success");
+    renderGrid();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "Submit Timesheet";
+    notice(err.message || "Submit failed", "error");
   }
 });
 
