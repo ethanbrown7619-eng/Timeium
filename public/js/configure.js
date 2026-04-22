@@ -77,7 +77,7 @@ function makeController(kind) {
   };
 
   // Sub-tab switching
-  const dataAttr = isJobs ? "data-jobs-view" : "data-tasks-view";
+  const dataAttr = `data-${prefix}-view`;
   document.querySelectorAll(`[${dataAttr}]`).forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(`[${dataAttr}]`).forEach((b) => b.classList.remove("active"));
@@ -445,7 +445,7 @@ function makeController(kind) {
     const v = raw.replace(/\*/g, "").trim().toUpperCase();
     if (STATUSES.includes(v)) return v;
     if (v.startsWith("COMP")) return "COMPLETED";
-    if (isJobs) {
+    if (kind === "jobs") {
       if (v.startsWith("DISP") || v === "DSPCH") return "DISPATCHED";
       if (v.startsWith("INV")) return "INVOICED";
     }
