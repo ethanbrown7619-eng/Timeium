@@ -29,6 +29,10 @@
 
 * { box-sizing: border-box; }
 
+@view-transition {
+  navigation: auto;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -56,6 +60,7 @@ a:hover { text-decoration: underline; }
   top: 0;
   z-index: 10;
   min-height: 48px;
+  view-transition-name: topbar;
 }
 
 .pagination {
