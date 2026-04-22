@@ -700,6 +700,26 @@ details.card > summary::-webkit-details-marker { display: none; }
 details.card > summary::before { content: "▸ "; }
 details.card[open] > summary::before { content: "▾ "; }
 
+/* -------- timesheet vs clock comparison -------- */
+
+.cvt-grid { width: 100%; border-collapse: collapse; white-space: nowrap; }
+.cvt-grid th, .cvt-grid td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.cvt-grid thead th { background: var(--surface-alt); text-align: center; }
+.cvt-day-header { border-left: 2px solid var(--border); font-size: 11px; }
+.cvt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.cvt-sub:nth-child(odd) { border-left: 2px solid var(--border); }
+.cvt-cell { text-align: center; font-variant-numeric: tabular-nums; }
+.cvt-cell:nth-child(odd) { border-left: 2px solid var(--border); }
+.cvt-total { font-weight: 600; }
+.cvt-sticky { position: sticky; left: 0; background: var(--surface); z-index: 1; font-weight: 500; }
+.cvt-sticky-dept { position: sticky; left: 0; background: var(--surface); z-index: 1; font-size: 12px; }
+
+.cvt-ok { }
+.cvt-warn { background: #fef4e5; color: #b45309; }
+.cvt-danger { background: #fde8e8; color: #c1392b; font-weight: 600; }
+.cvt-row-flag td.cvt-sticky,
+.cvt-row-flag td.cvt-sticky-dept { border-left: 3px solid var(--danger); }
+
 /* -------- dashboard (donut charts) -------- */
 
 .dash-charts {

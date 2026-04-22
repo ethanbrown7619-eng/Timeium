@@ -20,6 +20,7 @@ renderTopbar({
     currentOrgId = id;
     localStorage.setItem("temporium-dev-org-id", String(id));
     if (activeTab === "dashboard") loadDashboard();
+    if (activeTab === "clockvts") loadClockComparison();
   },
   active: "admin",
 });
@@ -61,7 +62,9 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
     document.getElementById("tab-dashboard").style.display = activeTab === "dashboard" ? "" : "none";
+    document.getElementById("tab-clockvts").style.display  = activeTab === "clockvts"  ? "" : "none";
     document.getElementById("tab-infusion").style.display  = activeTab === "infusion"  ? "" : "none";
+    if (activeTab === "clockvts") loadClockComparison();
     if (activeTab === "infusion") loadInfusionStatus();
   });
 });
@@ -174,6 +177,215 @@ async function loadDashboard() {
         <td class="small">${hours ? hours + "h" : ""}</td>
       </tr>`;
   }).join("");
+}
+
+/* ================================================================
+ * Timesheet vs Clock tab
+ * ================================================================ */
+
+let cvtWeek = new Date(thisMonday);
+
+function updateCvtWeekLabel() {
+  const end = addDays(cvtWeek, 6);
+  document.getElementById("cvt-week-label").textContent =
+    `${cvtWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+updateCvtWeekLabel();
+
+document.getElementById("cvt-prev").addEventListener("click", () => {
+  cvtWeek = addDays(cvtWeek, -7);
+  updateCvtWeekLabel();
+  loadClockComparison();
+});
+document.getElementById("cvt-next").addEventListener("click", () => {
+  cvtWeek = addDays(cvtWeek, 7);
+  updateCvtWeekLabel();
+  loadClockComparison();
+});
+document.getElementById("cvt-tolerance").addEventListener("change", () => {
+  if (lastCvtData) renderCvtTable(lastCvtData);
+});
+
+let lastCvtData = null;
+
+async function loadClockComparison() {
+  if (!currentOrgId) return;
+  const tableEl = document.getElementById("cvt-table");
+  const summaryEl = document.getElementById("cvt-summary");
+  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  summaryEl.innerHTML = "";
+
+  const ws = fmtDate(cvtWeek);
+
+  // Load timesheet logged hours
+  const { data: employees } = await sb
+    .from("users")
+    .select("id, name, department_id, active")
+    .eq("organisation_id", currentOrgId)
+    .eq("active", true)
+    .order("name");
+
+  const { data: departments } = await sb
+    .from("departments")
+    .select("id, name")
+    .eq("organisation_id", currentOrgId);
+
+  const deptMap = {};
+  for (const d of departments || []) deptMap[d.id] = d.name;
+
+  // Get timesheet entries for logged hours
+  const { data: timesheets } = await sb
+    .from("timesheets")
+    .select("id, user_id")
+    .eq("organisation_id", currentOrgId)
+    .eq("week_start", ws);
+
+  const tsUserMap = {};
+  const tsIds = [];
+  for (const ts of timesheets || []) {
+    tsUserMap[ts.id] = ts.user_id;
+    tsIds.push(ts.id);
+  }
+
+  // Sum logged hours per user per day
+  const loggedMap = {};
+  if (tsIds.length) {
+    const { data: entries } = await sb
+      .from("timesheet_entries")
+      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+      .in("timesheet_id", tsIds);
+    for (const e of entries || []) {
+      const uid = tsUserMap[e.timesheet_id];
+      if (!uid) continue;
+      if (!loggedMap[uid]) loggedMap[uid] = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
+      for (const d of DAYS) {
+        loggedMap[uid][d] += Number(e[`${d}_hours`]) || 0;
+      }
+    }
+  }
+
+  // Call weekly_timesheet RPC for clocked hours
+  let clockRows = [];
+  try {
+    const { data, error } = await sb.rpc("weekly_timesheet", {
+      p_week_start: ws,
+      p_tz: null,
+      p_org_id: currentOrgId,
+    });
+    if (error) throw error;
+    clockRows = data || [];
+  } catch (err) {
+    tableEl.innerHTML = `
+      <div class="notice warn" style="margin:0">
+        Could not load clock data. The Attendium clock-in/out system may not be installed on this Supabase project.<br>
+        <span class="small">${escapeHtml(err.message || "")}</span>
+      </div>`;
+    return;
+  }
+
+  // Map clocked hours: { userId: { dayIndex: hours } }
+  const clockedMap = {};
+  for (const row of clockRows) {
+    const uid = row.user_id;
+    if (!clockedMap[uid]) clockedMap[uid] = {};
+    const dayDate = new Date(row.day + "T00:00:00");
+    const dayIdx = Math.round((dayDate - cvtWeek) / 86400000);
+    if (dayIdx >= 0 && dayIdx < 7) {
+      const dayKey = DAYS[dayIdx];
+      clockedMap[uid] = clockedMap[uid] || {};
+      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + Number(row.hours || 0);
+    }
+  }
+
+  lastCvtData = { employees: employees || [], deptMap, loggedMap, clockedMap };
+  renderCvtTable(lastCvtData);
+}
+
+function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
+  const tableEl = document.getElementById("cvt-table");
+  const summaryEl = document.getElementById("cvt-summary");
+  const tolerance = Number(document.getElementById("cvt-tolerance").value) || 0.5;
+
+  if (!employees.length) {
+    tableEl.innerHTML = `<p class="muted small" style="text-align:center">No active employees.</p>`;
+    summaryEl.innerHTML = "";
+    return;
+  }
+
+  // Build per-employee comparison
+  const rows = employees.map((emp) => {
+    const logged = loggedMap[emp.id] || {};
+    const clocked = clockedMap[emp.id] || {};
+    const days = DAYS.map((d) => {
+      const l = Number(logged[d]) || 0;
+      const c = Number(clocked[d]) || 0;
+      const diff = Math.abs(c - l);
+      return { day: d, logged: l, clocked: c, diff };
+    });
+    const totalLogged = days.reduce((s, d) => s + d.logged, 0);
+    const totalClocked = days.reduce((s, d) => s + d.clocked, 0);
+    const totalDiff = Math.abs(totalClocked - totalLogged);
+    const hasDiscrepancy = days.some((d) => d.diff > tolerance) || totalDiff > tolerance;
+    return { emp, days, totalLogged, totalClocked, totalDiff, hasDiscrepancy };
+  });
+
+  const discrepancyCount = rows.filter((r) => r.hasDiscrepancy).length;
+
+  summaryEl.innerHTML = discrepancyCount > 0
+    ? `<div class="notice warn" style="margin:0 0 12px">
+        <strong>${discrepancyCount}</strong> of ${employees.length} employee${employees.length !== 1 ? "s" : ""}
+        have discrepancies exceeding ${tolerance}h tolerance.
+      </div>`
+    : `<div class="notice success" style="margin:0 0 12px">
+        All ${employees.length} employees match within ${tolerance}h tolerance.
+      </div>`;
+
+  function cellClass(diff) {
+    if (diff <= tolerance) return "cvt-ok";
+    if (diff <= tolerance * 2) return "cvt-warn";
+    return "cvt-danger";
+  }
+
+  function fmtH(v) {
+    return v ? v.toFixed(1) : "–";
+  }
+
+  const dateCells = DAYS.map((_, i) => {
+    const d = addDays(cvtWeek, i);
+    return `${d.getDate()}/${d.getMonth() + 1}`;
+  });
+
+  tableEl.innerHTML = `
+    <table class="cvt-grid small">
+      <thead>
+        <tr>
+          <th rowspan="2" class="cvt-sticky">Employee</th>
+          <th rowspan="2" class="cvt-sticky-dept">Dept</th>
+          ${DAY_LABELS.map((dl, i) => `<th colspan="2" class="cvt-day-header">${dl}<br><span class="muted" style="font-weight:400">${dateCells[i]}</span></th>`).join("")}
+          <th colspan="2" class="cvt-day-header">Total</th>
+        </tr>
+        <tr>
+          ${DAY_LABELS.map(() => `<th class="cvt-sub">Clock</th><th class="cvt-sub">Log</th>`).join("")}
+          <th class="cvt-sub">Clock</th><th class="cvt-sub">Log</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r) => `
+          <tr class="${r.hasDiscrepancy ? "cvt-row-flag" : ""}">
+            <td class="cvt-sticky">${escapeHtml(r.emp.name)}</td>
+            <td class="cvt-sticky-dept muted">${escapeHtml(deptMap[r.emp.department_id] || "")}</td>
+            ${r.days.map((d) => `
+              <td class="cvt-cell ${cellClass(d.diff)}">${fmtH(d.clocked)}</td>
+              <td class="cvt-cell ${cellClass(d.diff)}">${fmtH(d.logged)}</td>
+            `).join("")}
+            <td class="cvt-cell cvt-total ${cellClass(r.totalDiff)}"><strong>${fmtH(r.totalClocked)}</strong></td>
+            <td class="cvt-cell cvt-total ${cellClass(r.totalDiff)}"><strong>${fmtH(r.totalLogged)}</strong></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 /* ================================================================

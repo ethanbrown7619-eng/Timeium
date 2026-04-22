@@ -14,6 +14,7 @@
 
       <div class="tabs">
         <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="clockvts">Timesheet vs Clock</button>
         <button class="tab" data-tab="infusion">Infusion Export</button>
       </div>
 
@@ -51,6 +52,36 @@
                 <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Timesheet vs Clock ==================== -->
+      <section id="tab-clockvts" class="tab-panel" style="display:none">
+        <h2 style="margin:0 0 4px">Timesheet vs Clock</h2>
+        <p class="muted mb-md">Compare timesheet entries against clock-in/out records.</p>
+
+        <div class="card">
+          <div class="row-flex mb-md">
+            <button class="ghost" id="cvt-prev">←</button>
+            <h3 id="cvt-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+            <button class="ghost" id="cvt-next">→</button>
+            <div class="grow"></div>
+            <label class="small muted" style="margin:0">Tolerance</label>
+            <select id="cvt-tolerance" style="width:auto">
+              <option value="0.25">15 min</option>
+              <option value="0.5" selected>30 min</option>
+              <option value="1">1 hour</option>
+              <option value="2">2 hours</option>
+            </select>
+          </div>
+
+          <div id="cvt-summary" class="mb-md"></div>
+
+          <div style="overflow-x:auto">
+            <div id="cvt-table">
+              <p class="muted small" style="text-align:center">Loading…</p>
+            </div>
           </div>
         </div>
       </section>
