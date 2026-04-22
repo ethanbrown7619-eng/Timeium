@@ -487,23 +487,24 @@ document.getElementById("upload-import-btn").addEventListener("click", async () 
   let imported = 0;
   let errors = 0;
 
-  for (let i = 0; i < uploadedRows.length; i += BATCH) {
-    const batch = uploadedRows.slice(i, i + BATCH);
-    const rows = batch
-      .map((r) => {
-        const code = String(r[codeCol] || "").trim();
-        if (!code) return null;
-        return {
-          organisation_id: currentOrgId,
-          job_code: code,
-          description: descCol ? (String(r[descCol] || "").trim() || null) : null,
-          status: statusCol ? resolveStatus(r[statusCol]) : "ACTIVE",
-          source: "import",
-        };
-      })
-      .filter(Boolean);
+  // Deduplicate by job_code (last occurrence wins)
+  const deduped = new Map();
+  for (const r of uploadedRows) {
+    const code = String(r[codeCol] || "").trim();
+    if (!code) continue;
+    deduped.set(code, {
+      organisation_id: currentOrgId,
+      job_code: code,
+      description: descCol ? (String(r[descCol] || "").trim() || null) : null,
+      status: statusCol ? resolveStatus(r[statusCol]) : "ACTIVE",
+      source: "import",
+    });
+  }
+  const allRows = [...deduped.values()];
+  const total = allRows.length;
 
-    if (!rows.length) continue;
+  for (let i = 0; i < allRows.length; i += BATCH) {
+    const rows = allRows.slice(i, i + BATCH);
 
     try {
       const { error } = await sb
@@ -515,7 +516,7 @@ document.getElementById("upload-import-btn").addEventListener("click", async () 
       console.error("Batch error", err);
       errors += rows.length;
     }
-    progress.textContent = `${imported + errors} / ${uploadedRows.length}…`;
+    progress.textContent = `${imported + errors} / ${total}…`;
   }
 
   btn.disabled = false;
