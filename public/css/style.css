@@ -497,9 +497,9 @@ dialog::backdrop {
   position: absolute;
   top: 100%;
   left: 0;
-  right: 0;
+  min-width: 360px;
   z-index: 20;
-  max-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
