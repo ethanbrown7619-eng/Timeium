@@ -16,6 +16,7 @@
         <button class="tab active" data-tab="jobs">Jobs</button>
         <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="deptcodes">Dept Codes</button>
+        <button class="tab" data-tab="settings">Settings</button>
       </div>
 
       <!-- ============================================================ -->
@@ -485,6 +486,38 @@
               </div>
             </form>
           </details>
+        </div>
+      </section>
+      <!-- ============================================================ -->
+      <!-- Settings tab                                                 -->
+      <!-- ============================================================ -->
+      <section id="tab-settings" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Approval Workflow</h2>
+          <p class="muted">Choose how timesheets are routed for approval.</p>
+
+          <div class="workflow-options">
+            <label class="workflow-option" id="wf-manager-then-admin">
+              <input type="radio" name="approval_workflow" value="manager_then_admin" />
+              <div class="workflow-option-body">
+                <strong>Employee → Manager → Admin</strong>
+                <span class="muted small">Employees submit to their department manager. Managers review and forward to admin for final approval.</span>
+              </div>
+            </label>
+
+            <label class="workflow-option" id="wf-direct-to-admin">
+              <input type="radio" name="approval_workflow" value="direct_to_admin" />
+              <div class="workflow-option-body">
+                <strong>Employee → Admin</strong>
+                <span class="muted small">All employees submit directly to admin. Managers are bypassed in the approval flow.</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="mt-md">
+            <button id="save-workflow-btn">Save</button>
+            <span id="workflow-status" class="muted small" style="margin-left:12px"></span>
+          </div>
         </div>
       </section>
     </main>

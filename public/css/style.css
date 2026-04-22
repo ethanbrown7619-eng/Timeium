@@ -699,3 +699,122 @@ details.card > summary {
 details.card > summary::-webkit-details-marker { display: none; }
 details.card > summary::before { content: "▸ "; }
 details.card[open] > summary::before { content: "▾ "; }
+
+/* -------- dashboard (donut charts) -------- */
+
+.dash-charts {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.dash-chart-card {
+  flex: 1;
+  min-width: 280px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.donut-wrap {
+  width: 200px;
+  height: 200px;
+  margin: 0 auto 12px;
+}
+.donut-svg { width: 100%; height: 100%; }
+.donut-num {
+  font-size: 28px;
+  font-weight: 800;
+  fill: var(--ptl-black);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.donut-pct {
+  font-size: 14px;
+  fill: var(--text-muted);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.dash-legend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.chip-dash {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.chip-submitted {
+  background: #e6f4ea;
+  color: #2e7d3a;
+}
+.chip-pending {
+  background: #fef4e5;
+  color: #b45309;
+}
+
+/* -------- approval workflow radio -------- */
+
+.workflow-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.workflow-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-box);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.workflow-option:hover {
+  background: var(--surface-alt);
+}
+.workflow-option:has(input:checked) {
+  border-color: var(--ptl-lime);
+  background: rgba(194, 255, 0, 0.06);
+}
+.workflow-option input[type="radio"] {
+  margin-top: 3px;
+  accent-color: var(--ptl-black);
+}
+.workflow-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workflow-option-body strong {
+  font-size: 14px;
+}
+
+/* primary button class */
+button.primary {
+  background: var(--ptl-lime);
+  color: var(--ptl-black);
+  border-color: var(--ptl-lime);
+  font-weight: 700;
+}
+button.primary:hover {
+  background: var(--ptl-lime-dark);
+  border-color: var(--ptl-lime-dark);
+}

@@ -12,16 +12,39 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
+      <h2 style="margin:0 0 4px">Admin Dashboard</h2>
+      <p class="muted mb-md" id="week-label"></p>
+
+      <div class="dash-charts">
+        <div class="card dash-chart-card">
+          <h3 style="margin:0 0 12px;text-align:center">Departments Submitted</h3>
+          <div class="donut-wrap" id="dept-donut"></div>
+          <div id="dept-legend" class="dash-legend"></div>
+        </div>
+        <div class="card dash-chart-card">
+          <h3 style="margin:0 0 12px;text-align:center">Employees Submitted</h3>
+          <div class="donut-wrap" id="emp-donut"></div>
+          <div id="emp-legend" class="dash-legend"></div>
+        </div>
+      </div>
+
       <div class="card">
-        <h2>Admin</h2>
-        <p class="muted">
-          Staff, departments, and the organisation chart have moved to the
-          <a href="/staff.html">Staff</a> page.
-        </p>
-        <p class="muted small" style="margin-bottom:0">
-          <strong>Landing here later:</strong> tasks, holidays, the weekly
-          timesheet grid, the approval flow, and the IMS + Infusion exports.
-        </p>
+        <h3 style="margin:0 0 12px">All Employees</h3>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th>Hours</th>
+              </tr>
+            </thead>
+            <tbody id="emp-body">
+              <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </main>
 

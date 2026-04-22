@@ -46,6 +46,8 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-jobs").style.display      = activeTab === "jobs"      ? "" : "none";
     document.getElementById("tab-tasks").style.display     = activeTab === "tasks"     ? "" : "none";
     document.getElementById("tab-deptcodes").style.display = activeTab === "deptcodes" ? "" : "none";
+    document.getElementById("tab-settings").style.display  = activeTab === "settings"  ? "" : "none";
+    if (activeTab === "settings") loadWorkflowSetting();
   });
 });
 
@@ -580,6 +582,45 @@ function makeController(kind) {
 
   return { load, loadImportConfig };
 }
+
+/* ---------------------------------------------------------------- settings: approval workflow */
+
+async function loadWorkflowSetting() {
+  if (!currentOrgId) return;
+  try {
+    const { data, error } = await sb
+      .from("organisations")
+      .select("approval_workflow")
+      .eq("id", currentOrgId)
+      .maybeSingle();
+    if (error) throw error;
+    const val = data?.approval_workflow || "manager_then_admin";
+    const radio = document.querySelector(`input[name="approval_workflow"][value="${val}"]`);
+    if (radio) radio.checked = true;
+  } catch (err) {
+    notice(err.message || "Failed to load setting", "error");
+  }
+}
+
+document.getElementById("save-workflow-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  const selected = document.querySelector('input[name="approval_workflow"]:checked');
+  if (!selected) return notice("Select an option", "warn");
+  const statusEl = document.getElementById("workflow-status");
+  try {
+    const { error } = await sb
+      .from("organisations")
+      .update({ approval_workflow: selected.value })
+      .eq("id", currentOrgId);
+    if (error) throw error;
+    notice("Approval workflow saved", "success");
+    statusEl.textContent = "Saved";
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
 
 /* ---------------------------------------------------------------- boot */
 
