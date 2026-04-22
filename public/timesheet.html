@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>My Timesheet · PTL Timesheet</title>
+    <title>My Timesheets · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
@@ -13,63 +13,90 @@
         <span class="brand-name">Timesheet</span>
       </div>
       <nav>
-        <a href="/timesheet.html" class="active">My Timesheet</a>
-        <a href="/archive.html">Archive</a>
+        <a href="/timesheet.html" class="active">My Timesheets</a>
       </nav>
       <div class="grow"></div>
     </header>
 
-    <main class="container ts-container">
+    <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="row-flex mb-md">
-        <button class="ghost" id="prev-week">←</button>
-        <h2 id="week-label" style="margin:0;min-width:220px;text-align:center"></h2>
-        <button class="ghost" id="next-week">→</button>
-        <div class="grow"></div>
-        <span id="ts-status" class="muted small"></span>
-        <button class="ghost" id="import-last-week">Import last week's tasks</button>
-        <button id="add-row-btn">+ Add task</button>
+      <!-- ==================== Hub view ==================== -->
+      <div id="hub-view">
+        <div id="current-week-card" class="card ts-current-card">
+          <h2 style="margin-top:0">My Current Timesheet</h2>
+          <div id="current-week-body">Loading…</div>
+        </div>
+
+        <div class="card">
+          <div class="row-flex mb-md">
+            <button class="ghost" id="cal-prev">←</button>
+            <h3 id="cal-month-label" style="margin:0;min-width:180px;text-align:center"></h3>
+            <button class="ghost" id="cal-next">→</button>
+          </div>
+          <table class="week-calendar">
+            <thead>
+              <tr>
+                <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>
+                <th>Status</th><th>Hours</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="cal-body"></tbody>
+          </table>
+        </div>
       </div>
 
-      <table class="ts-grid">
-        <thead>
-          <tr>
-            <th class="col-job">Job</th>
-            <th class="col-status">Status</th>
-            <th class="col-dept">Dept</th>
-            <th class="col-task">Task</th>
-            <th class="col-desc">Description</th>
-            <th class="day-col">Mon</th>
-            <th class="day-col">Tue</th>
-            <th class="day-col">Wed</th>
-            <th class="day-col">Thu</th>
-            <th class="day-col">Fri</th>
-            <th class="day-col">Sat</th>
-            <th class="day-col">Sun</th>
-            <th class="col-total">Total</th>
-            <th class="col-actions"></th>
-          </tr>
-          <tr id="date-row" class="small muted"></tr>
-        </thead>
-        <tbody id="ts-body">
-          <tr><td colspan="14" class="muted small" style="text-align:center">Loading…</td></tr>
-        </tbody>
-        <tfoot>
-              <tr id="totals-row">
-                <td colspan="5" style="text-align:right"><strong>Daily totals</strong></td>
-                <td class="day-col" id="total-mon">0</td>
-                <td class="day-col" id="total-tue">0</td>
-                <td class="day-col" id="total-wed">0</td>
-                <td class="day-col" id="total-thu">0</td>
-                <td class="day-col" id="total-fri">0</td>
-                <td class="day-col" id="total-sat">0</td>
-                <td class="day-col" id="total-sun">0</td>
-                <td class="day-col" id="total-week"><strong>0</strong></td>
-                <td></td>
-              </tr>
-        </tfoot>
-      </table>
+      <!-- ==================== Editor view ==================== -->
+      <div id="editor-view" style="display:none" class="ts-container-inner">
+        <div class="row-flex mb-md">
+          <button class="ghost" id="back-to-hub">← Back to My Timesheets</button>
+          <h2 id="week-label" style="margin:0;min-width:220px;text-align:center"></h2>
+          <div class="grow"></div>
+          <span id="ts-status" class="muted small"></span>
+          <button class="ghost" id="import-last-week">Import last week's tasks</button>
+          <button id="add-row-btn">+ Add task</button>
+        </div>
+
+        <table class="ts-grid">
+          <thead>
+            <tr>
+              <th class="col-job">Job</th>
+              <th class="col-status">Status</th>
+              <th class="col-dept">Dept</th>
+              <th class="col-task">Task</th>
+              <th class="col-desc">Description</th>
+              <th class="day-col">Mon</th>
+              <th class="day-col">Tue</th>
+              <th class="day-col">Wed</th>
+              <th class="day-col">Thu</th>
+              <th class="day-col">Fri</th>
+              <th class="day-col">Sat</th>
+              <th class="day-col">Sun</th>
+              <th class="col-total">Total</th>
+              <th class="col-actions"></th>
+            </tr>
+            <tr id="date-row" class="small muted"></tr>
+          </thead>
+          <tbody id="ts-body">
+            <tr><td colspan="14" class="muted small" style="text-align:center">Loading…</td></tr>
+          </tbody>
+          <tfoot>
+            <tr id="totals-row">
+              <td colspan="5" style="text-align:right"><strong>Daily totals</strong></td>
+              <td class="day-col" id="total-mon">0</td>
+              <td class="day-col" id="total-tue">0</td>
+              <td class="day-col" id="total-wed">0</td>
+              <td class="day-col" id="total-thu">0</td>
+              <td class="day-col" id="total-fri">0</td>
+              <td class="day-col" id="total-sat">0</td>
+              <td class="day-col" id="total-sun">0</td>
+              <td class="day-col" id="total-week"><strong>0</strong></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </main>
 
     <script type="module" src="/js/timesheet.js"></script>

@@ -438,6 +438,29 @@ dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* -------- timesheet hub -------- */
+
+.ts-current-card.submitted {
+  border-color: var(--success);
+  background: linear-gradient(135deg, #e6f4ea 0%, #f0faf2 100%);
+  box-shadow: 0 0 20px rgba(46, 125, 58, 0.15);
+}
+.ts-current-card.submitted h2 { color: var(--success); }
+
+.ts-current-card.draft { border-color: var(--border); }
+
+.ts-container-inner { max-width: none; }
+
+.week-calendar { width: 100%; border-collapse: collapse; }
+.week-calendar th { font-size: 11px; text-transform: uppercase; padding: 6px 8px; text-align: center; }
+.week-calendar td { padding: 6px 8px; text-align: center; font-size: 13px; }
+.week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); }
+.week-calendar tr.week-row:hover { background: var(--surface-alt); }
+.week-calendar tr.week-row.current-week { background: rgba(194, 255, 0, 0.1); font-weight: 600; }
+.week-calendar tr.week-row.current-week:hover { background: rgba(194, 255, 0, 0.2); }
+.week-calendar .week-status { font-size: 12px; }
+.week-calendar .week-action { font-size: 12px; color: var(--ptl-black); font-weight: 600; }
+
 /* -------- timesheet grid -------- */
 
 .ts-container { max-width: none; padding: 12px 16px 64px; }

@@ -1,4 +1,4 @@
-// PTL Timesheet — weekly timesheet grid.
+// PTL Timesheet — My Timesheets hub + weekly grid editor.
 
 import { getSupabase } from "/js/supabase-client.js";
 import { notice, escapeHtml, renderTopbar } from "/js/shared.js";
@@ -43,22 +43,14 @@ renderTopbar({
 /* ---------------------------------------------------------------- state */
 
 const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
-const DAY_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
-let weekStart = getMonday(new Date());
-
-// Support ?week=2026-04-20 from archive links
-const urlWeek = new URLSearchParams(location.search).get("week");
-if (urlWeek) {
-  const parsed = new Date(urlWeek + "T00:00:00");
-  if (!isNaN(parsed)) weekStart = getMonday(parsed);
-}
+let weekStart = null;
 let timesheetId = null;
 let tsStatus = "draft";
 let entries = [];
 let jobs = [];
 let tasks = [];
 let deptCodes = [];
+let calMonth = new Date();
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -69,19 +61,9 @@ function getMonday(d) {
   return dt;
 }
 
-function fmtDate(d) {
-  return d.toISOString().slice(0, 10);
-}
-
-function fmtShortDate(d) {
-  return `${d.getDate()}/${d.getMonth() + 1}`;
-}
-
-function addDays(d, n) {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
+function fmtDate(d) { return d.toISOString().slice(0, 10); }
+function fmtShortDate(d) { return `${d.getDate()}/${d.getMonth() + 1}`; }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
 function weekLabel() {
   const end = addDays(weekStart, 6);
@@ -89,11 +71,195 @@ function weekLabel() {
   return `${weekStart.toLocaleDateString(undefined, opts)} — ${end.toLocaleDateString(undefined, opts)}, ${end.getFullYear()}`;
 }
 
+const thisMonday = getMonday(new Date());
+
+/* ---------------------------------------------------------------- views */
+
+function showHub() {
+  document.getElementById("hub-view").style.display = "";
+  document.getElementById("editor-view").style.display = "none";
+  document.querySelector(".container").classList.remove("ts-container");
+  loadCurrentWeekCard();
+  renderCalendar();
+}
+
+function showEditor(ws) {
+  weekStart = ws;
+  document.getElementById("hub-view").style.display = "none";
+  document.getElementById("editor-view").style.display = "";
+  document.querySelector(".container").classList.add("ts-container");
+  loadWeek();
+}
+
+document.getElementById("back-to-hub").addEventListener("click", () => showHub());
+
+/* ---------------------------------------------------------------- current week card */
+
+async function loadCurrentWeekCard() {
+  const card = document.getElementById("current-week-card");
+  const body = document.getElementById("current-week-body");
+  const ws = fmtDate(thisMonday);
+  const end = addDays(thisMonday, 6);
+  const weekStr = `${thisMonday.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+
+  try {
+    const { data: ts } = await sb
+      .from("timesheets")
+      .select("id, status")
+      .eq("user_id", employee.id)
+      .eq("week_start", ws)
+      .maybeSingle();
+
+    card.classList.remove("submitted", "draft");
+
+    if (ts?.status === "submitted" || ts?.status === "approved") {
+      card.classList.add("submitted");
+      body.innerHTML = `
+        <p style="font-size:16px;margin:0">
+          <strong>Timesheet submitted</strong> for ${weekStr}
+        </p>
+        <p class="muted small" style="margin:4px 0 0">
+          <a href="#" id="view-current">View timesheet →</a>
+        </p>
+      `;
+    } else {
+      card.classList.add("draft");
+      const statusText = ts ? "In progress — draft" : "Not started yet";
+      body.innerHTML = `
+        <p style="margin:0">
+          <strong>${weekStr}</strong>
+          <span class="muted small" style="margin-left:8px">${statusText}</span>
+        </p>
+        <p style="margin:8px 0 0">
+          <a href="#" id="edit-current" class="btn-link">Open this week's timesheet →</a>
+        </p>
+      `;
+    }
+
+    document.getElementById("view-current")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      showEditor(thisMonday);
+    });
+    document.getElementById("edit-current")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      showEditor(thisMonday);
+    });
+  } catch (err) {
+    body.innerHTML = `<p class="muted">Failed to load current week</p>`;
+  }
+}
+
+/* ---------------------------------------------------------------- week calendar */
+
+async function renderCalendar() {
+  const label = document.getElementById("cal-month-label");
+  const body = document.getElementById("cal-body");
+
+  const year = calMonth.getFullYear();
+  const month = calMonth.getMonth();
+  label.textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+  // Get first Monday on or before the 1st of this month
+  const first = new Date(year, month, 1);
+  let start = getMonday(first);
+
+  // Load timesheets for this range
+  const end = new Date(year, month + 1, 7);
+  let tsMap = {};
+  try {
+    const { data } = await sb
+      .from("timesheets")
+      .select("week_start, status, id")
+      .eq("user_id", employee.id)
+      .gte("week_start", fmtDate(start))
+      .lte("week_start", fmtDate(end));
+
+    // Load entry totals
+    if (data?.length) {
+      const ids = data.map((t) => t.id);
+      const { data: entries } = await sb
+        .from("timesheet_entries")
+        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .in("timesheet_id", ids);
+
+      const totals = {};
+      for (const e of entries || []) {
+        const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+        totals[e.timesheet_id] = (totals[e.timesheet_id] || 0) + sum;
+      }
+
+      for (const t of data || []) {
+        tsMap[t.week_start] = { status: t.status, hours: totals[t.id] || 0 };
+      }
+    }
+  } catch {}
+
+  let rows = "";
+  let weekDate = new Date(start);
+
+  while (weekDate.getMonth() <= month || weekDate < first) {
+    const mon = new Date(weekDate);
+    const ws = fmtDate(mon);
+    const isCurrent = fmtDate(mon) === fmtDate(thisMonday);
+    const ts = tsMap[ws];
+
+    const dayCells = [];
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(mon, i);
+      const inMonth = d.getMonth() === month;
+      dayCells.push(`<td class="${inMonth ? "" : "muted"}" style="${inMonth ? "" : "opacity:0.4"}">${d.getDate()}</td>`);
+    }
+
+    const statusBadge = ts
+      ? `<span class="status-badge status-${ts.status}">${ts.status}</span>`
+      : `<span class="muted small">—</span>`;
+    const hours = ts ? `${ts.hours}h` : "";
+    const action = ts
+      ? `<a href="#" class="week-action" data-week="${ws}">View</a>`
+      : `<a href="#" class="week-action" data-week="${ws}">Create</a>`;
+
+    rows += `<tr class="week-row${isCurrent ? " current-week" : ""}" data-week="${ws}">
+      ${dayCells.join("")}
+      <td class="week-status">${statusBadge}</td>
+      <td class="small">${hours}</td>
+      <td>${action}</td>
+    </tr>`;
+
+    weekDate.setDate(weekDate.getDate() + 7);
+    if (weekDate.getMonth() > month && weekDate.getFullYear() >= year && weekDate > addDays(first, 28)) break;
+  }
+
+  body.innerHTML = rows;
+
+  // Click handlers for week rows
+  body.querySelectorAll(".week-row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("a")) return;
+      const ws = row.dataset.week;
+      showEditor(getMonday(new Date(ws + "T00:00:00")));
+    });
+  });
+  body.querySelectorAll(".week-action").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      showEditor(getMonday(new Date(a.dataset.week + "T00:00:00")));
+    });
+  });
+}
+
+document.getElementById("cal-prev").addEventListener("click", () => {
+  calMonth.setMonth(calMonth.getMonth() - 1);
+  renderCalendar();
+});
+document.getElementById("cal-next").addEventListener("click", () => {
+  calMonth.setMonth(calMonth.getMonth() + 1);
+  renderCalendar();
+});
+
 /* ---------------------------------------------------------------- load jobs + tasks */
 
 async function loadLookups() {
   const PAGE = 1000;
-
   let allJobs = [];
   let from = 0;
   while (true) {
@@ -127,12 +293,11 @@ async function loadLookups() {
   deptCodes = deptData || [];
 }
 
-/* ---------------------------------------------------------------- load timesheet */
+/* ---------------------------------------------------------------- load timesheet (editor) */
 
 async function loadWeek() {
   document.getElementById("week-label").textContent = weekLabel();
 
-  // Render date headers
   const dateRow = document.getElementById("date-row");
   dateRow.innerHTML = `<td colspan="5"></td>` +
     DAYS.map((_, i) => `<td class="day-col">${fmtShortDate(addDays(weekStart, i))}</td>`).join("") +
@@ -150,14 +315,12 @@ async function loadWeek() {
     return;
   }
 
-  // Load status
   try {
     const { data } = await sb.from("timesheets").select("status").eq("id", timesheetId).maybeSingle();
     tsStatus = data?.status || "draft";
     document.getElementById("ts-status").textContent = tsStatus ? `Status: ${tsStatus}` : "";
   } catch {}
 
-  // Load entries
   try {
     const { data, error } = await sb
       .from("timesheet_entries")
@@ -178,7 +341,7 @@ async function loadWeek() {
 
 /* ---------------------------------------------------------------- autocomplete helper */
 
-function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
+function setupAC(input, items, { onSelect, onClear }) {
   const wrap = input.closest(".ac-wrap");
   const list = wrap.querySelector(".ac-list");
   let highlighted = -1;
@@ -188,7 +351,7 @@ function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
     const filtered = q
       ? items.filter((it) => it._label.toLowerCase().includes(q) || (it._desc || "").toLowerCase().includes(q))
       : items;
-    const show = filtered.slice(0, 30);
+    const show = filtered.slice(0, 100);
     highlighted = -1;
     list.innerHTML =
       show.map((it, i) =>
@@ -217,9 +380,7 @@ function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
       els.forEach((el, i) => el.classList.toggle("highlighted", i === highlighted));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (highlighted >= 0 && list._items[highlighted]) {
-        pick(list._items[highlighted]);
-      }
+      if (highlighted >= 0 && list._items[highlighted]) pick(list._items[highlighted]);
     } else if (e.key === "Escape") {
       list.classList.remove("open");
     }
@@ -227,8 +388,7 @@ function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
 
   list.addEventListener("mousedown", (e) => {
     e.preventDefault();
-    const clearEl = e.target.closest("[data-action='clear']");
-    if (clearEl) {
+    if (e.target.closest("[data-action='clear']")) {
       input.value = "";
       input.dataset.selectedId = "";
       list.classList.remove("open");
@@ -236,14 +396,10 @@ function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
       return;
     }
     const item = e.target.closest(".ac-item");
-    if (item && list._items) {
-      pick(list._items[Number(item.dataset.idx)]);
-    }
+    if (item && list._items) pick(list._items[Number(item.dataset.idx)]);
   });
 
-  input.addEventListener("blur", () => {
-    setTimeout(() => list.classList.remove("open"), 150);
-  });
+  input.addEventListener("blur", () => setTimeout(() => list.classList.remove("open"), 150));
 
   function pick(it) {
     input.value = it._label;
@@ -253,25 +409,21 @@ function setupAC(input, items, { onSelect, onClear, descKey = "description" }) {
   }
 }
 
-/* ---------------------------------------------------------------- render */
+/* ---------------------------------------------------------------- render grid */
 
 function renderGrid() {
   const body = document.getElementById("ts-body");
-
-  // Determine if this is a submitted/approved timesheet (show snapshots)
   const isSubmitted = tsStatus === "submitted" || tsStatus === "approved";
-  const activeJobs = jobs.filter((j) => j.status === "ACTIVE");
+
+  const jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
+  const deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
+  const taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
 
   if (!entries.length) {
     body.innerHTML = `<tr><td colspan="14" class="muted small" style="text-align:center">No tasks yet — click "+ Add task" to start.</td></tr>`;
     updateTotals();
     return;
   }
-
-  // Prepare lookup items with _label and _desc for the autocomplete
-  const jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
-  const deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
-  const taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
 
   body.innerHTML = entries.map((e, idx) => {
     const job = jobs.find((j) => j.id === e.job_id);
@@ -319,8 +471,7 @@ function renderGrid() {
     `;
   }).join("");
 
-  // Event listeners
-  // Wire up autocomplete for each row
+  // Wire up autocomplete
   body.querySelectorAll("tr[data-idx]").forEach((row) => {
     const idx = Number(row.dataset.idx);
 
@@ -328,7 +479,6 @@ function renderGrid() {
       onSelect: (it) => {
         entries[idx].job_id = it.id;
         saveEntry(entries[idx]);
-        // Update status badge
         const badge = row.querySelector(".status-badge");
         if (badge) {
           badge.textContent = it.status || "";
@@ -349,6 +499,7 @@ function renderGrid() {
     });
   });
 
+  // Description debounced save
   body.querySelectorAll(".desc-input").forEach((inp) => {
     let timer;
     inp.addEventListener("input", (e) => {
@@ -360,25 +511,23 @@ function renderGrid() {
     });
   });
 
+  // Hours inputs
   body.querySelectorAll(".hours-input").forEach((inp) => {
     let timer;
     inp.addEventListener("input", (e) => {
       const row = e.target.closest("tr");
       const idx = Number(row.dataset.idx);
       const day = inp.dataset.day;
-      const val = parseFloat(inp.value) || 0;
-      entries[idx][`${day}_hours`] = val;
-
-      // Update row total
+      entries[idx][`${day}_hours`] = parseFloat(inp.value) || 0;
       const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
       row.querySelector(".row-total strong").textContent = rowTotal;
       updateTotals();
-
       clearTimeout(timer);
       timer = setTimeout(() => saveEntry(entries[idx]), 400);
     });
   });
 
+  // Delete buttons
   body.querySelectorAll(".delete-entry-btn").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const row = e.target.closest("tr");
@@ -420,12 +569,8 @@ async function saveEntry(entry) {
   for (const d of DAYS) {
     update[`${d}_hours`] = Number(entry[`${d}_hours`]) || 0;
   }
-
   try {
-    const { error } = await sb
-      .from("timesheet_entries")
-      .update(update)
-      .eq("id", entry.id);
+    const { error } = await sb.from("timesheet_entries").update(update).eq("id", entry.id);
     if (error) throw error;
   } catch (err) {
     console.error("Save failed", err);
@@ -474,18 +619,19 @@ document.getElementById("import-last-week").addEventListener("click", async () =
   }
 });
 
-/* ---------------------------------------------------------------- week navigation */
-
-document.getElementById("prev-week").addEventListener("click", () => {
-  weekStart = addDays(weekStart, -7);
-  loadWeek();
-});
-document.getElementById("next-week").addEventListener("click", () => {
-  weekStart = addDays(weekStart, 7);
-  loadWeek();
-});
-
 /* ---------------------------------------------------------------- boot */
 
 await loadLookups();
-await loadWeek();
+
+// If ?week= param, go straight to editor
+const urlWeek = new URLSearchParams(location.search).get("week");
+if (urlWeek) {
+  const parsed = new Date(urlWeek + "T00:00:00");
+  if (!isNaN(parsed)) {
+    showEditor(getMonday(parsed));
+  } else {
+    showHub();
+  }
+} else {
+  showHub();
+}

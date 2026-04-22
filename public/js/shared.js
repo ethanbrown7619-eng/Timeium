@@ -56,8 +56,7 @@ export function renderTopbar(opts) {
   const isAdminOrDev = role === "admin" || role === "developer";
 
   const links = [
-    { key: "timesheet", href: "/timesheet.html", label: "My Timesheet", show: true },
-    { key: "archive",   href: "/archive.html",   label: "Archive",      show: true },
+    { key: "timesheet", href: "/timesheet.html", label: "My Timesheets", show: true },
     { key: "staff",     href: "/staff.html",      label: "Staff",        show: canSeeAdminNav },
     { key: "configure", href: "/configure.html",  label: "Configure",    show: isAdminOrDev },
     { key: "admin",     href: "/admin.html",      label: "Admin",        show: isAdminOrDev },
