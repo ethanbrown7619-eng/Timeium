@@ -203,9 +203,6 @@ document.getElementById("cvt-next").addEventListener("click", () => {
   updateCvtWeekLabel();
   loadClockComparison();
 });
-document.getElementById("cvt-tolerance").addEventListener("change", () => {
-  if (lastCvtData) renderCvtTable(lastCvtData);
-});
 
 let lastCvtData = null;
 
@@ -305,7 +302,7 @@ async function loadClockComparison() {
 function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
   const tableEl = document.getElementById("cvt-table");
   const summaryEl = document.getElementById("cvt-summary");
-  const tolerance = Number(document.getElementById("cvt-tolerance").value) || 0.5;
+  const tolerance = clockTolerance;
 
   if (!employees.length) {
     tableEl.innerHTML = `<p class="muted small" style="text-align:center">No active employees.</p>`;
@@ -398,6 +395,8 @@ let infSubmittedCount = 0;
 let infTotalEmps = 0;
 let approvalWorkflow = "manager_then_admin";
 
+let clockTolerance = 0.5;
+
 async function loadOrgSettings() {
   if (!currentOrgId) return;
   try {
@@ -407,11 +406,7 @@ async function loadOrgSettings() {
       .eq("id", currentOrgId)
       .maybeSingle();
     approvalWorkflow = data?.approval_workflow || "manager_then_admin";
-    if (data?.clock_tolerance_hours != null) {
-      const sel = document.getElementById("cvt-tolerance");
-      const val = String(data.clock_tolerance_hours);
-      if ([...sel.options].some((o) => o.value === val)) sel.value = val;
-    }
+    if (data?.clock_tolerance_hours != null) clockTolerance = Number(data.clock_tolerance_hours);
   } catch {}
 }
 
