@@ -181,7 +181,7 @@ async function loadCurrentWeekCard() {
           <span class="ts-countdown ${urgencyClass}" id="countdown"></span>
         </div>
         <p style="margin:12px 0 0">
-          <a href="#" id="edit-current" class="btn-link">Open this week's timesheet →</a>
+          <button id="edit-current" class="primary">Open this week's timesheet →</button>
         </p>
       `;
 
