@@ -57,7 +57,7 @@ export function renderTopbar(opts) {
 
   const links = [
     { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
-    { key: "department", href: "/department.html",   label: "My Department",  show: !!opts.isManager },
+    { key: "department", href: "/department.html",   label: "My Department",  show: !!opts.isManager || opts.isDeveloper },
     { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
     { key: "configure",  href: "/configure.html",    label: "Configure",      show: isAdminOrDev },
     { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },

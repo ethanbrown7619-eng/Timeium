@@ -25,17 +25,17 @@ try {
   employee = r.data;
 } catch {}
 
-if (!employee?.is_manager) {
+if (!employee?.is_manager && !isDeveloper) {
   location.replace("/timesheet.html");
   throw new Error("not a manager");
 }
 
-const currentOrgId = employee.organisation_id;
+const currentOrgId = employee?.organisation_id || adminRow?.organisation_id || null;
 
 renderTopbar({
   session,
   isDeveloper,
-  isManager: true,
+  isManager: !!employee?.is_manager,
   adminRow,
   orgs: null,
   currentOrgId,
