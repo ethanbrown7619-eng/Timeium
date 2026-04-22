@@ -215,11 +215,6 @@
           <div class="card">
             <div class="row-flex mb-md">
               <input id="tasks-search" placeholder="Search code or description…" style="width:320px" />
-              <select id="tasks-status-filter">
-                <option value="">All statuses</option>
-                <option value="ACTIVE">Active</option>
-                <option value="COMPLETED">Completed</option>
-              </select>
               <div class="grow"></div>
               <span id="tasks-summary" class="muted small"></span>
             </div>
@@ -229,14 +224,13 @@
                   <tr>
                     <th>Code</th>
                     <th>Description</th>
-                    <th>Status</th>
                     <th>Source</th>
                     <th>Last synced</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody id="tasks-body">
-                  <tr><td colspan="6" class="muted small" style="text-align:center">Loading…</td></tr>
+                  <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -253,16 +247,9 @@
                 <label for="at-code">Task code *</label>
                 <input id="at-code" required style="width:100%" />
               </div>
-              <div class="mb-sm">
+              <div class="mb-md">
                 <label for="at-desc">Description</label>
                 <input id="at-desc" style="width:100%" />
-              </div>
-              <div class="mb-md">
-                <label for="at-status">Status</label>
-                <select id="at-status" style="width:100%">
-                  <option value="ACTIVE" selected>ACTIVE</option>
-                  <option value="COMPLETED">COMPLETED</option>
-                </select>
               </div>
               <button type="submit">Add task</button>
             </form>
@@ -301,14 +288,7 @@
                   <label for="tasks-up-desc">Description column</label>
                   <select id="tasks-up-desc"><option value="">(none)</option></select>
                 </div>
-                <div class="grow">
-                  <label for="tasks-up-status">Status column</label>
-                  <select id="tasks-up-status"><option value="">(none)</option></select>
-                </div>
               </div>
-              <label>Status value mapping</label>
-              <div id="tasks-upload-status-map"></div>
-              <button type="button" class="ghost" id="tasks-upload-add-status-row">+ Add mapping</button>
               <div class="row-flex mt-md">
                 <button type="button" id="tasks-upload-import-btn">Import rows</button>
                 <span id="tasks-upload-progress" class="muted small"></span>
@@ -355,14 +335,7 @@
                   <label for="tasks-mp-desc">Description column</label>
                   <input id="tasks-mp-desc" placeholder="e.g. Description" />
                 </div>
-                <div class="grow">
-                  <label for="tasks-mp-status">Status column</label>
-                  <input id="tasks-mp-status" placeholder="e.g. Status" />
-                </div>
               </div>
-              <label>Status value mapping</label>
-              <div id="tasks-status-map-rows"></div>
-              <button type="button" class="ghost" id="tasks-add-status-row">+ Add mapping</button>
               <div class="row-flex mt-md">
                 <button type="submit">Save mapping</button>
               </div>
@@ -386,11 +359,6 @@
           <div class="card">
             <div class="row-flex mb-md">
               <input id="deptcodes-search" placeholder="Search code or description…" style="width:320px" />
-              <select id="deptcodes-status-filter">
-                <option value="">All</option>
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
               <div class="grow"></div>
               <span id="deptcodes-summary" class="muted small"></span>
             </div>
@@ -400,14 +368,13 @@
                   <tr>
                     <th>Code</th>
                     <th>Description</th>
-                    <th>Status</th>
                     <th>Source</th>
                     <th>Last synced</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody id="deptcodes-body">
-                  <tr><td colspan="6" class="muted small" style="text-align:center">Loading…</td></tr>
+                  <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -427,13 +394,6 @@
               <div class="mb-sm">
                 <label for="adc-desc">Description</label>
                 <input id="adc-desc" style="width:100%" placeholder="Used for searching in the timesheet" />
-              </div>
-              <div class="mb-md">
-                <label for="adc-status">Status</label>
-                <select id="adc-status" style="width:100%">
-                  <option value="ACTIVE" selected>ACTIVE</option>
-                  <option value="INACTIVE">INACTIVE</option>
-                </select>
               </div>
               <button type="submit">Add dept code</button>
             </form>
@@ -472,14 +432,7 @@
                   <label for="deptcodes-up-desc">Description column</label>
                   <select id="deptcodes-up-desc"><option value="">(none)</option></select>
                 </div>
-                <div class="grow">
-                  <label for="deptcodes-up-status">Status column</label>
-                  <select id="deptcodes-up-status"><option value="">(none)</option></select>
-                </div>
               </div>
-              <label>Status value mapping</label>
-              <div id="deptcodes-upload-status-map"></div>
-              <button type="button" class="ghost" id="deptcodes-upload-add-status-row">+ Add mapping</button>
               <div class="row-flex mt-md">
                 <button type="button" id="deptcodes-upload-import-btn">Import rows</button>
                 <span id="deptcodes-upload-progress" class="muted small"></span>
@@ -526,14 +479,7 @@
                   <label for="deptcodes-mp-desc">Description column</label>
                   <input id="deptcodes-mp-desc" placeholder="e.g. Description" />
                 </div>
-                <div class="grow">
-                  <label for="deptcodes-mp-status">Status column</label>
-                  <input id="deptcodes-mp-status" placeholder="e.g. Status" />
-                </div>
               </div>
-              <label>Status value mapping</label>
-              <div id="deptcodes-status-map-rows"></div>
-              <button type="button" class="ghost" id="deptcodes-add-status-row">+ Add mapping</button>
               <div class="row-flex mt-md">
                 <button type="submit">Save mapping</button>
               </div>

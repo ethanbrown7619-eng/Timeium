@@ -57,9 +57,9 @@ const DEPT_CODE_STATUSES = ["ACTIVE","INACTIVE"];
 
 function makeController(kind) {
   const CONFIG = {
-    jobs:      { statuses: JOB_STATUSES,       codeField: "job_code",  table: "jobs",             prefix: "jobs",      webhookKind: "jobs" },
-    tasks:     { statuses: TASK_STATUSES,       codeField: "task_code", table: "tasks",            prefix: "tasks",     webhookKind: "tasks" },
-    deptcodes: { statuses: DEPT_CODE_STATUSES,  codeField: "code",      table: "department_codes", prefix: "deptcodes", webhookKind: "dept_codes" },
+    jobs:      { statuses: JOB_STATUSES,       codeField: "job_code",  table: "jobs",             prefix: "jobs",      webhookKind: "jobs",       hasStatus: true },
+    tasks:     { statuses: [],                  codeField: "task_code", table: "tasks",            prefix: "tasks",     webhookKind: "tasks",      hasStatus: false },
+    deptcodes: { statuses: [],                  codeField: "code",      table: "department_codes", prefix: "deptcodes", webhookKind: "dept_codes", hasStatus: false },
   };
   const c = CONFIG[kind];
   const STATUSES  = c.statuses;
@@ -96,11 +96,14 @@ function makeController(kind) {
     state.page = 1;
     renderList();
   });
-  document.getElementById(`${prefix}-status-filter`).addEventListener("change", (e) => {
-    state.filter.status = e.target.value;
-    state.page = 1;
-    renderList();
-  });
+  const statusFilterEl = document.getElementById(`${prefix}-status-filter`);
+  if (statusFilterEl) {
+    statusFilterEl.addEventListener("change", (e) => {
+      state.filter.status = e.target.value;
+      state.page = 1;
+      renderList();
+    });
+  }
 
   async function load() {
     if (!currentOrgId) return;
@@ -157,8 +160,9 @@ function makeController(kind) {
     document.getElementById(`${prefix}-summary`).textContent =
       `${filtered.length} total · page ${state.page} of ${totalPages}`;
 
+    const colCount = c.hasStatus ? 6 : 5;
     if (!pageRows.length) {
-      body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center">No ${kind} match.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="${colCount}" class="muted small" style="text-align:center">No ${kind} match.</td></tr>`;
       paginationEl.innerHTML = "";
       return;
     }
@@ -167,13 +171,13 @@ function makeController(kind) {
       <tr data-id="${r.id}">
         <td><strong>${escapeHtml(r[codeField])}</strong></td>
         <td>${escapeHtml(r.description || "")}</td>
-        <td>
+        ${c.hasStatus ? `<td>
           <select class="status-cell" ${ctx.isAdminOrHigher ? "" : "disabled"}>
             ${STATUSES.map((s) =>
               `<option value="${s}"${s === r.status ? " selected" : ""}>${s}</option>`
             ).join("")}
           </select>
-        </td>
+        </td>` : ""}
         <td><span class="small muted">${escapeHtml(r.source || "")}</span></td>
         <td class="small muted">${r.last_synced_at ? new Date(r.last_synced_at).toLocaleString() : ""}</td>
         <td>
@@ -201,7 +205,7 @@ function makeController(kind) {
       paginationEl.innerHTML = "";
     }
 
-    body.querySelectorAll(".status-cell").forEach((sel) => {
+    if (c.hasStatus) body.querySelectorAll(".status-cell").forEach((sel) => {
       sel.addEventListener("change", async (e) => {
         const tr = e.target.closest("tr");
         const id = Number(tr.dataset.id);
@@ -242,8 +246,8 @@ function makeController(kind) {
 
   const ADD_FORM_IDS = {
     jobs:      { form: "add-job-form",      code: "aj-code",  desc: "aj-desc",  status: "aj-status" },
-    tasks:     { form: "add-task-form",     code: "at-code",  desc: "at-desc",  status: "at-status" },
-    deptcodes: { form: "add-deptcode-form", code: "adc-code", desc: "adc-desc", status: "adc-status" },
+    tasks:     { form: "add-task-form",     code: "at-code",  desc: "at-desc",  status: null },
+    deptcodes: { form: "add-deptcode-form", code: "adc-code", desc: "adc-desc", status: null },
   };
   const formIds = ADD_FORM_IDS[kind];
 
@@ -252,10 +256,10 @@ function makeController(kind) {
     if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
     const codeInput   = document.getElementById(formIds.code);
     const descInput   = document.getElementById(formIds.desc);
-    const statusInput = document.getElementById(formIds.status);
+    const statusInput = formIds.status ? document.getElementById(formIds.status) : null;
     const code = codeInput.value.trim();
     const desc = descInput.value.trim() || null;
-    const status = statusInput.value;
+    const status = statusInput ? statusInput.value : "ACTIVE";
     if (!code) return;
     try {
       const { error } = await sb
@@ -293,8 +297,10 @@ function makeController(kind) {
       const map = data?.[`${c.webhookKind}_import_map`] || {};
       document.getElementById(`${prefix}-mp-code`).value   = map.code_column        || "";
       document.getElementById(`${prefix}-mp-desc`).value   = map.description_column || "";
-      document.getElementById(`${prefix}-mp-status`).value = map.status_column      || "";
-      renderWebhookStatusMapRows(map.status_map || {});
+      if (c.hasStatus) {
+        document.getElementById(`${prefix}-mp-status`).value = map.status_column      || "";
+        renderWebhookStatusMapRows(map.status_map || {});
+      }
     } catch (err) {
       notice(err.message || "Failed to load import config", "error");
     }
@@ -322,32 +328,38 @@ function makeController(kind) {
     `;
   }
 
-  document.getElementById(`${prefix}-add-status-row`).addEventListener("click", () => {
-    document.getElementById(`${prefix}-status-map-rows`)
-      .insertAdjacentHTML("beforeend", webhookStatusRow("", "ACTIVE"));
-  });
+  if (c.hasStatus) {
+    document.getElementById(`${prefix}-add-status-row`).addEventListener("click", () => {
+      document.getElementById(`${prefix}-status-map-rows`)
+        .insertAdjacentHTML("beforeend", webhookStatusRow("", "ACTIVE"));
+    });
 
-  document.getElementById(`${prefix}-status-map-rows`).addEventListener("click", (e) => {
-    if (e.target.classList.contains("sm-del")) {
-      e.target.closest(".status-map-row").remove();
-    }
-  });
+    document.getElementById(`${prefix}-status-map-rows`).addEventListener("click", (e) => {
+      if (e.target.classList.contains("sm-del")) {
+        e.target.closest(".status-map-row").remove();
+      }
+    });
+  }
 
   document.getElementById(`${prefix}-mapping-form`).addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
     const statusMap = {};
-    document.querySelectorAll(`#${prefix}-status-map-rows .status-map-row`).forEach((row) => {
-      const from = row.querySelector(".sm-from").value.trim();
-      const to   = row.querySelector(".sm-to").value;
-      if (from) statusMap[from] = to;
-    });
+    if (c.hasStatus) {
+      document.querySelectorAll(`#${prefix}-status-map-rows .status-map-row`).forEach((row) => {
+        const from = row.querySelector(".sm-from").value.trim();
+        const to   = row.querySelector(".sm-to").value;
+        if (from) statusMap[from] = to;
+      });
+    }
     const mapping = {
       code_column:        document.getElementById(`${prefix}-mp-code`).value.trim(),
       description_column: document.getElementById(`${prefix}-mp-desc`).value.trim(),
-      status_column:      document.getElementById(`${prefix}-mp-status`).value.trim(),
-      status_map:         statusMap,
     };
+    if (c.hasStatus) {
+      mapping.status_column = document.getElementById(`${prefix}-mp-status`).value.trim();
+      mapping.status_map    = statusMap;
+    }
     try {
       const { error } = await sb.rpc("save_import_mapping", {
         p_kind: c.webhookKind, p_mapping: mapping, p_org_id: currentOrgId,
@@ -405,8 +417,11 @@ function makeController(kind) {
       document.getElementById(`${prefix}-upload-row-count`).textContent = `${json.length} rows`;
       document.getElementById(`${prefix}-upload-columns`).textContent = state.uploadedHeaders.join(", ");
 
-      for (const selId of [`${prefix}-up-code`, `${prefix}-up-desc`, `${prefix}-up-status`]) {
+      const selIds = [`${prefix}-up-code`, `${prefix}-up-desc`];
+      if (c.hasStatus) selIds.push(`${prefix}-up-status`);
+      for (const selId of selIds) {
         const sel = document.getElementById(selId);
+        if (!sel) continue;
         const allowNone = !selId.endsWith("up-code");
         sel.innerHTML = (allowNone ? `<option value="">(none)</option>` : "") +
           state.uploadedHeaders.map((h) => `<option value="${escapeHtml(h)}">${escapeHtml(h)}</option>`).join("");
@@ -428,11 +443,11 @@ function makeController(kind) {
         }
         if (hl.includes("desc") || hl.includes("title"))
           document.getElementById(`${prefix}-up-desc`).value = h;
-        if (hl.includes("status"))
+        if (c.hasStatus && hl.includes("status"))
           document.getElementById(`${prefix}-up-status`).value = h;
       }
 
-      refreshUploadStatusMap();
+      if (c.hasStatus) refreshUploadStatusMap();
       dropZone.style.display = "none";
       preview.style.display = "";
     } catch (err) {
@@ -467,22 +482,25 @@ function makeController(kind) {
   }
 
   function refreshUploadStatusMap() {
-    const statusCol = document.getElementById(`${prefix}-up-status`).value;
+    if (!c.hasStatus) return;
+    const statusCol = document.getElementById(`${prefix}-up-status`)?.value;
     const mapEl = document.getElementById(`${prefix}-upload-status-map`);
-    if (!statusCol) { mapEl.innerHTML = ""; return; }
+    if (!statusCol || !mapEl) { if (mapEl) mapEl.innerHTML = ""; return; }
     const unique = [...new Set(state.uploadedRows.map((r) => String(r[statusCol] || "").trim()).filter(Boolean))];
     mapEl.innerHTML = unique.map((v) => uploadStatusRow(v, guessStatus(v))).join("");
   }
 
-  document.getElementById(`${prefix}-up-status`).addEventListener("change", refreshUploadStatusMap);
+  if (c.hasStatus) {
+    document.getElementById(`${prefix}-up-status`)?.addEventListener("change", refreshUploadStatusMap);
 
-  document.getElementById(`${prefix}-upload-add-status-row`).addEventListener("click", () => {
-    const mapEl = document.getElementById(`${prefix}-upload-status-map`);
-    mapEl.insertAdjacentHTML("beforeend", uploadStatusRow("", "ACTIVE"));
-    const last = mapEl.lastElementChild;
-    last.querySelector(".sm-from").removeAttribute("readonly");
-    last.querySelector(".sm-from").style.background = "";
-  });
+    document.getElementById(`${prefix}-upload-add-status-row`)?.addEventListener("click", () => {
+      const mapEl = document.getElementById(`${prefix}-upload-status-map`);
+      mapEl.insertAdjacentHTML("beforeend", uploadStatusRow("", "ACTIVE"));
+      const last = mapEl.lastElementChild;
+      last.querySelector(".sm-from").removeAttribute("readonly");
+      last.querySelector(".sm-from").style.background = "";
+    });
+  }
 
   document.getElementById(`${prefix}-upload-clear`).addEventListener("click", () => {
     state.uploadedRows = [];
@@ -499,15 +517,17 @@ function makeController(kind) {
 
     const codeCol   = document.getElementById(`${prefix}-up-code`).value;
     const descCol   = document.getElementById(`${prefix}-up-desc`).value;
-    const statusCol = document.getElementById(`${prefix}-up-status`).value;
+    const statusCol = c.hasStatus ? document.getElementById(`${prefix}-up-status`)?.value : null;
     if (!codeCol) return notice("Select a code column", "warn");
 
     const statusMap = {};
-    document.querySelectorAll(`#${prefix}-upload-status-map .status-map-row`).forEach((row) => {
-      const from = row.querySelector(".sm-from").value.trim();
-      const to   = row.querySelector(".sm-to").value;
-      if (from) statusMap[from] = to;
-    });
+    if (c.hasStatus) {
+      document.querySelectorAll(`#${prefix}-upload-status-map .status-map-row`).forEach((row) => {
+        const from = row.querySelector(".sm-from").value.trim();
+        const to   = row.querySelector(".sm-to").value;
+        if (from) statusMap[from] = to;
+      });
+    }
 
     const resolveStatus = (raw) => {
       const trimmed = String(raw || "").trim();
