@@ -56,8 +56,7 @@ export function renderTopbar(opts) {
   const links = [
     { key: "admin", href: "/admin.html", label: "Admin", show: canSeeAdminNav },
     { key: "staff", href: "/staff.html", label: "Staff", show: canSeeAdminNav },
-    { key: "jobs",  href: "/jobs.html",  label: "Jobs",  show: canSeeAdminNav },
-    { key: "tasks", href: "/tasks.html", label: "Tasks", show: canSeeAdminNav },
+    { key: "configure", href: "/configure.html", label: "Configure timesheet", show: canSeeAdminNav },
   ];
 
   const orgSwitcher =
@@ -75,7 +74,10 @@ export function renderTopbar(opts) {
       : "";
 
   el.innerHTML = `
-    <div class="brand">Temporium</div>
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">ptl</span>
+      <span class="brand-name">Temporium</span>
+    </div>
     <nav>
       ${links
         .filter((l) => l.show)
