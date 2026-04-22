@@ -586,7 +586,7 @@ function makeController(kind) {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time";
+const SETTINGS_FIELDS = "approval_workflow, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -616,6 +616,13 @@ async function loadSettings() {
     document.getElementById("reminder-day").value = data.reminder_day || "friday";
     document.getElementById("reminder-time").value = (data.reminder_time || "09:00").slice(0, 5);
     document.getElementById("reminder-schedule").style.display = data.notify_reminder ? "" : "none";
+
+    // Clock vs Timesheet
+    document.getElementById("clock-tolerance").value = String(data.clock_tolerance_hours ?? 0.5);
+    document.getElementById("notify-discrepancy").checked = !!data.notify_discrepancy;
+    document.getElementById("discrepancy-day").value = data.discrepancy_day || "monday";
+    document.getElementById("discrepancy-time").value = (data.discrepancy_time || "10:00").slice(0, 5);
+    document.getElementById("discrepancy-schedule").style.display = data.notify_discrepancy ? "" : "none";
   } catch (err) {
     notice(err.message || "Failed to load settings", "error");
   }
@@ -697,6 +704,33 @@ document.getElementById("save-notifications-btn").addEventListener("click", asyn
     if (error) throw error;
     notice("Notification settings saved", "success");
     flashStatus("notifications-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
+// Discrepancy notification toggle
+document.getElementById("notify-discrepancy").addEventListener("change", (e) => {
+  document.getElementById("discrepancy-schedule").style.display = e.target.checked ? "" : "none";
+});
+
+// Clock vs Timesheet save
+document.getElementById("save-clock-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    const { error } = await sb
+      .from("organisations")
+      .update({
+        clock_tolerance_hours: Number(document.getElementById("clock-tolerance").value) || 0.5,
+        notify_discrepancy: document.getElementById("notify-discrepancy").checked,
+        discrepancy_day: document.getElementById("discrepancy-day").value,
+        discrepancy_time: document.getElementById("discrepancy-time").value || "10:00",
+      })
+      .eq("id", currentOrgId);
+    if (error) throw error;
+    notice("Clock vs Timesheet settings saved", "success");
+    flashStatus("clock-status");
   } catch (err) {
     notice(err.message || "Save failed", "error");
   }

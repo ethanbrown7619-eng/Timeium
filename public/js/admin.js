@@ -398,15 +398,20 @@ let infSubmittedCount = 0;
 let infTotalEmps = 0;
 let approvalWorkflow = "manager_then_admin";
 
-async function loadApprovalWorkflow() {
+async function loadOrgSettings() {
   if (!currentOrgId) return;
   try {
     const { data } = await sb
       .from("organisations")
-      .select("approval_workflow")
+      .select("approval_workflow, clock_tolerance_hours")
       .eq("id", currentOrgId)
       .maybeSingle();
     approvalWorkflow = data?.approval_workflow || "manager_then_admin";
+    if (data?.clock_tolerance_hours != null) {
+      const sel = document.getElementById("cvt-tolerance");
+      const val = String(data.clock_tolerance_hours);
+      if ([...sel.options].some((o) => o.value === val)) sel.value = val;
+    }
   } catch {}
 }
 
@@ -739,5 +744,5 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
 
 /* ---------------------------------------------------------------- boot */
 
-loadApprovalWorkflow().then(() => loadInfusionStatus());
+loadOrgSettings().then(() => loadInfusionStatus());
 loadDashboard();

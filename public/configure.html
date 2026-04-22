@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
-    <header class="topbar" id="topbar">      <div class="brand">        <span class="brand-logo" aria-hidden="true">ptl</span>        <span class="brand-name">Timesheet</span>      </div>      <nav>        <a href="/timesheet.html">My Timesheets</a>        <a href="/staff.html">Staff</a>        <a href="/configure.html" class="active">Configure</a>        <a href="/admin.html">Admin</a>      </nav>      <div class="grow"></div>    </header>
+    <header class="topbar" id="topbar">      <div class="brand">        <span class="brand-logo" aria-hidden="true">ptl</span>        <span class="brand-name">Timesheet</span>      </div>      <nav>        <a href="/timesheet.html">My Timesheets</a>        <a href="/staff.html">Staff</a>        <a href="/admin.html">Admin</a>        <a href="/configure.html" class="active">Configure</a>      </nav>      <div class="grow"></div>    </header>
 
     <main class="container">
       <div id="notice" class="notice hidden"></div>
@@ -608,6 +608,62 @@
           <div class="mt-md">
             <button id="save-notifications-btn">Save</button>
             <span id="notifications-status" class="muted small" style="margin-left:12px"></span>
+          </div>
+        </div>
+
+        <!-- Clock vs Timesheet -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Clock vs Timesheet</h2>
+          <p class="muted">Configure the tolerance for comparing clock-in/out hours against timesheet entries.</p>
+
+          <div class="settings-row">
+            <div class="settings-field">
+              <label for="clock-tolerance">Discrepancy tolerance</label>
+              <select id="clock-tolerance" style="width:100%">
+                <option value="0.25">15 minutes</option>
+                <option value="0.5">30 minutes</option>
+                <option value="1">1 hour</option>
+                <option value="2">2 hours</option>
+              </select>
+            </div>
+          </div>
+          <p class="muted small mt-sm">Differences within this tolerance are shown as matching. Larger gaps are flagged as discrepancies.</p>
+
+          <div class="settings-checks mt-md">
+            <label class="settings-check">
+              <input type="checkbox" id="notify-discrepancy" />
+              <div>
+                <strong>Discrepancy notification</strong>
+                <span class="muted small">Send an email when clock hours and timesheet hours don't match beyond the tolerance.</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="discrepancy-schedule" style="display:none">
+            <p class="muted small mt-sm">When should the discrepancy report be sent?</p>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="discrepancy-day">Day</label>
+                <select id="discrepancy-day" style="width:100%">
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                  <option value="sunday">Sunday</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="discrepancy-time">Time</label>
+                <input type="time" id="discrepancy-time" value="10:00" style="width:100%" />
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-md">
+            <button id="save-clock-btn">Save</button>
+            <span id="clock-status" class="muted small" style="margin-left:12px"></span>
           </div>
         </div>
       </section>
