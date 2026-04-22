@@ -73,15 +73,22 @@ document.getElementById("status-filter").addEventListener("change", (e) => {
 async function loadJobs() {
   if (!currentOrgId) return;
   try {
-    const { data, error } = await sb
-      .from("jobs")
-      .select("id, job_code, description, status, source, last_synced_at")
-      .eq("organisation_id", currentOrgId)
-      .order("status", { ascending: true }) // Postgres orders by text; ACTIVE sorts first alphabetically by luck (A<C<D<I<P), not reliable — we re-sort client-side below.
-      .order("job_code", { ascending: true });
-    if (error) throw error;
-    jobs = data || [];
-    // Stable ACTIVE-first sort, then by code.
+    const PAGE = 1000;
+    let all = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await sb
+        .from("jobs")
+        .select("id, job_code, description, status, source, last_synced_at")
+        .eq("organisation_id", currentOrgId)
+        .order("job_code", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      all = all.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    jobs = all;
     jobs.sort((a, b) => {
       const aActive = a.status === "ACTIVE" ? 0 : 1;
       const bActive = b.status === "ACTIVE" ? 0 : 1;
