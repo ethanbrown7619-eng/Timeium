@@ -456,6 +456,66 @@ dialog::backdrop {
 
 .ts-current-card.draft { border-color: var(--border); }
 
+/* progress bar */
+.ts-progress-bar {
+  height: 10px;
+  background: var(--surface-alt);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ts-progress-fill {
+  height: 100%;
+  background: var(--ptl-lime);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.ts-progress-fill.submitted { background: var(--success); }
+
+/* countdown */
+.ts-countdown {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.ts-countdown.urgent {
+  color: var(--danger);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* quick stats */
+.ts-quick-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  padding: 16px 28px;
+  flex: 1;
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--ptl-black);
+  line-height: 1.1;
+}
+.stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+
 .ts-container-inner { max-width: none; }
 
 .week-calendar { width: 100%; border-collapse: collapse; }
@@ -463,8 +523,14 @@ dialog::backdrop {
 .week-calendar td { padding: 6px 8px; text-align: center; font-size: 13px; }
 .week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); }
 .week-calendar tr.week-row:hover { background: var(--surface-alt); }
-.week-calendar tr.week-row.current-week { background: rgba(194, 255, 0, 0.1); font-weight: 600; }
-.week-calendar tr.week-row.current-week:hover { background: rgba(194, 255, 0, 0.2); }
+.week-calendar tr.week-row.current-week { background: rgba(194, 255, 0, 0.12); font-weight: 600; }
+.week-calendar tr.week-row.current-week:hover { background: rgba(194, 255, 0, 0.22); }
+.week-calendar tr.week-row.week-submitted { background: rgba(46, 125, 58, 0.06); }
+.week-calendar tr.week-row.week-submitted:hover { background: rgba(46, 125, 58, 0.12); }
+.week-calendar tr.week-row.week-draft { background: rgba(201, 144, 26, 0.06); }
+.week-calendar tr.week-row.week-draft:hover { background: rgba(201, 144, 26, 0.12); }
+.week-calendar .cal-total-row { border-top: 2px solid var(--border); }
+.week-calendar .cal-total-row td { padding: 10px 8px; }
 .week-calendar .week-status { font-size: 12px; }
 .week-calendar .week-action { font-size: 12px; color: var(--ptl-black); font-weight: 600; }
 

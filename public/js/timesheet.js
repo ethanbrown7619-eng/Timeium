@@ -80,6 +80,7 @@ function showHub() {
   document.getElementById("editor-view").style.display = "none";
   document.querySelector(".container").classList.remove("ts-container");
   loadCurrentWeekCard();
+  loadQuickStats();
   renderCalendar();
 }
 
@@ -95,12 +96,35 @@ document.getElementById("back-to-hub").addEventListener("click", () => showHub()
 
 /* ---------------------------------------------------------------- current week card */
 
+function getDeadline() {
+  // Next Monday 8am
+  const deadline = addDays(thisMonday, 7);
+  deadline.setHours(8, 0, 0, 0);
+  return deadline;
+}
+
+function formatCountdown(ms) {
+  if (ms <= 0) return "Overdue";
+  const totalSecs = Math.floor(ms / 1000);
+  const days = Math.floor(totalSecs / 86400);
+  const hours = Math.floor((totalSecs % 86400) / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m ${secs}s`;
+  return `${mins}m ${secs}s`;
+}
+
+let countdownInterval = null;
+
 async function loadCurrentWeekCard() {
   const card = document.getElementById("current-week-card");
   const body = document.getElementById("current-week-body");
   const ws = fmtDate(thisMonday);
   const end = addDays(thisMonday, 6);
   const weekStr = `${thisMonday.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
 
   try {
     const { data: ts } = await sb
@@ -110,42 +134,173 @@ async function loadCurrentWeekCard() {
       .eq("week_start", ws)
       .maybeSingle();
 
+    let totalHours = 0;
+    let taskCount = 0;
+    if (ts) {
+      const { data: ents } = await sb
+        .from("timesheet_entries")
+        .select("mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .eq("timesheet_id", ts.id);
+      taskCount = ents?.length || 0;
+      for (const e of ents || []) {
+        totalHours += DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+      }
+    }
+
+    const TARGET = 40;
+    const pct = Math.min(100, Math.round((totalHours / TARGET) * 100));
+
     card.classList.remove("submitted", "draft");
 
     if (ts?.status === "submitted" || ts?.status === "approved") {
       card.classList.add("submitted");
       body.innerHTML = `
-        <p style="font-size:16px;margin:0">
-          <strong>Timesheet submitted</strong> for ${weekStr}
-        </p>
-        <p class="muted small" style="margin:4px 0 0">
-          <a href="#" id="view-current">View timesheet →</a>
+        <p style="margin:0"><strong>${weekStr}</strong></p>
+        <p style="font-size:18px;margin:8px 0 0">Timesheet submitted</p>
+        <div class="ts-progress-bar mt-sm">
+          <div class="ts-progress-fill submitted" style="width:${pct}%"></div>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">
+          ${totalHours}h logged across ${taskCount} task${taskCount !== 1 ? "s" : ""}
+          · <a href="#" id="view-current">View timesheet →</a>
         </p>
       `;
     } else {
       card.classList.add("draft");
-      const statusText = ts ? "In progress — draft" : "Not started yet";
+      const deadline = getDeadline();
+      const urgencyClass = (deadline - Date.now()) < 24 * 60 * 60 * 1000 ? "urgent" : "";
       body.innerHTML = `
-        <p style="margin:0">
-          <strong>${weekStr}</strong>
-          <span class="muted small" style="margin-left:8px">${statusText}</span>
-        </p>
-        <p style="margin:8px 0 0">
+        <p style="margin:0"><strong>${weekStr}</strong></p>
+        <div class="ts-progress-bar mt-sm">
+          <div class="ts-progress-fill" style="width:${pct}%"></div>
+        </div>
+        <div class="row-flex mt-sm" style="gap:16px">
+          <span>${totalHours} / ${TARGET}h</span>
+          <span class="muted small">${taskCount} task${taskCount !== 1 ? "s" : ""}</span>
+          <div class="grow"></div>
+          <span class="ts-countdown ${urgencyClass}" id="countdown"></span>
+        </div>
+        <p style="margin:12px 0 0">
           <a href="#" id="edit-current" class="btn-link">Open this week's timesheet →</a>
         </p>
       `;
+
+      // Start countdown
+      const countdownEl = document.getElementById("countdown");
+      function tick() {
+        const remaining = deadline - Date.now();
+        const urgency = remaining < 24 * 60 * 60 * 1000;
+        countdownEl.textContent = `Due in ${formatCountdown(remaining)}`;
+        countdownEl.classList.toggle("urgent", urgency);
+      }
+      tick();
+      countdownInterval = setInterval(tick, 1000);
     }
 
     document.getElementById("view-current")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      showEditor(thisMonday);
+      e.preventDefault(); showEditor(thisMonday);
     });
     document.getElementById("edit-current")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      showEditor(thisMonday);
+      e.preventDefault(); showEditor(thisMonday);
     });
   } catch (err) {
     body.innerHTML = `<p class="muted">Failed to load current week</p>`;
+  }
+}
+
+/* ---------------------------------------------------------------- quick stats */
+
+async function loadQuickStats() {
+  const el = document.getElementById("quick-stats");
+  if (!el) return;
+
+  try {
+    // Load all timesheets for stats
+    const { data: allTs } = await sb
+      .from("timesheets")
+      .select("id, week_start, status")
+      .eq("user_id", employee.id)
+      .order("week_start", { ascending: false })
+      .limit(52);
+
+    if (!allTs?.length) {
+      el.innerHTML = `<span class="muted small">No timesheet history yet</span>`;
+      return;
+    }
+
+    // Current month hours
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const monthTs = allTs.filter((t) => {
+      const d = new Date(t.week_start);
+      return d >= monthStart && d <= monthEnd;
+    });
+
+    let monthHours = 0;
+    if (monthTs.length) {
+      const ids = monthTs.map((t) => t.id);
+      const { data: ents } = await sb
+        .from("timesheet_entries")
+        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .in("timesheet_id", ids);
+      for (const e of ents || []) {
+        monthHours += DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+      }
+    }
+
+    // Submission streak
+    let streak = 0;
+    const sorted = allTs.filter((t) => t.status === "submitted" || t.status === "approved")
+      .sort((a, b) => b.week_start.localeCompare(a.week_start));
+    if (sorted.length) {
+      let expected = getMonday(new Date());
+      // Current week doesn't count unless submitted
+      const currentSubmitted = sorted[0]?.week_start === fmtDate(expected);
+      if (!currentSubmitted) expected = addDays(expected, -7);
+      for (const t of sorted) {
+        if (t.week_start === fmtDate(expected)) {
+          streak++;
+          expected = addDays(expected, -7);
+        } else {
+          break;
+        }
+      }
+    }
+
+    // Avg hours per week (last 12 weeks)
+    const recent = allTs.slice(0, 12);
+    let totalRecentHours = 0;
+    if (recent.length) {
+      const ids = recent.map((t) => t.id);
+      const { data: ents } = await sb
+        .from("timesheet_entries")
+        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .in("timesheet_id", ids);
+      for (const e of ents || []) {
+        totalRecentHours += DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+      }
+    }
+    const avgHours = recent.length ? Math.round(totalRecentHours / recent.length * 10) / 10 : 0;
+
+    const monthName = now.toLocaleDateString(undefined, { month: "long" });
+
+    el.innerHTML = `
+      <div class="stat-item">
+        <span class="stat-value">${Math.round(monthHours)}h</span>
+        <span class="stat-label">${monthName}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value">${streak}</span>
+        <span class="stat-label">week streak</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-value">${avgHours}h</span>
+        <span class="stat-label">avg / week</span>
+      </div>
+    `;
+  } catch {
+    el.innerHTML = "";
   }
 }
 
@@ -218,7 +373,11 @@ async function renderCalendar() {
       ? `<a href="#" class="week-action" data-week="${ws}">View</a>`
       : `<a href="#" class="week-action" data-week="${ws}">Create</a>`;
 
-    rows += `<tr class="week-row${isCurrent ? " current-week" : ""}" data-week="${ws}">
+    const rowClass = isCurrent ? "current-week" :
+      ts?.status === "submitted" || ts?.status === "approved" ? "week-submitted" :
+      ts?.status === "draft" ? "week-draft" : "";
+
+    rows += `<tr class="week-row ${rowClass}" data-week="${ws}">
       ${dayCells.join("")}
       <td class="week-status">${statusBadge}</td>
       <td class="small">${hours}</td>
@@ -228,6 +387,16 @@ async function renderCalendar() {
     weekDate.setDate(weekDate.getDate() + 7);
     if (weekDate.getMonth() > month && weekDate.getFullYear() >= year && weekDate > addDays(first, 28)) break;
   }
+
+  // Monthly total row
+  const calMonthTotal = Object.values(tsMap).reduce((s, t) => s + (t.hours || 0), 0);
+  const monthName = calMonth.toLocaleDateString(undefined, { month: "long" });
+  rows += `<tr class="cal-total-row">
+    <td colspan="7" style="text-align:right"><strong>${monthName} total</strong></td>
+    <td></td>
+    <td class="small"><strong>${calMonthTotal}h</strong></td>
+    <td></td>
+  </tr>`;
 
   body.innerHTML = rows;
 
