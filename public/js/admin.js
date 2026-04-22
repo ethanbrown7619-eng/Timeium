@@ -62,7 +62,7 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     activeTab = btn.dataset.tab;
     document.getElementById("tab-dashboard").style.display = activeTab === "dashboard" ? "" : "none";
     document.getElementById("tab-infusion").style.display  = activeTab === "infusion"  ? "" : "none";
-    if (activeTab === "infusion") updateInfusionWeekLabel();
+    if (activeTab === "infusion") loadInfusionStatus();
   });
 });
 
@@ -182,6 +182,21 @@ async function loadDashboard() {
 
 let infWeek = new Date(thisMonday);
 let infRows = [];
+let infSubmittedCount = 0;
+let infTotalEmps = 0;
+let approvalWorkflow = "manager_then_admin";
+
+async function loadApprovalWorkflow() {
+  if (!currentOrgId) return;
+  try {
+    const { data } = await sb
+      .from("organisations")
+      .select("approval_workflow")
+      .eq("id", currentOrgId)
+      .maybeSingle();
+    approvalWorkflow = data?.approval_workflow || "manager_then_admin";
+  } catch {}
+}
 
 function updateInfusionWeekLabel() {
   const end = addDays(infWeek, 6);
@@ -189,13 +204,90 @@ function updateInfusionWeekLabel() {
     `${infWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
+async function loadInfusionStatus() {
+  const barsEl = document.getElementById("inf-status-bars");
+  if (!currentOrgId) { barsEl.innerHTML = ""; return; }
+
+  const ws = fmtDate(infWeek);
+
+  const [empRes, deptRes, tsRes] = await Promise.all([
+    sb.from("users").select("id, department_id, active").eq("organisation_id", currentOrgId).eq("active", true),
+    sb.from("departments").select("id, name, active").eq("organisation_id", currentOrgId).eq("active", true),
+    sb.from("timesheets").select("id, user_id, status").eq("organisation_id", currentOrgId).eq("week_start", ws),
+  ]);
+
+  const employees = empRes.data || [];
+  const departments = deptRes.data || [];
+  const timesheets = tsRes.data || [];
+
+  const tsMap = {};
+  for (const ts of timesheets) tsMap[ts.user_id] = ts;
+
+  infTotalEmps = employees.length;
+  infSubmittedCount = employees.filter((e) => {
+    const ts = tsMap[e.id];
+    return ts && (ts.status === "submitted" || ts.status === "approved");
+  }).length;
+
+  const empPct = infTotalEmps === 0 ? 0 : Math.round((infSubmittedCount / infTotalEmps) * 100);
+  const allSubmitted = infSubmittedCount === infTotalEmps && infTotalEmps > 0;
+
+  let html = `
+    <div class="inf-bar-group">
+      <div class="row-flex" style="gap:8px;margin-bottom:4px">
+        <span class="small" style="font-weight:600">Employees submitted</span>
+        <div class="grow"></div>
+        <span class="small ${allSubmitted ? "" : "warn-text"}" style="font-weight:600">${infSubmittedCount} / ${infTotalEmps}</span>
+      </div>
+      <div class="ts-progress-bar">
+        <div class="ts-progress-fill ${allSubmitted ? "submitted" : ""}" style="width:${empPct}%"></div>
+      </div>
+    </div>
+  `;
+
+  if (approvalWorkflow === "manager_then_admin") {
+    const deptSubmitted = departments.filter((d) => {
+      const members = employees.filter((e) => e.department_id === d.id);
+      if (members.length === 0) return false;
+      return members.every((e) => {
+        const ts = tsMap[e.id];
+        return ts && (ts.status === "submitted" || ts.status === "approved");
+      });
+    });
+
+    const deptTotal = departments.length;
+    const deptCount = deptSubmitted.length;
+    const deptPct = deptTotal === 0 ? 0 : Math.round((deptCount / deptTotal) * 100);
+    const allDepts = deptCount === deptTotal && deptTotal > 0;
+
+    html += `
+      <div class="inf-bar-group" style="margin-top:12px">
+        <div class="row-flex" style="gap:8px;margin-bottom:4px">
+          <span class="small" style="font-weight:600">Departments submitted</span>
+          <div class="grow"></div>
+          <span class="small ${allDepts ? "" : "warn-text"}" style="font-weight:600">${deptCount} / ${deptTotal}</span>
+        </div>
+        <div class="ts-progress-bar">
+          <div class="ts-progress-fill ${allDepts ? "submitted" : ""}" style="width:${deptPct}%"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  barsEl.innerHTML = html;
+}
+
 document.getElementById("inf-prev").addEventListener("click", () => {
   infWeek = addDays(infWeek, -7);
   updateInfusionWeekLabel();
+  infRows = [];
+  loadInfusionStatus();
 });
 document.getElementById("inf-next").addEventListener("click", () => {
   infWeek = addDays(infWeek, 7);
   updateInfusionWeekLabel();
+  infRows = [];
+  loadInfusionStatus();
 });
 
 updateInfusionWeekLabel();
@@ -375,6 +467,12 @@ document.getElementById("inf-preview-btn").addEventListener("click", async () =>
 // Export
 document.getElementById("inf-export-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("inf-status");
+
+  if (infTotalEmps > 0 && infSubmittedCount < infTotalEmps) {
+    const missing = infTotalEmps - infSubmittedCount;
+    if (!confirm(`${missing} employee${missing === 1 ? " has" : "s have"} not submitted yet (${infSubmittedCount}/${infTotalEmps}). Export anyway?`)) return;
+  }
+
   statusEl.textContent = "Generating…";
 
   try {
@@ -429,4 +527,5 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
 
 /* ---------------------------------------------------------------- boot */
 
+loadApprovalWorkflow().then(() => loadInfusionStatus());
 loadDashboard();
