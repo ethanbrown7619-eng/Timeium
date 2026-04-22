@@ -440,20 +440,35 @@ dialog::backdrop {
 
 /* -------- timesheet grid -------- */
 
-.ts-grid { width: 100%; border-collapse: collapse; }
-.ts-grid th, .ts-grid td { padding: 6px 8px; vertical-align: middle; }
-.ts-grid .day-col { text-align: center; width: 64px; min-width: 56px; }
+.ts-container { max-width: none; padding: 12px 16px 64px; }
+
+.ts-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ts-grid th, .ts-grid td { padding: 4px 5px; vertical-align: middle; }
+.ts-grid th { font-size: 11px; }
+.ts-grid .day-col { text-align: center; width: 52px; }
 .ts-grid .hours-input {
   border: 1px solid var(--border);
   border-radius: var(--radius-box);
-  padding: 4px 6px;
+  padding: 3px 4px;
   font: inherit;
+  font-size: 13px;
   background: var(--surface);
+  width: 44px !important;
 }
 .ts-grid .hours-input:focus {
   outline: 2px solid var(--ptl-lime);
   outline-offset: -1px;
 }
+.ts-grid .desc-input {
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+}
+.ts-grid .desc-input:focus { outline: 2px solid var(--ptl-lime); outline-offset: -1px; }
 .ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
 .ts-grid .row-total { background: var(--surface-alt); }
 
@@ -462,10 +477,11 @@ dialog::backdrop {
 .ac-wrap { position: relative; }
 .ac-wrap input {
   width: 100%;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-box);
   font: inherit;
+  font-size: 13px;
   background: var(--surface);
 }
 .ac-wrap input:focus { outline: 2px solid var(--ptl-lime); outline-offset: -1px; }

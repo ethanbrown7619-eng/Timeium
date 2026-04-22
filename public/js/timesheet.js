@@ -308,7 +308,7 @@ function renderGrid() {
           <td class="day-col">
             <input type="number" class="hours-input" data-day="${d}"
               value="${Number(e[`${d}_hours`]) || ""}" min="0" max="24" step="0.25"
-              style="width:56px;text-align:center" />
+              style="text-align:center" />
           </td>
         `).join("")}
         <td class="day-col row-total"><strong>${rowTotal}</strong></td>

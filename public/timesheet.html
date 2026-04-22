@@ -19,45 +19,43 @@
       <div class="grow"></div>
     </header>
 
-    <main class="container">
+    <main class="container ts-container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="card">
-        <div class="row-flex mb-md">
-          <button class="ghost" id="prev-week">←</button>
-          <h2 id="week-label" style="margin:0;min-width:220px;text-align:center"></h2>
-          <button class="ghost" id="next-week">→</button>
-          <div class="grow"></div>
-          <span id="ts-status" class="muted small"></span>
-          <button class="ghost" id="import-last-week">Import last week's tasks</button>
-          <button id="add-row-btn">+ Add task</button>
-        </div>
+      <div class="row-flex mb-md">
+        <button class="ghost" id="prev-week">←</button>
+        <h2 id="week-label" style="margin:0;min-width:220px;text-align:center"></h2>
+        <button class="ghost" id="next-week">→</button>
+        <div class="grow"></div>
+        <span id="ts-status" class="muted small"></span>
+        <button class="ghost" id="import-last-week">Import last week's tasks</button>
+        <button id="add-row-btn">+ Add task</button>
+      </div>
 
-        <div style="overflow-x:auto">
-          <table class="ts-grid">
-            <thead>
-              <tr>
-                <th style="min-width:180px">Job</th>
-                <th>Status</th>
-                <th style="min-width:110px">Dept</th>
-                <th style="min-width:140px">Task</th>
-                <th style="min-width:160px">Description</th>
-                <th class="day-col">Mon</th>
-                <th class="day-col">Tue</th>
-                <th class="day-col">Wed</th>
-                <th class="day-col">Thu</th>
-                <th class="day-col">Fri</th>
-                <th class="day-col">Sat</th>
-                <th class="day-col">Sun</th>
-                <th class="day-col">Total</th>
-                <th></th>
-              </tr>
-              <tr id="date-row" class="small muted"></tr>
-            </thead>
-            <tbody id="ts-body">
-              <tr><td colspan="14" class="muted small" style="text-align:center">Loading…</td></tr>
-            </tbody>
-            <tfoot>
+      <table class="ts-grid">
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Status</th>
+            <th>Dept</th>
+            <th>Task</th>
+            <th>Description</th>
+            <th class="day-col">Mon</th>
+            <th class="day-col">Tue</th>
+            <th class="day-col">Wed</th>
+            <th class="day-col">Thu</th>
+            <th class="day-col">Fri</th>
+            <th class="day-col">Sat</th>
+            <th class="day-col">Sun</th>
+            <th class="day-col">Total</th>
+            <th></th>
+          </tr>
+          <tr id="date-row" class="small muted"></tr>
+        </thead>
+        <tbody id="ts-body">
+          <tr><td colspan="14" class="muted small" style="text-align:center">Loading…</td></tr>
+        </tbody>
+        <tfoot>
               <tr id="totals-row">
                 <td colspan="5" style="text-align:right"><strong>Daily totals</strong></td>
                 <td class="day-col" id="total-mon">0</td>
@@ -70,10 +68,8 @@
                 <td class="day-col" id="total-week"><strong>0</strong></td>
                 <td></td>
               </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+        </tfoot>
+      </table>
     </main>
 
     <script type="module" src="/js/timesheet.js"></script>
