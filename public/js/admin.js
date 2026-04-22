@@ -312,7 +312,6 @@ async function buildInfusionRows() {
         "empty1": "",
         "empty2": "",
         "empty3": "",
-        "empty4": "",
         "dept": deptCode,
       });
     }
@@ -345,7 +344,7 @@ document.getElementById("inf-preview-btn").addEventListener("click", async () =>
           <tr>
             <th>Trans.</th><th>Job ID</th><th>Date</th><th>Employee</th>
             <th>Description</th><th>Code</th><th>Rate</th><th>Qty</th>
-            <th>Sell</th><th colspan="4"></th><th>Dept</th>
+            <th>Sell</th><th colspan="3"></th><th>Dept</th>
           </tr>
         </thead>
         <tbody>
@@ -360,11 +359,11 @@ document.getElementById("inf-preview-btn").addEventListener("click", async () =>
               <td>${r.rate}</td>
               <td>${r.qty}</td>
               <td>${r.sell}</td>
-              <td></td><td></td><td></td><td></td>
+              <td></td><td></td><td></td>
               <td>${escapeHtml(r.dept)}</td>
             </tr>
           `).join("")}
-          ${infRows.length > maxPreview ? `<tr><td colspan="14" class="muted small" style="text-align:center">…and ${infRows.length - maxPreview} more rows</td></tr>` : ""}
+          ${infRows.length > maxPreview ? `<tr><td colspan="13" class="muted small" style="text-align:center">…and ${infRows.length - maxPreview} more rows</td></tr>` : ""}
         </tbody>
       </table>
     `;
@@ -392,7 +391,7 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
     const headers = [
       "Transaction No", "jobid", "date", "employee name", "desc",
       "code", "rate", "qty", "sell",
-      "empty", "empty", "empty", "empty", "dept",
+      "empty", "empty", "empty", "dept",
     ];
 
     const wsData = [headers];
@@ -407,7 +406,7 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
         r.rate,
         r.qty,
         r.sell,
-        "", "", "", "",
+        "", "", "",
         r.dept,
       ]);
     }
