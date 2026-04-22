@@ -56,10 +56,11 @@ export function renderTopbar(opts) {
   const isAdminOrDev = role === "admin" || role === "developer";
 
   const links = [
-    { key: "timesheet", href: "/timesheet.html", label: "My Timesheets", show: true },
-    { key: "staff",     href: "/staff.html",      label: "Staff",        show: canSeeAdminNav },
-    { key: "configure", href: "/configure.html",  label: "Configure",    show: isAdminOrDev },
-    { key: "admin",     href: "/admin.html",      label: "Admin",        show: isAdminOrDev },
+    { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
+    { key: "department", href: "/department.html",   label: "My Department",  show: !!opts.isManager },
+    { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
+    { key: "configure",  href: "/configure.html",    label: "Configure",      show: isAdminOrDev },
+    { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
   ];
 
   const orgSwitcher =
@@ -173,6 +174,7 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
 
   let isDeveloper = false;
   let adminRow = null;
+  let isManager = false;
   try {
     const res = await sb.rpc("is_developer");
     isDeveloper = !!res.data;
@@ -184,6 +186,14 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
       .eq("user_id", session.user.id)
       .maybeSingle();
     adminRow = res.data;
+  } catch {}
+  try {
+    const res = await sb
+      .from("users")
+      .select("is_manager")
+      .eq("auth_user_id", session.user.id)
+      .maybeSingle();
+    isManager = !!res.data?.is_manager;
   } catch {}
 
   const role = adminRow?.role || (isDeveloper ? "developer" : null);
@@ -213,6 +223,7 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
   return {
     session,
     isDeveloper,
+    isManager,
     adminRow,
     role,
     isAdminOrHigher: role === "admin" || role === "developer",

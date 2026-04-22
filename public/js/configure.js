@@ -18,6 +18,7 @@ let currentOrgId = ctx.currentOrgId;
 renderTopbar({
   session: ctx.session,
   isDeveloper: ctx.isDeveloper,
+  isManager: ctx.isManager,
   adminRow: ctx.adminRow,
   orgs: ctx.orgs,
   currentOrgId,

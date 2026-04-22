@@ -13,14 +13,16 @@ if (!session) { location.replace("/signin.html"); throw new Error("not signed in
 let employee = null;
 let isDeveloper = false;
 let adminRow = null;
+let isManager = false;
 try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
 try {
   const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
   adminRow = r.data;
 } catch {}
 try {
-  const r = await sb.from("users").select("id, organisation_id, name").eq("auth_user_id", session.user.id).maybeSingle();
+  const r = await sb.from("users").select("id, organisation_id, name, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
   employee = r.data;
+  isManager = !!r.data?.is_manager;
 } catch {}
 
 if (!employee) {
@@ -33,6 +35,7 @@ const currentOrgId = employee.organisation_id;
 renderTopbar({
   session,
   isDeveloper,
+  isManager,
   adminRow,
   orgs: null,
   currentOrgId,

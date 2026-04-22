@@ -13,52 +13,16 @@
       <div id="notice" class="notice hidden"></div>
 
       <div class="tabs">
-        <button class="tab active" data-tab="dashboard">Dashboard</button>
-        <button class="tab" data-tab="employees">Employees</button>
+        <button class="tab active" data-tab="employees">Employees</button>
         <button class="tab" data-tab="departments">Departments</button>
         <button class="tab" data-tab="org">Organisation</button>
         <button class="tab" data-tab="management">Management</button>
       </div>
 
       <!-- ============================================================ -->
-      <!-- Dashboard tab (manager view)                                 -->
-      <!-- ============================================================ -->
-      <section id="tab-dashboard" class="tab-panel">
-        <h2 style="margin:0 0 4px">My Team</h2>
-        <p class="muted mb-md" id="mgr-week-label"></p>
-
-        <div class="dash-charts" style="justify-content:flex-start">
-          <div class="card dash-chart-card">
-            <h3 style="margin:0 0 12px;text-align:center">Timesheets Submitted</h3>
-            <div class="donut-wrap" id="mgr-donut"></div>
-            <div id="mgr-legend" class="dash-legend"></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 style="margin:0 0 12px">My Employees</h3>
-          <div style="overflow-x:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Department</th>
-                  <th>Status</th>
-                  <th>Hours</th>
-                </tr>
-              </thead>
-              <tbody id="mgr-emp-body">
-                <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================================ -->
       <!-- Employees tab                                                -->
       <!-- ============================================================ -->
-      <section id="tab-employees" class="tab-panel" style="display:none">
+      <section id="tab-employees" class="tab-panel">
         <div class="card">
           <div class="row-flex mb-md">
             <button id="add-employee-btn">+ Add employee</button>
