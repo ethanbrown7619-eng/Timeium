@@ -54,9 +54,11 @@ if (urlWeek) {
   if (!isNaN(parsed)) weekStart = getMonday(parsed);
 }
 let timesheetId = null;
+let tsStatus = "draft";
 let entries = [];
 let jobs = [];
 let tasks = [];
+let deptCodes = [];
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -99,7 +101,6 @@ async function loadLookups() {
       .from("jobs")
       .select("id, job_code, description, status")
       .eq("organisation_id", currentOrgId)
-      .eq("status", "ACTIVE")
       .order("job_code")
       .range(from, from + PAGE - 1);
     if (error) break;
@@ -116,6 +117,14 @@ async function loadLookups() {
     .eq("status", "ACTIVE")
     .order("task_code");
   tasks = taskData || [];
+
+  const { data: deptData } = await sb
+    .from("department_codes")
+    .select("id, code, description, status")
+    .eq("organisation_id", currentOrgId)
+    .eq("status", "ACTIVE")
+    .order("code");
+  deptCodes = deptData || [];
 }
 
 /* ---------------------------------------------------------------- load timesheet */
@@ -125,7 +134,7 @@ async function loadWeek() {
 
   // Render date headers
   const dateRow = document.getElementById("date-row");
-  dateRow.innerHTML = `<td colspan="3"></td>` +
+  dateRow.innerHTML = `<td colspan="5"></td>` +
     DAYS.map((_, i) => `<td class="day-col">${fmtShortDate(addDays(weekStart, i))}</td>`).join("") +
     `<td class="day-col"></td><td></td>`;
 
@@ -144,14 +153,15 @@ async function loadWeek() {
   // Load status
   try {
     const { data } = await sb.from("timesheets").select("status").eq("id", timesheetId).maybeSingle();
-    document.getElementById("ts-status").textContent = data?.status ? `Status: ${data.status}` : "";
+    tsStatus = data?.status || "draft";
+    document.getElementById("ts-status").textContent = tsStatus ? `Status: ${tsStatus}` : "";
   } catch {}
 
   // Load entries
   try {
     const { data, error } = await sb
       .from("timesheet_entries")
-      .select("id, job_id, task_id, description, sort_order, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+      .select("id, job_id, task_id, dept_code_id, description, sort_order, job_status_snapshot, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
       .eq("timesheet_id", timesheetId)
       .order("sort_order")
       .order("id");
@@ -171,15 +181,19 @@ async function loadWeek() {
 function renderGrid() {
   const body = document.getElementById("ts-body");
 
+  // Determine if this is a submitted/approved timesheet (show snapshots)
+  const isSubmitted = tsStatus === "submitted" || tsStatus === "approved";
+  const activeJobs = jobs.filter((j) => j.status === "ACTIVE");
+
   if (!entries.length) {
-    body.innerHTML = `<tr><td colspan="12" class="muted small" style="text-align:center">No tasks yet — click "+ Add task" to start.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="14" class="muted small" style="text-align:center">No tasks yet — click "+ Add task" to start.</td></tr>`;
     updateTotals();
     return;
   }
 
   body.innerHTML = entries.map((e, idx) => {
     const job = jobs.find((j) => j.id === e.job_id);
-    const task = tasks.find((t) => t.id === e.task_id);
+    const jobStatus = isSubmitted ? (e.job_status_snapshot || job?.status || "") : (job?.status || "");
     const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
 
     return `
@@ -189,6 +203,15 @@ function renderGrid() {
             <option value="">(select job)</option>
             ${jobs.map((j) =>
               `<option value="${j.id}"${j.id === e.job_id ? " selected" : ""}>${escapeHtml(j.job_code)}</option>`
+            ).join("")}
+          </select>
+        </td>
+        <td><span class="small status-badge status-${jobStatus.toLowerCase()}">${escapeHtml(jobStatus)}</span></td>
+        <td>
+          <select class="dept-select" style="width:100%">
+            <option value="">(none)</option>
+            ${deptCodes.map((dc) =>
+              `<option value="${dc.id}"${dc.id === e.dept_code_id ? " selected" : ""}>${escapeHtml(dc.code)}</option>`
             ).join("")}
           </select>
         </td>
@@ -224,6 +247,16 @@ function renderGrid() {
       const row = e.target.closest("tr");
       const idx = Number(row.dataset.idx);
       entries[idx].job_id = sel.value ? Number(sel.value) : null;
+      saveEntry(entries[idx]);
+      renderGrid();
+    });
+  });
+
+  body.querySelectorAll(".dept-select").forEach((sel) => {
+    sel.addEventListener("change", (e) => {
+      const row = e.target.closest("tr");
+      const idx = Number(row.dataset.idx);
+      entries[idx].dept_code_id = sel.value ? Number(sel.value) : null;
       saveEntry(entries[idx]);
     });
   });
@@ -302,6 +335,7 @@ async function saveEntry(entry) {
   const update = {
     job_id: entry.job_id,
     task_id: entry.task_id,
+    dept_code_id: entry.dept_code_id,
     description: entry.description || null,
   };
   for (const d of DAYS) {

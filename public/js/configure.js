@@ -43,21 +43,29 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
-    document.getElementById("tab-jobs").style.display  = activeTab === "jobs"  ? "" : "none";
-    document.getElementById("tab-tasks").style.display = activeTab === "tasks" ? "" : "none";
+    document.getElementById("tab-jobs").style.display      = activeTab === "jobs"      ? "" : "none";
+    document.getElementById("tab-tasks").style.display     = activeTab === "tasks"     ? "" : "none";
+    document.getElementById("tab-deptcodes").style.display = activeTab === "deptcodes" ? "" : "none";
   });
 });
 
 /* ======================================================================
- * Shared kit that both Jobs and Tasks use: a generic controller factory.
+ * Shared controller factory for Jobs, Tasks, and Dept Codes.
  * ====================================================================== */
 
+const DEPT_CODE_STATUSES = ["ACTIVE","INACTIVE"];
+
 function makeController(kind) {
-  const isJobs = kind === "jobs";
-  const STATUSES = isJobs ? JOB_STATUSES : TASK_STATUSES;
-  const codeField = isJobs ? "job_code" : "task_code";
-  const table = isJobs ? "jobs" : "tasks";
-  const prefix = isJobs ? "jobs" : "tasks";
+  const CONFIG = {
+    jobs:      { statuses: JOB_STATUSES,       codeField: "job_code",  table: "jobs",             prefix: "jobs",      webhookKind: "jobs" },
+    tasks:     { statuses: TASK_STATUSES,       codeField: "task_code", table: "tasks",            prefix: "tasks",     webhookKind: "tasks" },
+    deptcodes: { statuses: DEPT_CODE_STATUSES,  codeField: "code",      table: "department_codes", prefix: "deptcodes", webhookKind: "dept_codes" },
+  };
+  const c = CONFIG[kind];
+  const STATUSES  = c.statuses;
+  const codeField = c.codeField;
+  const table     = c.table;
+  const prefix    = c.prefix;
 
   const state = {
     rows: [],
@@ -232,12 +240,19 @@ function makeController(kind) {
 
   /* ---------- Add form ---------- */
 
-  document.getElementById(`add-${kind.slice(0, -1)}-form`).addEventListener("submit", async (e) => {
+  const ADD_FORM_IDS = {
+    jobs:      { form: "add-job-form",      code: "aj-code",  desc: "aj-desc",  status: "aj-status" },
+    tasks:     { form: "add-task-form",     code: "at-code",  desc: "at-desc",  status: "at-status" },
+    deptcodes: { form: "add-deptcode-form", code: "adc-code", desc: "adc-desc", status: "adc-status" },
+  };
+  const formIds = ADD_FORM_IDS[kind];
+
+  document.getElementById(formIds.form).addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
-    const codeInput   = document.getElementById(isJobs ? "aj-code"   : "at-code");
-    const descInput   = document.getElementById(isJobs ? "aj-desc"   : "at-desc");
-    const statusInput = document.getElementById(isJobs ? "aj-status" : "at-status");
+    const codeInput   = document.getElementById(formIds.code);
+    const descInput   = document.getElementById(formIds.desc);
+    const statusInput = document.getElementById(formIds.status);
     const code = codeInput.value.trim();
     const desc = descInput.value.trim() || null;
     const status = statusInput.value;
@@ -261,7 +276,7 @@ function makeController(kind) {
   /* ---------- Import config (webhook) ---------- */
 
   function webhookUrl() {
-    return `${cfg.supabaseUrl}/rest/v1/rpc/ingest_${kind}_via_webhook`;
+    return `${cfg.supabaseUrl}/rest/v1/rpc/ingest_${c.webhookKind}_via_webhook`;
   }
 
   async function loadImportConfig() {
@@ -270,12 +285,12 @@ function makeController(kind) {
     try {
       const { data, error } = await sb
         .from("organisations")
-        .select(`${kind}_webhook_key, ${kind}_import_map`)
+        .select(`${c.webhookKind}_webhook_key, ${c.webhookKind}_import_map`)
         .eq("id", currentOrgId)
         .maybeSingle();
       if (error) throw error;
-      document.getElementById(`${prefix}-api-key`).value = data?.[`${kind}_webhook_key`] || "";
-      const map = data?.[`${kind}_import_map`] || {};
+      document.getElementById(`${prefix}-api-key`).value = data?.[`${c.webhookKind}_webhook_key`] || "";
+      const map = data?.[`${c.webhookKind}_import_map`] || {};
       document.getElementById(`${prefix}-mp-code`).value   = map.code_column        || "";
       document.getElementById(`${prefix}-mp-desc`).value   = map.description_column || "";
       document.getElementById(`${prefix}-mp-status`).value = map.status_column      || "";
@@ -335,7 +350,7 @@ function makeController(kind) {
     };
     try {
       const { error } = await sb.rpc("save_import_mapping", {
-        p_kind: kind, p_mapping: mapping, p_org_id: currentOrgId,
+        p_kind: c.webhookKind, p_mapping: mapping, p_org_id: currentOrgId,
       });
       if (error) throw error;
       notice("Mapping saved", "success");
@@ -349,7 +364,7 @@ function makeController(kind) {
     const existing = document.getElementById(`${prefix}-api-key`).value;
     if (existing && !confirm("Replace the existing key? Any flows using the old key will stop working until updated.")) return;
     try {
-      const { data, error } = await sb.rpc("rotate_import_key", { p_kind: kind, p_org_id: currentOrgId });
+      const { data, error } = await sb.rpc("rotate_import_key", { p_kind: c.webhookKind, p_org_id: currentOrgId });
       if (error) throw error;
       document.getElementById(`${prefix}-api-key`).value = data;
       notice("New key generated", "success");
@@ -399,13 +414,16 @@ function makeController(kind) {
 
       for (const h of state.uploadedHeaders) {
         const hl = h.toLowerCase();
-        if (isJobs) {
+        if (kind === "jobs") {
           if (hl.includes("jobid") || hl.includes("job_code") || hl.includes("job number") || hl === "code" || hl === "id")
             document.getElementById(`${prefix}-up-code`).value = h;
-        } else {
+        } else if (kind === "tasks") {
           if (hl.includes("task") && (hl.includes("code") || hl.includes("id")))
             document.getElementById(`${prefix}-up-code`).value = h;
           else if (hl === "code" || hl === "id")
+            document.getElementById(`${prefix}-up-code`).value = h;
+        } else if (kind === "deptcodes") {
+          if (hl.includes("dept") || hl.includes("department") || hl === "code")
             document.getElementById(`${prefix}-up-code`).value = h;
         }
         if (hl.includes("desc") || hl.includes("title"))
@@ -545,8 +563,9 @@ function makeController(kind) {
 
 /* ---------------------------------------------------------------- boot */
 
-const jobsCtl  = makeController("jobs");
-const tasksCtl = makeController("tasks");
+const jobsCtl      = makeController("jobs");
+const tasksCtl     = makeController("tasks");
+const deptCodesCtl = makeController("deptcodes");
 
 // Generic copy-buttons (for both panels)
 document.querySelectorAll("[data-copy]").forEach((btn) => {
@@ -566,6 +585,7 @@ document.querySelectorAll("[data-copy]").forEach((btn) => {
 function reloadAll() {
   jobsCtl.load();
   tasksCtl.load();
+  deptCodesCtl.load();
 }
 
 reloadAll();

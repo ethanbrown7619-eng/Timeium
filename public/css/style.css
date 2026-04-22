@@ -470,6 +470,13 @@ dialog::backdrop {
 .status-submitted { background: #e8f0fe; color: #1a56c7; }
 .status-approved { background: #e6f4ea; color: var(--success); }
 .status-rejected { background: var(--flag); color: var(--danger); }
+.status-active { background: #e6f4ea; color: var(--success); }
+.status-completed { background: var(--surface-alt); color: var(--text-muted); }
+.status-dispatched { background: #e8f0fe; color: #1a56c7; }
+.status-invoiced { background: #f3e8ff; color: #7c3aed; }
+.status-partial { background: #fef4e5; color: #b45309; }
+.status-dep { background: #fde8e8; color: var(--danger); }
+.status-inactive { background: var(--surface-alt); color: var(--text-muted); }
 
 /* -------- jobs / tasks import helpers -------- */
 

@@ -15,6 +15,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="jobs">Jobs</button>
         <button class="tab" data-tab="tasks">Tasks</button>
+        <button class="tab" data-tab="deptcodes">Dept Codes</button>
       </div>
 
       <!-- ============================================================ -->
@@ -362,6 +363,177 @@
               <label>Status value mapping</label>
               <div id="tasks-status-map-rows"></div>
               <button type="button" class="ghost" id="tasks-add-status-row">+ Add mapping</button>
+              <div class="row-flex mt-md">
+                <button type="submit">Save mapping</button>
+              </div>
+            </form>
+          </details>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Dept Codes tab                                               -->
+      <!-- ============================================================ -->
+      <section id="tab-deptcodes" class="tab-panel" style="display:none">
+        <div class="tabs sub">
+          <button class="tab active" data-deptcodes-view="view">View all</button>
+          <button class="tab" data-deptcodes-view="add">Add</button>
+          <button class="tab" data-deptcodes-view="import">Import</button>
+        </div>
+
+        <!-- Dept Codes: View all -->
+        <div id="deptcodes-view" class="sub-panel">
+          <div class="card">
+            <div class="row-flex mb-md">
+              <input id="deptcodes-search" placeholder="Search code or description…" style="width:320px" />
+              <select id="deptcodes-status-filter">
+                <option value="">All</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+              <div class="grow"></div>
+              <span id="deptcodes-summary" class="muted small"></span>
+            </div>
+            <div style="overflow-x:auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Last synced</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="deptcodes-body">
+                  <tr><td colspan="6" class="muted small" style="text-align:center">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="deptcodes-pagination" class="pagination"></div>
+          </div>
+        </div>
+
+        <!-- Dept Codes: Add -->
+        <div id="deptcodes-add" class="sub-panel" style="display:none">
+          <div class="card" style="max-width:560px">
+            <h2 style="margin-top:0">Add a department code</h2>
+            <form id="add-deptcode-form">
+              <div class="mb-sm">
+                <label for="adc-code">Code *</label>
+                <input id="adc-code" required style="width:100%" />
+              </div>
+              <div class="mb-sm">
+                <label for="adc-desc">Description</label>
+                <input id="adc-desc" style="width:100%" placeholder="Used for searching in the timesheet" />
+              </div>
+              <div class="mb-md">
+                <label for="adc-status">Status</label>
+                <select id="adc-status" style="width:100%">
+                  <option value="ACTIVE" selected>ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+              <button type="submit">Add dept code</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Dept Codes: Import -->
+        <div id="deptcodes-import" class="sub-panel" style="display:none">
+          <div class="card" style="max-width:780px">
+            <h2 style="margin-top:0">Upload from Excel</h2>
+            <p class="muted">
+              Drop an <code>.xlsx</code> or <code>.xlsm</code> file here.
+            </p>
+            <div id="deptcodes-drop-zone" class="drop-zone">
+              <span class="drop-zone-text">Drag &amp; drop your Excel file here, or click to browse</span>
+              <input type="file" id="deptcodes-file-input" accept=".xlsx,.xlsm,.csv" style="display:none" />
+            </div>
+            <div id="deptcodes-upload-preview" style="display:none">
+              <div class="row-flex mb-sm">
+                <strong id="deptcodes-upload-filename"></strong>
+                <span id="deptcodes-upload-row-count" class="muted small"></span>
+                <div class="grow"></div>
+                <button type="button" class="ghost" id="deptcodes-upload-clear">Clear</button>
+              </div>
+              <div class="mb-sm">
+                <label>Detected columns</label>
+                <div id="deptcodes-upload-columns" class="small muted"></div>
+              </div>
+              <h3>Column mapping</h3>
+              <div class="row-flex mb-sm">
+                <div class="grow">
+                  <label for="deptcodes-up-code">Code column *</label>
+                  <select id="deptcodes-up-code"></select>
+                </div>
+                <div class="grow">
+                  <label for="deptcodes-up-desc">Description column</label>
+                  <select id="deptcodes-up-desc"><option value="">(none)</option></select>
+                </div>
+                <div class="grow">
+                  <label for="deptcodes-up-status">Status column</label>
+                  <select id="deptcodes-up-status"><option value="">(none)</option></select>
+                </div>
+              </div>
+              <label>Status value mapping</label>
+              <div id="deptcodes-upload-status-map"></div>
+              <button type="button" class="ghost" id="deptcodes-upload-add-status-row">+ Add mapping</button>
+              <div class="row-flex mt-md">
+                <button type="button" id="deptcodes-upload-import-btn">Import rows</button>
+                <span id="deptcodes-upload-progress" class="muted small"></span>
+              </div>
+            </div>
+          </div>
+
+          <details class="card" style="max-width:780px">
+            <summary><strong>Advanced: Power Automate webhook</strong></summary>
+            <p class="muted mt-sm">
+              For automated syncing via Power Automate or Office Scripts.
+            </p>
+            <h3>1. Webhook credentials</h3>
+            <div class="mb-md">
+              <label>Webhook URL</label>
+              <div class="row-flex" style="gap:6px">
+                <input id="deptcodes-webhook-url" readonly style="flex:1;font-family:monospace;font-size:12px" />
+                <button type="button" class="ghost" data-copy="deptcodes-webhook-url">Copy</button>
+              </div>
+            </div>
+            <div class="mb-md">
+              <label>Supabase anon key</label>
+              <div class="row-flex" style="gap:6px">
+                <input id="deptcodes-anon-key" readonly style="flex:1;font-family:monospace;font-size:12px" />
+                <button type="button" class="ghost" data-copy="deptcodes-anon-key">Copy</button>
+              </div>
+            </div>
+            <div class="mb-md">
+              <label>Temporium API key</label>
+              <div class="row-flex" style="gap:6px">
+                <input id="deptcodes-api-key" readonly style="flex:1;font-family:monospace;font-size:12px" placeholder="Not generated yet" />
+                <button type="button" class="ghost" data-copy="deptcodes-api-key">Copy</button>
+                <button type="button" id="deptcodes-rotate-key-btn">Generate / rotate</button>
+              </div>
+            </div>
+            <h3>2. Column mapping</h3>
+            <form id="deptcodes-mapping-form">
+              <div class="row-flex mb-sm">
+                <div class="grow">
+                  <label for="deptcodes-mp-code">Code column *</label>
+                  <input id="deptcodes-mp-code" placeholder="e.g. Dept Code" />
+                </div>
+                <div class="grow">
+                  <label for="deptcodes-mp-desc">Description column</label>
+                  <input id="deptcodes-mp-desc" placeholder="e.g. Description" />
+                </div>
+                <div class="grow">
+                  <label for="deptcodes-mp-status">Status column</label>
+                  <input id="deptcodes-mp-status" placeholder="e.g. Status" />
+                </div>
+              </div>
+              <label>Status value mapping</label>
+              <div id="deptcodes-status-map-rows"></div>
+              <button type="button" class="ghost" id="deptcodes-add-status-row">+ Add mapping</button>
               <div class="row-flex mt-md">
                 <button type="submit">Save mapping</button>
               </div>
