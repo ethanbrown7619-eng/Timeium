@@ -12,40 +12,80 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <h2 style="margin:0 0 4px">Admin Dashboard</h2>
-      <p class="muted mb-md" id="week-label"></p>
-
-      <div class="dash-charts">
-        <div class="card dash-chart-card">
-          <h3 style="margin:0 0 12px;text-align:center">Departments Submitted</h3>
-          <div class="donut-wrap" id="dept-donut"></div>
-          <div id="dept-legend" class="dash-legend"></div>
-        </div>
-        <div class="card dash-chart-card">
-          <h3 style="margin:0 0 12px;text-align:center">Employees Submitted</h3>
-          <div class="donut-wrap" id="emp-donut"></div>
-          <div id="emp-legend" class="dash-legend"></div>
-        </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="infusion">Infusion Export</button>
       </div>
 
-      <div class="card">
-        <h3 style="margin:0 0 12px">All Employees</h3>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Department</th>
-                <th>Status</th>
-                <th>Hours</th>
-              </tr>
-            </thead>
-            <tbody id="emp-body">
-              <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
-            </tbody>
-          </table>
+      <!-- ==================== Dashboard ==================== -->
+      <section id="tab-dashboard" class="tab-panel">
+        <h2 style="margin:0 0 4px">Admin Dashboard</h2>
+        <p class="muted mb-md" id="week-label"></p>
+
+        <div class="dash-charts">
+          <div class="card dash-chart-card">
+            <h3 style="margin:0 0 12px;text-align:center">Departments Submitted</h3>
+            <div class="donut-wrap" id="dept-donut"></div>
+            <div id="dept-legend" class="dash-legend"></div>
+          </div>
+          <div class="card dash-chart-card">
+            <h3 style="margin:0 0 12px;text-align:center">Employees Submitted</h3>
+            <div class="donut-wrap" id="emp-donut"></div>
+            <div id="emp-legend" class="dash-legend"></div>
+          </div>
         </div>
-      </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 12px">All Employees</h3>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Status</th>
+                  <th>Hours</th>
+                </tr>
+              </thead>
+              <tbody id="emp-body">
+                <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Infusion Export ==================== -->
+      <section id="tab-infusion" class="tab-panel" style="display:none">
+        <h2 style="margin:0 0 4px">Infusion Export</h2>
+        <p class="muted mb-md">Generate an Excel file formatted for Infusion import.</p>
+
+        <div class="card" style="max-width:720px">
+          <div class="row-flex mb-md">
+            <button class="ghost" id="inf-prev">←</button>
+            <h3 id="inf-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+            <button class="ghost" id="inf-next">→</button>
+          </div>
+
+          <div class="row-flex mb-md">
+            <label class="row-flex small muted" style="gap:4px;margin:0">
+              <input type="checkbox" id="inf-include-drafts" /> Include draft timesheets
+            </label>
+            <div class="grow"></div>
+            <span id="inf-summary" class="muted small"></span>
+          </div>
+
+          <div id="inf-preview" style="overflow-x:auto;max-height:400px;overflow-y:auto;margin-bottom:16px">
+            <p class="muted small" style="text-align:center">Select a week and click Preview.</p>
+          </div>
+
+          <div class="row-flex">
+            <button id="inf-preview-btn" class="ghost">Preview</button>
+            <button id="inf-export-btn">Export to Excel</button>
+            <span id="inf-status" class="muted small"></span>
+          </div>
+        </div>
+      </section>
     </main>
 
     <script type="module" src="/js/admin.js"></script>
