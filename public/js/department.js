@@ -125,7 +125,7 @@ async function loadDashboard() {
   if (!myTeam.length) {
     document.getElementById("mgr-emp-body").innerHTML =
       `<tr><td colspan="4" class="muted small" style="text-align:center">No employees in your departments.</td></tr>`;
-    renderDonut("mgr-donut", 0, 0, "#2e7d3a", "#e8e8e8");
+    renderDonut("mgr-donut", 0, 0, "#c2ff00", "#e8e8e8");
     document.getElementById("mgr-legend").innerHTML = `<span class="muted small">No team members found</span>`;
     return;
   }
@@ -161,9 +161,9 @@ async function loadDashboard() {
     return ts && (ts.status === "submitted" || ts.status === "approved");
   }).length;
 
-  renderDonut("mgr-donut", submittedCount, myTeam.length, "#2e7d3a", "#e8e8e8");
+  renderDonut("mgr-donut", submittedCount, myTeam.length, "#c2ff00", "#e8e8e8");
   document.getElementById("mgr-legend").innerHTML = `
-    <span class="legend-item"><span class="legend-dot" style="background:#2e7d3a"></span> Submitted (${submittedCount})</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submittedCount})</span>
     <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Not submitted (${myTeam.length - submittedCount})</span>
   `;
 

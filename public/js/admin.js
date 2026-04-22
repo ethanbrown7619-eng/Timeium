@@ -131,9 +131,9 @@ async function loadDashboard() {
     const ts = tsMap[e.id];
     return ts && (ts.status === "submitted" || ts.status === "approved");
   });
-  renderDonut("emp-donut", submittedEmps.length, employees.length, "#2e7d3a", "#e8e8e8");
+  renderDonut("emp-donut", submittedEmps.length, employees.length, "#c2ff00", "#e8e8e8");
   document.getElementById("emp-legend").innerHTML = `
-    <span class="legend-item"><span class="legend-dot" style="background:#2e7d3a"></span> Submitted (${submittedEmps.length})</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submittedEmps.length})</span>
     <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Not submitted (${employees.length - submittedEmps.length})</span>
   `;
 
