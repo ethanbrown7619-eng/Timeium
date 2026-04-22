@@ -48,7 +48,7 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-tasks").style.display     = activeTab === "tasks"     ? "" : "none";
     document.getElementById("tab-deptcodes").style.display = activeTab === "deptcodes" ? "" : "none";
     document.getElementById("tab-settings").style.display  = activeTab === "settings"  ? "" : "none";
-    if (activeTab === "settings") loadWorkflowSetting();
+    if (activeTab === "settings") loadSettings();
   });
 });
 
@@ -584,31 +584,63 @@ function makeController(kind) {
   return { load, loadImportConfig };
 }
 
-/* ---------------------------------------------------------------- settings: approval workflow */
+/* ---------------------------------------------------------------- settings */
 
-async function loadWorkflowSetting() {
+const SETTINGS_FIELDS = "approval_workflow, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time";
+
+async function loadSettings() {
   if (!currentOrgId) return;
   try {
     const { data, error } = await sb
       .from("organisations")
-      .select("approval_workflow")
+      .select(SETTINGS_FIELDS)
       .eq("id", currentOrgId)
       .maybeSingle();
     if (error) throw error;
-    const val = data?.approval_workflow || "manager_then_admin";
-    const radio = document.querySelector(`input[name="approval_workflow"][value="${val}"]`);
+    if (!data) return;
+
+    // Approval workflow
+    const wf = data.approval_workflow || "manager_then_admin";
+    const radio = document.querySelector(`input[name="approval_workflow"][value="${wf}"]`);
     if (radio) radio.checked = true;
+
+    // Deadline
+    document.getElementById("deadline-week").value = data.deadline_week || "following_week";
+    document.getElementById("deadline-day").value = data.deadline_day || "monday";
+    document.getElementById("deadline-time").value = (data.deadline_time || "08:00").slice(0, 5);
+    updateDeadlinePreview();
+
+    // Notifications
+    document.getElementById("notify-overdue").checked = !!data.notify_overdue;
+    document.getElementById("notify-reminder").checked = !!data.notify_reminder;
+    document.getElementById("reminder-day").value = data.reminder_day || "friday";
+    document.getElementById("reminder-time").value = (data.reminder_time || "09:00").slice(0, 5);
+    document.getElementById("reminder-schedule").style.display = data.notify_reminder ? "" : "none";
   } catch (err) {
-    notice(err.message || "Failed to load setting", "error");
+    notice(err.message || "Failed to load settings", "error");
   }
 }
 
+function updateDeadlinePreview() {
+  const week = document.getElementById("deadline-week").value;
+  const day = document.getElementById("deadline-day").value;
+  const time = document.getElementById("deadline-time").value || "08:00";
+  const weekLabel = week === "this_week" ? "the same week" : "the following week";
+  const dayLabel = day.charAt(0).toUpperCase() + day.slice(1);
+  document.getElementById("deadline-preview").textContent =
+    `Timesheets are due by ${dayLabel} at ${time} of ${weekLabel}.`;
+}
+
+document.getElementById("deadline-week").addEventListener("change", updateDeadlinePreview);
+document.getElementById("deadline-day").addEventListener("change", updateDeadlinePreview);
+document.getElementById("deadline-time").addEventListener("input", updateDeadlinePreview);
+
+// Approval workflow save
 document.getElementById("save-workflow-btn").addEventListener("click", async () => {
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
   const selected = document.querySelector('input[name="approval_workflow"]:checked');
   if (!selected) return notice("Select an option", "warn");
-  const statusEl = document.getElementById("workflow-status");
   try {
     const { error } = await sb
       .from("organisations")
@@ -616,12 +648,66 @@ document.getElementById("save-workflow-btn").addEventListener("click", async () 
       .eq("id", currentOrgId);
     if (error) throw error;
     notice("Approval workflow saved", "success");
-    statusEl.textContent = "Saved";
-    setTimeout(() => statusEl.textContent = "", 3000);
+    flashStatus("workflow-status");
   } catch (err) {
     notice(err.message || "Save failed", "error");
   }
 });
+
+// Deadline save
+document.getElementById("save-deadline-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    const { error } = await sb
+      .from("organisations")
+      .update({
+        deadline_week: document.getElementById("deadline-week").value,
+        deadline_day: document.getElementById("deadline-day").value,
+        deadline_time: document.getElementById("deadline-time").value || "08:00",
+      })
+      .eq("id", currentOrgId);
+    if (error) throw error;
+    notice("Deadline saved", "success");
+    flashStatus("deadline-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
+// Notification toggle
+document.getElementById("notify-reminder").addEventListener("change", (e) => {
+  document.getElementById("reminder-schedule").style.display = e.target.checked ? "" : "none";
+});
+
+// Notifications save
+document.getElementById("save-notifications-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    const { error } = await sb
+      .from("organisations")
+      .update({
+        notify_overdue: document.getElementById("notify-overdue").checked,
+        notify_reminder: document.getElementById("notify-reminder").checked,
+        reminder_day: document.getElementById("reminder-day").value,
+        reminder_time: document.getElementById("reminder-time").value || "09:00",
+      })
+      .eq("id", currentOrgId);
+    if (error) throw error;
+    notice("Notification settings saved", "success");
+    flashStatus("notifications-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
+function flashStatus(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = "Saved";
+  setTimeout(() => el.textContent = "", 3000);
+}
 
 /* ---------------------------------------------------------------- boot */
 

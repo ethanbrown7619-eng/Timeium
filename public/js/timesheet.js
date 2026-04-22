@@ -46,6 +46,7 @@ renderTopbar({
 /* ---------------------------------------------------------------- state */
 
 const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
+const DAY_NAMES = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
 let weekStart = null;
 let timesheetId = null;
 let tsStatus = "draft";
@@ -54,6 +55,7 @@ let jobs = [];
 let tasks = [];
 let deptCodes = [];
 let calMonth = new Date();
+let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -100,9 +102,22 @@ document.getElementById("back-to-hub").addEventListener("click", () => showHub()
 /* ---------------------------------------------------------------- current week card */
 
 function getDeadline() {
-  // Next Monday 8am
-  const deadline = addDays(thisMonday, 7);
-  deadline.setHours(8, 0, 0, 0);
+  const targetDayIdx = DAY_NAMES.indexOf(orgDeadline.day);
+  const [hh, mm] = (orgDeadline.time || "08:00").split(":").map(Number);
+
+  let base;
+  if (orgDeadline.week === "this_week") {
+    base = new Date(thisMonday);
+  } else {
+    base = addDays(thisMonday, 7);
+  }
+
+  // base is a Monday; offset to the target day (Mon=1 in JS getDay)
+  const monIdx = 1;
+  let dayOffset = targetDayIdx - monIdx;
+  if (dayOffset < 0) dayOffset += 7;
+  const deadline = addDays(base, dayOffset);
+  deadline.setHours(hh || 8, mm || 0, 0, 0);
   return deadline;
 }
 
@@ -791,9 +806,26 @@ document.getElementById("import-last-week").addEventListener("click", async () =
   }
 });
 
+/* ---------------------------------------------------------------- load org deadline settings */
+
+async function loadOrgDeadline() {
+  try {
+    const { data } = await sb
+      .from("organisations")
+      .select("deadline_week, deadline_day, deadline_time")
+      .eq("id", currentOrgId)
+      .maybeSingle();
+    if (data) {
+      orgDeadline.week = data.deadline_week || "following_week";
+      orgDeadline.day = data.deadline_day || "monday";
+      orgDeadline.time = (data.deadline_time || "08:00").slice(0, 5);
+    }
+  } catch {}
+}
+
 /* ---------------------------------------------------------------- boot */
 
-await loadLookups();
+await Promise.all([loadLookups(), loadOrgDeadline()]);
 
 // If ?week= param, go straight to editor
 const urlWeek = new URLSearchParams(location.search).get("week");

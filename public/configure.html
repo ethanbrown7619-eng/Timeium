@@ -492,6 +492,7 @@
       <!-- Settings tab                                                 -->
       <!-- ============================================================ -->
       <section id="tab-settings" class="tab-panel" style="display:none">
+        <!-- Approval Workflow -->
         <div class="card" style="max-width:640px">
           <h2 style="margin-top:0">Approval Workflow</h2>
           <p class="muted">Choose how timesheets are routed for approval.</p>
@@ -517,6 +518,96 @@
           <div class="mt-md">
             <button id="save-workflow-btn">Save</button>
             <span id="workflow-status" class="muted small" style="margin-left:12px"></span>
+          </div>
+        </div>
+
+        <!-- Timesheet Deadline -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Timesheet Deadline</h2>
+          <p class="muted">When are timesheets due each week?</p>
+
+          <div class="settings-row">
+            <div class="settings-field">
+              <label for="deadline-week">Due week</label>
+              <select id="deadline-week" style="width:100%">
+                <option value="this_week">This week (same week as the timesheet)</option>
+                <option value="following_week">Following week</option>
+              </select>
+            </div>
+            <div class="settings-field">
+              <label for="deadline-day">Day</label>
+              <select id="deadline-day" style="width:100%">
+                <option value="monday">Monday</option>
+                <option value="tuesday">Tuesday</option>
+                <option value="wednesday">Wednesday</option>
+                <option value="thursday">Thursday</option>
+                <option value="friday">Friday</option>
+                <option value="saturday">Saturday</option>
+                <option value="sunday">Sunday</option>
+              </select>
+            </div>
+            <div class="settings-field">
+              <label for="deadline-time">Time</label>
+              <input type="time" id="deadline-time" value="08:00" style="width:100%" />
+            </div>
+          </div>
+
+          <p class="muted small mt-sm" id="deadline-preview"></p>
+
+          <div class="mt-md">
+            <button id="save-deadline-btn">Save</button>
+            <span id="deadline-status" class="muted small" style="margin-left:12px"></span>
+          </div>
+        </div>
+
+        <!-- Email Notifications -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Email Notifications</h2>
+          <p class="muted">Configure automated email reminders for timesheets.</p>
+
+          <div class="settings-checks">
+            <label class="settings-check">
+              <input type="checkbox" id="notify-overdue" />
+              <div>
+                <strong>Overdue notification</strong>
+                <span class="muted small">Send an email when a timesheet is past the deadline and hasn't been submitted.</span>
+              </div>
+            </label>
+
+            <label class="settings-check">
+              <input type="checkbox" id="notify-reminder" />
+              <div>
+                <strong>Submission reminder</strong>
+                <span class="muted small">Send a reminder email before the deadline if the timesheet hasn't been submitted yet.</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="reminder-schedule" style="display:none">
+            <p class="muted small mt-sm">When should the reminder be sent?</p>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="reminder-day">Day</label>
+                <select id="reminder-day" style="width:100%">
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                  <option value="sunday">Sunday</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="reminder-time">Time</label>
+                <input type="time" id="reminder-time" value="09:00" style="width:100%" />
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-md">
+            <button id="save-notifications-btn">Save</button>
+            <span id="notifications-status" class="muted small" style="margin-left:12px"></span>
           </div>
         </div>
       </section>

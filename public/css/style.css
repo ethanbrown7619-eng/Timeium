@@ -807,6 +807,48 @@ details.card[open] > summary::before { content: "▾ "; }
   font-size: 14px;
 }
 
+/* -------- settings form -------- */
+
+.settings-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.settings-field {
+  flex: 1;
+  min-width: 140px;
+}
+
+.settings-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.settings-check:hover { background: var(--surface-alt); }
+.settings-check:has(input:checked) {
+  border-color: var(--ptl-lime);
+  background: rgba(194, 255, 0, 0.06);
+}
+.settings-check input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--ptl-black);
+}
+.settings-check div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* primary button class */
 button.primary {
   background: var(--ptl-lime);
