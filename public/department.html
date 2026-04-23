@@ -17,6 +17,25 @@
 
       <div class="dash-charts" id="dept-donuts"></div>
 
+      <div class="card" id="leave-requests-card" style="display:none">
+        <h3 style="margin:0 0 12px">Pending Leave Requests</h3>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Type</th>
+                <th>Dates</th>
+                <th class="num">Hours/day</th>
+                <th>Reason</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="pending-leave-body"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card">
         <h3 style="margin:0 0 12px" id="emp-table-title">Employees</h3>
         <div style="overflow-x:auto">

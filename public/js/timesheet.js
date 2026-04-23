@@ -98,18 +98,37 @@ function showHub() {
   loadCurrentWeekCard();
   loadQuickStats();
   loadLeaveBalances();
+  loadMyLeaveRequests();
   renderCalendar();
 }
+
+let leaveTypes = [];
 
 async function loadLeaveBalances() {
   const card = document.getElementById("leave-balance-card");
   const body = document.getElementById("leave-balance-body");
   if (!employee?.id) return;
 
+  // Always load leave types (for the request dialog)
+  const { data: types } = await sb
+    .from("leave_types")
+    .select("id, name, code, unit, sort_order, active")
+    .eq("organisation_id", currentOrgId)
+    .eq("active", true)
+    .order("sort_order");
+  leaveTypes = types || [];
+
   const { data, error } = await sb
     .from("leave_balances")
     .select("balance, used_total, leave_types(name, unit, sort_order)")
     .eq("user_id", employee.id);
+
+  if (leaveTypes.length && (!data || !data.length)) {
+    // No balances seeded yet — still show the card so user can request leave
+    card.style.display = "";
+    body.innerHTML = `<div class="muted small" style="padding:8px">No balances yet. Contact admin to set up entitlements.</div>`;
+    return;
+  }
 
   if (error || !data?.length) {
     card.style.display = "none";
@@ -120,11 +139,6 @@ async function loadLeaveBalances() {
     .filter((r) => r.leave_types)
     .sort((a, b) => (a.leave_types.sort_order || 0) - (b.leave_types.sort_order || 0));
 
-  if (!rows.length) {
-    card.style.display = "none";
-    return;
-  }
-
   card.style.display = "";
   body.innerHTML = rows.map((r) => `
     <div class="leave-balance-tile">
@@ -134,6 +148,102 @@ async function loadLeaveBalances() {
     </div>
   `).join("");
 }
+
+async function loadMyLeaveRequests() {
+  const card = document.getElementById("my-leave-requests-card");
+  const body = document.getElementById("my-leave-requests-body");
+  if (!employee?.id) return;
+
+  const { data } = await sb
+    .from("leave_requests")
+    .select("id, start_date, end_date, hours_per_day, status, reason, leave_type_id, leave_types(name)")
+    .eq("user_id", employee.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (!data?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "";
+  body.innerHTML = data.map((r) => {
+    const statusClass = r.status === "approved" ? "chip-submitted" :
+                        r.status === "rejected" ? "chip-pending" :
+                        "chip-pending";
+    const canCancel = r.status === "pending";
+    const dateRange = r.start_date === r.end_date
+      ? r.start_date
+      : `${r.start_date} → ${r.end_date}`;
+    return `<tr data-id="${r.id}">
+      <td>${escapeHtml(r.leave_types?.name || "")}</td>
+      <td class="small">${dateRange}</td>
+      <td class="num">${r.hours_per_day}</td>
+      <td><span class="chip-dash ${statusClass}">${r.status}</span></td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td>${canCancel ? `<button class="ghost small cancel-lr-btn">Cancel</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".cancel-lr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!confirm("Cancel this leave request?")) return;
+      const { error } = await sb.from("leave_requests")
+        .update({ status: "cancelled" }).eq("id", id);
+      if (error) return notice(error.message, "error");
+      notice("Request cancelled", "success");
+      await loadMyLeaveRequests();
+    });
+  });
+}
+
+document.getElementById("request-leave-btn")?.addEventListener("click", () => {
+  const dialog = document.getElementById("leave-request-dialog");
+  const sel = document.getElementById("lr-type");
+  sel.innerHTML = leaveTypes.map((t) =>
+    `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  document.getElementById("lr-start").value = "";
+  document.getElementById("lr-end").value = "";
+  document.getElementById("lr-hours").value = "8";
+  document.getElementById("lr-reason").value = "";
+  document.getElementById("lr-skip-weekends").checked = true;
+  dialog.showModal();
+});
+
+document.getElementById("lr-cancel")?.addEventListener("click", () => {
+  document.getElementById("leave-request-dialog").close();
+});
+
+document.getElementById("leave-request-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const leaveTypeId = Number(document.getElementById("lr-type").value);
+  const startDate = document.getElementById("lr-start").value;
+  const endDate = document.getElementById("lr-end").value;
+  const hours = Number(document.getElementById("lr-hours").value);
+  const skipWeekends = document.getElementById("lr-skip-weekends").checked;
+  const reason = document.getElementById("lr-reason").value.trim() || null;
+
+  if (!startDate || !endDate) return notice("Pick start and end dates", "warn");
+  if (new Date(endDate) < new Date(startDate)) return notice("End date must be after start date", "warn");
+
+  const { error } = await sb.from("leave_requests").insert({
+    organisation_id: currentOrgId,
+    user_id: employee.id,
+    leave_type_id: leaveTypeId,
+    start_date: startDate,
+    end_date: endDate,
+    hours_per_day: hours,
+    skip_weekends: skipWeekends,
+    reason,
+    status: "pending",
+  });
+  if (error) return notice(error.message, "error");
+
+  document.getElementById("leave-request-dialog").close();
+  notice("Leave request submitted", "success");
+  await loadMyLeaveRequests();
+});
 
 function showEditor(ws) {
   weekStart = ws;

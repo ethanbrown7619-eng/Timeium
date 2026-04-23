@@ -237,6 +237,73 @@ async function loadDashboard() {
       await loadDashboard();
     });
   });
+
+  // Load pending leave requests for the team
+  await loadPendingLeaveRequests(myTeam.map((e) => e.id));
+}
+
+async function loadPendingLeaveRequests(teamUserIds) {
+  const card = document.getElementById("leave-requests-card");
+  const body = document.getElementById("pending-leave-body");
+  if (!card) return;
+
+  if (!teamUserIds?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  const { data } = await sb
+    .from("leave_requests")
+    .select("id, user_id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, users(name), leave_types(name)")
+    .eq("organisation_id", currentOrgId)
+    .eq("status", "pending")
+    .in("user_id", teamUserIds)
+    .order("created_at");
+
+  if (!data?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "";
+  body.innerHTML = data.map((r) => {
+    const dateRange = r.start_date === r.end_date
+      ? r.start_date
+      : `${r.start_date} → ${r.end_date}`;
+    return `<tr data-id="${r.id}">
+      <td>${escapeHtml(r.users?.name || "")}</td>
+      <td>${escapeHtml(r.leave_types?.name || "")}</td>
+      <td class="small">${dateRange}</td>
+      <td class="num">${r.hours_per_day}</td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td style="white-space:nowrap">
+        <button class="small approve-lr-btn">Approve</button>
+        <button class="ghost small reject-lr-btn">Reject</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".approve-lr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!confirm("Approve this leave request? The timesheet will be populated automatically.")) return;
+      const { error } = await sb.rpc("approve_leave_request", { p_request_id: id, p_note: null });
+      if (error) return notice(error.message, "error");
+      notice("Leave approved and timesheet populated", "success");
+      await loadDashboard();
+    });
+  });
+
+  body.querySelectorAll(".reject-lr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      const note = prompt("Reason for rejection (optional):") || null;
+      const { error } = await sb.rpc("reject_leave_request", { p_request_id: id, p_note: note });
+      if (error) return notice(error.message, "error");
+      notice("Leave rejected", "success");
+      await loadDashboard();
+    });
+  });
 }
 
 loadDashboard();
