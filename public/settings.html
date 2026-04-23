@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings · PTL Timesheet</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar">      <div class="brand">        <span class="brand-logo" aria-hidden="true">ptl</span>        <span class="brand-name">Timesheet</span>      </div>      <nav></nav>      <div class="grow"></div>    </header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <h2 style="margin:0 0 16px">My Settings</h2>
+
+      <div class="card" style="max-width:480px">
+        <h3 style="margin:0 0 12px">Account</h3>
+        <p class="muted small" style="margin:0 0 4px">Signed in as</p>
+        <p style="margin:0 0 16px"><strong id="me-email"></strong></p>
+
+        <p class="muted small" style="margin:0 0 4px">Name</p>
+        <p style="margin:0 0 8px"><strong id="me-name">—</strong></p>
+      </div>
+
+      <div class="card" style="max-width:480px">
+        <h3 style="margin:0 0 12px">Change password</h3>
+        <form id="pw-form">
+          <div class="mb-sm">
+            <label for="new-pw">New password</label>
+            <input id="new-pw" type="password" required minlength="6" autocomplete="new-password" style="width:100%" />
+          </div>
+          <div class="mb-md">
+            <label for="confirm-pw">Confirm password</label>
+            <input id="confirm-pw" type="password" required minlength="6" autocomplete="new-password" style="width:100%" />
+          </div>
+          <button type="submit" id="pw-btn">Update password</button>
+          <span id="pw-status" class="muted small" style="margin-left:12px"></span>
+        </form>
+      </div>
+    </main>
+
+    <script type="module">
+      import { getSupabase } from "/js/supabase-client.js";
+      import { notice, renderTopbar, escapeHtml } from "/js/shared.js";
+
+      const sb = await getSupabase();
+
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        location.replace("/signin.html");
+        throw new Error("not signed in");
+      }
+
+      let isDeveloper = false;
+      let adminRow = null;
+      let isManager = false;
+      let me = null;
+      try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
+      try {
+        const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
+        adminRow = r.data;
+      } catch {}
+      try {
+        const r = await sb.from("users").select("id, name, email, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
+        me = r.data;
+        isManager = !!me?.is_manager;
+      } catch {}
+
+      renderTopbar({
+        session,
+        isDeveloper,
+        isManager,
+        adminRow,
+        orgs: null,
+        currentOrgId: adminRow?.organisation_id || null,
+        onOrgChange: () => {},
+        active: "settings",
+      });
+
+      document.getElementById("me-email").textContent = session.user.email || "";
+      document.getElementById("me-name").textContent = me?.name || session.user.email || "";
+
+      document.getElementById("pw-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const pw = document.getElementById("new-pw").value;
+        const confirm = document.getElementById("confirm-pw").value;
+        const btn = document.getElementById("pw-btn");
+        const statusEl = document.getElementById("pw-status");
+
+        if (pw !== confirm) return notice("Passwords do not match", "error");
+        if (pw.length < 6) return notice("Password must be at least 6 characters", "error");
+
+        btn.disabled = true;
+        statusEl.textContent = "Saving…";
+
+        const { error } = await sb.auth.updateUser({ password: pw });
+        if (error) {
+          statusEl.textContent = "";
+          btn.disabled = false;
+          return notice(error.message || "Failed to update password", "error");
+        }
+
+        if (me?.id) {
+          await sb.from("users").update({ must_change_password: false }).eq("id", me.id);
+        }
+
+        document.getElementById("new-pw").value = "";
+        document.getElementById("confirm-pw").value = "";
+        statusEl.textContent = "Saved";
+        btn.disabled = false;
+        notice("Password updated", "success");
+        setTimeout(() => statusEl.textContent = "", 3000);
+      });
+    </script>
+  </body>
+</html>

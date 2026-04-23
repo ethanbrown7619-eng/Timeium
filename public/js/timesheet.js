@@ -97,7 +97,42 @@ function showHub() {
   document.querySelector(".container").classList.remove("ts-container");
   loadCurrentWeekCard();
   loadQuickStats();
+  loadLeaveBalances();
   renderCalendar();
+}
+
+async function loadLeaveBalances() {
+  const card = document.getElementById("leave-balance-card");
+  const body = document.getElementById("leave-balance-body");
+  if (!employee?.id) return;
+
+  const { data, error } = await sb
+    .from("leave_balances")
+    .select("balance, used_total, leave_types(name, unit, sort_order)")
+    .eq("user_id", employee.id);
+
+  if (error || !data?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  const rows = data
+    .filter((r) => r.leave_types)
+    .sort((a, b) => (a.leave_types.sort_order || 0) - (b.leave_types.sort_order || 0));
+
+  if (!rows.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "";
+  body.innerHTML = rows.map((r) => `
+    <div class="leave-balance-tile">
+      <div class="lb-name">${escapeHtml(r.leave_types.name)}</div>
+      <div class="lb-value">${Number(r.balance).toFixed(r.leave_types.unit === "days" ? 1 : 2)}<span class="lb-unit">${r.leave_types.unit === "days" ? "days" : "hrs"}</span></div>
+      <div class="lb-used">${Number(r.used_total).toFixed(1)} used</div>
+    </div>
+  `).join("");
 }
 
 function showEditor(ws) {

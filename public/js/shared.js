@@ -61,6 +61,7 @@ export function renderTopbar(opts) {
     { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
     { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
     { key: "configure",  href: "/configure.html",    label: "Configure",      show: isAdminOrDev },
+    { key: "settings",   href: "/settings.html",     label: "Settings",       show: true },
   ];
 
   const orgSwitcher =
@@ -152,14 +153,10 @@ export async function routeAfterAuth(sb) {
   }
 
   const isPrivileged = isDeveloper || !!adminRow;
+  const isLinked = !!claim?.claimed || !!claim?.already_linked;
 
-  if (isPrivileged) {
+  if (isPrivileged || isLinked) {
     location.replace("/timesheet.html");
-    return;
-  }
-
-  if (claim?.claimed) {
-    location.replace("/welcome.html");
     return;
   }
 

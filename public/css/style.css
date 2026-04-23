@@ -562,6 +562,40 @@ dialog::backdrop {
 /* -------- timesheet grid -------- */
 
 .ts-grid .day-weekend { background: rgba(0,0,0,0.04); }
+
+/* -------- leave balance card -------- */
+.leave-balance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.leave-balance-tile {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  background: var(--surface);
+}
+.leave-balance-tile .lb-name {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.leave-balance-tile .lb-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ptl-black);
+}
+.leave-balance-tile .lb-unit {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-left: 4px;
+  font-weight: 400;
+}
+.leave-balance-tile .lb-used {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
 .ts-grid th.day-holiday {
   position: relative;
 }
