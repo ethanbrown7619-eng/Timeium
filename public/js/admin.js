@@ -42,7 +42,12 @@ function getMonday(d) {
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
-function fmtDate(d) { return d.toISOString().slice(0, 10); }
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function fmtDMY(d) {
   const dd = String(d.getDate()).padStart(2, "0");

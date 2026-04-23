@@ -58,7 +58,12 @@ function getMonday(d) {
   dt.setHours(0, 0, 0, 0);
   return dt;
 }
-function fmtDate(d) { return d.toISOString().slice(0, 10); }
+function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
 function renderDonut(container, submitted, total, label) {
@@ -292,7 +297,7 @@ async function loadApprovedLeaveRequests(teamUserIds) {
     return;
   }
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = fmtDate(new Date());
   const { data } = await sb
     .from("leave_requests")
     .select("id, user_id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, users(name), leave_types(name)")
