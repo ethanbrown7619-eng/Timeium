@@ -47,6 +47,7 @@ if (!currentOrgId) {
 
 let employees = [];    // rows loaded from public.users
 let departments = [];  // { id, name, active, manager_id }
+let adminUserIds = new Set();
 let filter = {
   search: "",
   showInactive: false,
@@ -142,7 +143,7 @@ if (ctx.isDeveloper) {
 
 async function reloadAll() {
   if (!currentOrgId) return;
-  await Promise.all([loadDepartments(), loadEmployees()]);
+  await Promise.all([loadDepartments(), loadEmployees(), loadAdmins()]);
   renderEmployees();
   if (activeTab === "departments") renderDepartments();
   if (activeTab === "org") renderOrg();
@@ -153,7 +154,7 @@ async function loadEmployees() {
   const { data, error } = await sb
     .from("users")
     .select(
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id, is_manager, is_test"
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id, is_manager, is_test, auth_user_id"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
@@ -177,6 +178,16 @@ async function loadDepartments() {
     return;
   }
   departments = data || [];
+}
+
+async function loadAdmins() {
+  if (!currentOrgId) return;
+  const { data } = await sb
+    .from("admins")
+    .select("user_id")
+    .eq("organisation_id", currentOrgId)
+    .eq("role", "admin");
+  adminUserIds = new Set((data || []).map((r) => r.user_id));
 }
 
 /* ---------------------------------------------------------------- employees tab */
@@ -458,6 +469,7 @@ function openDialog(empId) {
   updateRateRef(emp?.department_id);
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
   document.getElementById("f-manager").checked = emp?.is_manager || false;
+  document.getElementById("f-admin").checked = emp?.auth_user_id ? adminUserIds.has(emp.auth_user_id) : false;
   if (ctx.isDeveloper) {
     document.getElementById("test-staff-wrap").classList.remove("hidden");
     document.getElementById("f-test").checked = emp?.is_test || false;
@@ -517,6 +529,39 @@ function openDialog(empId) {
 document.getElementById("cancel-edit").addEventListener("click", () =>
   document.getElementById("employee-dialog").close()
 );
+
+async function getEmpIdByEmail(email) {
+  if (!email) return null;
+  const { data } = await sb
+    .from("users")
+    .select("id")
+    .eq("organisation_id", currentOrgId)
+    .ilike("email", email)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+async function syncAdminRole(userId, wantAdmin) {
+  const { data: emp } = await sb
+    .from("users")
+    .select("auth_user_id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (!emp?.auth_user_id) return;
+
+  const isAdmin = adminUserIds.has(emp.auth_user_id);
+  if (wantAdmin && !isAdmin) {
+    if (!confirm("Are you sure you want to make this employee an admin?")) return;
+    await sb.from("admins").upsert(
+      { user_id: emp.auth_user_id, organisation_id: currentOrgId, role: "admin" },
+      { onConflict: "user_id" }
+    );
+  } else if (!wantAdmin && isAdmin) {
+    await sb.from("admins").delete()
+      .eq("user_id", emp.auth_user_id)
+      .eq("organisation_id", currentOrgId);
+  }
+}
 
 function friendlyConstraintMsg(error, payload) {
   const msg = error.message || "";
@@ -591,13 +636,18 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
     if (error) return notice(friendlyConstraintMsg(error, payload), "error");
 
     // Provision a login account with default password if employee has an email
-    const empId = Array.isArray(newEmp) ? newEmp[0]?.id : newEmp?.id;
-    if (payload.email && empId) {
-      const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: empId });
+    const newEmpId = Array.isArray(newEmp) ? newEmp[0]?.id : newEmp?.id;
+    if (payload.email && newEmpId) {
+      const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: newEmpId });
       if (provErr) console.warn("provision_employee_login:", provErr.message);
     }
     notice("Employee created", "success");
   }
+
+  // Sync admin role
+  const wantAdmin = document.getElementById("f-admin").checked;
+  const savedEmpId = empId || (await getEmpIdByEmail(payload.email));
+  if (savedEmpId) await syncAdminRole(savedEmpId, wantAdmin);
 
   document.getElementById("employee-dialog").close();
   await reloadAll();
