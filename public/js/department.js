@@ -1,6 +1,5 @@
-// PTL Timesheet — My Department dashboard.
-// Visible only to managers. Shows a donut chart of team submission rate
-// and a list of employees with their status for the current week.
+// PTL Timesheet — My Departments dashboard.
+// Managers see departments they manage; admins/developers see all departments.
 
 import { getSupabase } from "/js/supabase-client.js";
 import { notice, escapeHtml, renderTopbar } from "/js/shared.js";
@@ -15,6 +14,7 @@ if (!session) { location.replace("/signin.html"); throw new Error("not signed in
 let employee = null;
 let isDeveloper = false;
 let adminRow = null;
+let isManager = false;
 try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
 try {
   const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
@@ -23,11 +23,14 @@ try {
 try {
   const r = await sb.from("users").select("id, organisation_id, name, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
   employee = r.data;
+  isManager = !!employee?.is_manager;
 } catch {}
 
-if (!employee?.is_manager && !isDeveloper) {
+const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
+
+if (!isManager && !isAdminOrDev) {
   location.replace("/timesheet.html");
-  throw new Error("not a manager");
+  throw new Error("not a manager or admin");
 }
 
 const currentOrgId = employee?.organisation_id || adminRow?.organisation_id || null;
@@ -35,7 +38,7 @@ const currentOrgId = employee?.organisation_id || adminRow?.organisation_id || n
 renderTopbar({
   session,
   isDeveloper,
-  isManager: !!employee?.is_manager,
+  isManager,
   adminRow,
   orgs: null,
   currentOrgId,
@@ -58,27 +61,35 @@ function getMonday(d) {
 function fmtDate(d) { return d.toISOString().slice(0, 10); }
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
-function renderDonut(containerId, submitted, total, colorFill, colorEmpty) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
+function renderDonut(container, submitted, total, label) {
   const pct = total === 0 ? 0 : submitted / total;
   const radius = 70;
   const circumference = 2 * Math.PI * radius;
   const filled = circumference * pct;
   const empty = circumference - filled;
 
-  el.innerHTML = `
-    <svg viewBox="0 0 200 200" class="donut-svg">
-      <circle cx="100" cy="100" r="${radius}" fill="none" stroke="${colorEmpty}" stroke-width="18" />
-      <circle cx="100" cy="100" r="${radius}" fill="none" stroke="${colorFill}" stroke-width="18"
-        stroke-dasharray="${filled} ${empty}"
-        stroke-dashoffset="${circumference * 0.25}"
-        stroke-linecap="round"
-        style="transition: stroke-dasharray 0.6s ease" />
-      <text x="100" y="92" text-anchor="middle" class="donut-num">${submitted}/${total}</text>
-      <text x="100" y="116" text-anchor="middle" class="donut-pct">${Math.round(pct * 100)}%</text>
-    </svg>
+  const card = document.createElement("div");
+  card.className = "card dash-chart-card";
+  card.innerHTML = `
+    <h3 style="margin:0 0 12px;text-align:center">${escapeHtml(label)}</h3>
+    <div class="donut-wrap">
+      <svg viewBox="0 0 200 200" class="donut-svg">
+        <circle cx="100" cy="100" r="${radius}" fill="none" stroke="#e8e8e8" stroke-width="18" />
+        <circle cx="100" cy="100" r="${radius}" fill="none" stroke="#c2ff00" stroke-width="18"
+          stroke-dasharray="${filled} ${empty}"
+          stroke-dashoffset="${circumference * 0.25}"
+          stroke-linecap="round"
+          style="transition: stroke-dasharray 0.6s ease" />
+        <text x="100" y="92" text-anchor="middle" class="donut-num">${submitted}/${total}</text>
+        <text x="100" y="116" text-anchor="middle" class="donut-pct">${Math.round(pct * 100)}%</text>
+      </svg>
+    </div>
+    <div class="dash-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submitted})</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Pending (${total - submitted})</span>
+    </div>
   `;
+  container.appendChild(card);
 }
 
 /* ---------------------------------------------------------------- load */
@@ -91,28 +102,37 @@ async function loadDashboard() {
 
   const ws = fmtDate(thisMonday);
 
-  // Load departments managed by this user
-  const { data: departments } = await sb
+  // Load all active departments with manager info
+  const { data: allDepts } = await sb
     .from("departments")
-    .select("id, name, active")
+    .select("id, name, manager_id")
     .eq("organisation_id", currentOrgId)
     .eq("active", true)
     .order("name");
 
-  const myDepts = (departments || []).filter((d) => d.manager_id === employee.id);
-  const myDeptIds = new Set(myDepts.map((d) => d.id));
+  // Admins/devs see all departments; managers see only their own
+  const managedDepts = isAdminOrDev
+    ? (allDepts || [])
+    : (allDepts || []).filter((d) => d.manager_id === employee?.id);
 
-  // Need manager_id — re-fetch with it
-  const { data: deptsWithMgr } = await sb
-    .from("departments")
-    .select("id, name, manager_id")
-    .eq("organisation_id", currentOrgId)
-    .eq("active", true);
+  if (!managedDepts.length) {
+    document.getElementById("page-title").textContent = "My Departments";
+    document.getElementById("dept-donuts").innerHTML =
+      `<div class="card dash-chart-card"><p class="muted small" style="text-align:center">No departments assigned.</p></div>`;
+    document.getElementById("mgr-emp-body").innerHTML =
+      `<tr><td colspan="5" class="muted small" style="text-align:center">No employees found.</td></tr>`;
+    return;
+  }
 
-  const managedDepts = (deptsWithMgr || []).filter((d) => d.manager_id === employee.id);
   const managedDeptIds = new Set(managedDepts.map((d) => d.id));
 
-  // Load employees in those departments
+  // Title
+  document.getElementById("page-title").textContent =
+    managedDepts.length === 1 ? "My Department" : "My Departments";
+  document.getElementById("emp-table-title").textContent =
+    managedDepts.length === 1 ? "My Employees" : "Employees";
+
+  // Load all active employees in those departments
   const { data: allEmps } = await sb
     .from("users")
     .select("id, name, department_id, active")
@@ -122,69 +142,101 @@ async function loadDashboard() {
 
   const myTeam = (allEmps || []).filter((e) => managedDeptIds.has(e.department_id));
 
-  if (!myTeam.length) {
-    document.getElementById("mgr-emp-body").innerHTML =
-      `<tr><td colspan="4" class="muted small" style="text-align:center">No employees in your departments.</td></tr>`;
-    renderDonut("mgr-donut", 0, 0, "#c2ff00", "#e8e8e8");
-    document.getElementById("mgr-legend").innerHTML = `<span class="muted small">No team members found</span>`;
-    return;
-  }
-
   // Load timesheets for current week
   const userIds = myTeam.map((e) => e.id);
-  let tsMap = {};
-  let hoursMap = {};
+  const tsMap = {};
+  const hoursMap = {};
 
-  const { data: tsList } = await sb
-    .from("timesheets")
-    .select("id, user_id, status")
-    .eq("organisation_id", currentOrgId)
-    .eq("week_start", ws)
-    .in("user_id", userIds);
+  if (userIds.length) {
+    const { data: tsList } = await sb
+      .from("timesheets")
+      .select("id, user_id, status")
+      .eq("organisation_id", currentOrgId)
+      .eq("week_start", ws)
+      .in("user_id", userIds);
 
-  for (const ts of tsList || []) tsMap[ts.user_id] = ts;
+    for (const ts of tsList || []) tsMap[ts.user_id] = ts;
 
-  const tsIds = (tsList || []).map((t) => t.id);
-  if (tsIds.length) {
-    const { data: entries } = await sb
-      .from("timesheet_entries")
-      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-      .in("timesheet_id", tsIds);
-    for (const e of entries || []) {
-      const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-      hoursMap[e.timesheet_id] = (hoursMap[e.timesheet_id] || 0) + sum;
+    const tsIds = (tsList || []).map((t) => t.id);
+    if (tsIds.length) {
+      const { data: entries } = await sb
+        .from("timesheet_entries")
+        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .in("timesheet_id", tsIds);
+      for (const e of entries || []) {
+        const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+        hoursMap[e.timesheet_id] = (hoursMap[e.timesheet_id] || 0) + sum;
+      }
     }
   }
 
-  const submittedCount = myTeam.filter((e) => {
-    const ts = tsMap[e.id];
+  function isSubmitted(empId) {
+    const ts = tsMap[empId];
     return ts && (ts.status === "submitted" || ts.status === "approved");
-  }).length;
+  }
 
-  renderDonut("mgr-donut", submittedCount, myTeam.length, "#c2ff00", "#e8e8e8");
-  document.getElementById("mgr-legend").innerHTML = `
-    <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submittedCount})</span>
-    <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Not submitted (${myTeam.length - submittedCount})</span>
-  `;
+  // Render donut charts
+  const donutsContainer = document.getElementById("dept-donuts");
+  donutsContainer.innerHTML = "";
 
-  const deptName = (id) => managedDepts.find((d) => d.id === id)?.name || "";
+  // Combined "All Departments" donut first (only if multiple departments)
+  if (managedDepts.length > 1) {
+    const totalAll = myTeam.length;
+    const submittedAll = myTeam.filter((e) => isSubmitted(e.id)).length;
+    renderDonut(donutsContainer, submittedAll, totalAll, "All Departments");
+  }
+
+  // Per-department donuts
+  for (const dept of managedDepts) {
+    const deptTeam = myTeam.filter((e) => e.department_id === dept.id);
+    const submitted = deptTeam.filter((e) => isSubmitted(e.id)).length;
+    renderDonut(donutsContainer, submitted, deptTeam.length, dept.name);
+  }
+
+  // Render employee table
+  const deptNameMap = {};
+  for (const d of managedDepts) deptNameMap[d.id] = d.name;
 
   const body = document.getElementById("mgr-emp-body");
+  if (!myTeam.length) {
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">No employees in your departments.</td></tr>`;
+    return;
+  }
+
   body.innerHTML = myTeam.map((e) => {
     const ts = tsMap[e.id];
-    const submitted = ts && (ts.status === "submitted" || ts.status === "approved");
+    const sub = isSubmitted(e.id);
     const hours = ts ? (hoursMap[ts.id] || 0) : 0;
-    const badge = submitted
+    const badge = sub
       ? `<span class="chip-dash chip-submitted">Submitted</span>`
       : `<span class="chip-dash chip-pending">Not submitted</span>`;
+    const approveBtn = sub && ts.status === "submitted"
+      ? `<button class="ghost small approve-btn" data-ts-id="${ts.id}">Approve</button>`
+      : (ts?.status === "approved" ? `<span class="small muted">Approved</span>` : "");
     return `
       <tr>
         <td>${escapeHtml(e.name)}</td>
-        <td class="muted small">${escapeHtml(deptName(e.department_id))}</td>
+        <td class="muted small">${escapeHtml(deptNameMap[e.department_id] || "")}</td>
         <td>${badge}</td>
         <td class="small">${hours ? hours + "h" : ""}</td>
+        <td>${approveBtn}</td>
       </tr>`;
   }).join("");
+
+  // Approve handlers
+  body.querySelectorAll(".approve-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tsId = Number(btn.dataset.tsId);
+      if (!confirm("Approve this timesheet?")) return;
+      const { error } = await sb
+        .from("timesheets")
+        .update({ status: "approved" })
+        .eq("id", tsId);
+      if (error) return notice(error.message, "error");
+      notice("Timesheet approved", "success");
+      await loadDashboard();
+    });
+  });
 }
 
 loadDashboard();

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>My Department · PTL Timesheet</title>
+    <title>My Departments · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
@@ -12,19 +12,13 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <h2 style="margin:0 0 4px">My Department</h2>
+      <h2 style="margin:0 0 4px" id="page-title">My Departments</h2>
       <p class="muted mb-md" id="mgr-week-label"></p>
 
-      <div class="dash-charts" style="justify-content:flex-start">
-        <div class="card dash-chart-card">
-          <h3 style="margin:0 0 12px;text-align:center">Timesheets Submitted</h3>
-          <div class="donut-wrap" id="mgr-donut"></div>
-          <div id="mgr-legend" class="dash-legend"></div>
-        </div>
-      </div>
+      <div class="dash-charts" id="dept-donuts"></div>
 
       <div class="card">
-        <h3 style="margin:0 0 12px">My Employees</h3>
+        <h3 style="margin:0 0 12px" id="emp-table-title">Employees</h3>
         <div style="overflow-x:auto">
           <table>
             <thead>
@@ -33,10 +27,11 @@
                 <th>Department</th>
                 <th>Status</th>
                 <th>Hours</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="mgr-emp-body">
-              <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
+              <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
             </tbody>
           </table>
         </div>
