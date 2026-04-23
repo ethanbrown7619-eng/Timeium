@@ -77,27 +77,34 @@ export function renderTopbar(opts) {
           </select>`
       : "";
 
-  el.innerHTML = `
-    <div class="brand">
-      <span class="brand-logo" aria-hidden="true">ptl</span>
-      <span class="brand-name">Timesheet</span>
-    </div>
-    <nav>
-      ${links
-        .filter((l) => l.show)
-        .map(
-          (l) =>
-            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
-        )
-        .join("")}
-    </nav>
-    <div class="grow"></div>
-    <div class="row-flex">
-      ${orgSwitcher}
-      <span class="who">${escapeHtml(opts.session?.user?.email || "")}</span>
-      <a href="#" id="signout-link" class="muted">Sign out</a>
-    </div>
+  // Populate nav links (element already exists in static HTML — brand stays untouched)
+  const nav = el.querySelector("nav");
+  if (nav) {
+    nav.innerHTML = links
+      .filter((l) => l.show)
+      .map(
+        (l) =>
+          `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
+      )
+      .join("");
+    nav.classList.add("ready");
+  }
+
+  // Remove any prior user section (if renderTopbar called twice)
+  const prev = el.querySelector(".row-flex");
+  if (prev) prev.remove();
+
+  // Build and insert user section after the grow div
+  const userDiv = document.createElement("div");
+  userDiv.className = "row-flex ready";
+  userDiv.innerHTML = `
+    ${orgSwitcher}
+    <span class="who">${escapeHtml(opts.session?.user?.email || "")}</span>
+    <a href="#" id="signout-link" class="muted">Sign out</a>
   `;
+  const grow = el.querySelector(".grow");
+  if (grow) grow.after(userDiv);
+  else el.appendChild(userDiv);
 
   if (orgSwitcher && typeof opts.onOrgChange === "function") {
     document
