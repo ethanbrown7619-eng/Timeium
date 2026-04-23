@@ -731,8 +731,11 @@ async function loadSettings() {
       .order("job_code");
     phJobSel.innerHTML = `<option value="">— select a job —</option>` +
       (allJobs || []).map((j) =>
-        `<option value="${j.id}"${j.id === data.public_holiday_job_id ? " selected" : ""}>${escapeHtml(j.job_code)}${j.description ? " — " + escapeHtml(j.description) : ""}</option>`
+        `<option value="${j.id}">${escapeHtml(j.job_code)}${j.description ? " — " + escapeHtml(j.description) : ""}</option>`
       ).join("");
+    if (data.public_holiday_job_id != null) {
+      phJobSel.value = String(data.public_holiday_job_id);
+    }
 
     // Deadline
     document.getElementById("deadline-week").value = data.deadline_week || "following_week";
