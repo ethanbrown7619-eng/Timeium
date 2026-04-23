@@ -531,8 +531,8 @@ dialog::backdrop {
 .ts-container-inner { max-width: none; }
 
 .week-calendar { width: 100%; border-collapse: collapse; }
-.week-calendar th { font-size: 11px; text-transform: uppercase; padding: 6px 8px; text-align: center; }
-.week-calendar td { padding: 6px 8px; text-align: center; font-size: 13px; }
+.week-calendar th { font-size: 11px; text-transform: uppercase; padding: 10px 8px; text-align: center; }
+.week-calendar td { padding: 18px 8px; text-align: center; font-size: 14px; }
 .week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); }
 .week-calendar tr.week-row:hover { background: var(--surface-alt); }
 .week-calendar tr.week-row.current-week { background: rgba(194, 255, 0, 0.12); font-weight: 600; }
@@ -542,7 +542,7 @@ dialog::backdrop {
 .week-calendar tr.week-row.week-draft { background: rgba(201, 144, 26, 0.06); }
 .week-calendar tr.week-row.week-draft:hover { background: rgba(201, 144, 26, 0.12); }
 .week-calendar .cal-total-row { border-top: 2px solid var(--border); }
-.week-calendar .cal-total-row td { padding: 10px 8px; }
+.week-calendar .cal-total-row td { padding: 14px 8px; }
 .week-calendar .week-status { font-size: 12px; }
 .week-calendar .week-action { font-size: 12px; color: var(--ptl-black); font-weight: 600; }
 .week-calendar td.cal-weekend { background: rgba(0,0,0,0.04); }

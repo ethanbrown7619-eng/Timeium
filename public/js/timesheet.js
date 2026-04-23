@@ -70,8 +70,7 @@ function getMonday(d) {
   return dt;
 }
 
-function fmtDate(d) { return d.toISOString().slice(0, 10); }
-function fmtDateLocal(d) {
+function fmtDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -544,13 +543,13 @@ async function renderCalendar() {
       const d = addDays(mon, i);
       const inMonth = d.getMonth() === month;
       const isWeekend = i >= 5;
-      const isHoliday = !!holidays[fmtDateLocal(d)];
+      const isHoliday = !!holidays[fmtDate(d)];
       const cls = [
         inMonth ? "" : "muted",
         isWeekend ? "cal-weekend" : "",
         isHoliday ? "cal-holiday" : "",
       ].filter(Boolean).join(" ");
-      const title = isHoliday ? ` title="${escapeHtml(holidays[fmtDateLocal(d)])}"` : "";
+      const title = isHoliday ? ` title="${escapeHtml(holidays[fmtDate(d)])}"` : "";
       dayCells.push(`<td class="${cls}" style="${inMonth ? "" : "opacity:0.4"}"${title}>${d.getDate()}</td>`);
     }
 
@@ -661,7 +660,7 @@ async function loadWeek() {
     DAYS.map((_, i) => {
       const d = addDays(weekStart, i);
       const isWeekend = i >= 5;
-      const hol = holidays[fmtDateLocal(d)];
+      const hol = holidays[fmtDate(d)];
       const cls = [
         "day-col",
         isWeekend ? "day-weekend" : "",
@@ -795,7 +794,7 @@ async function autofillPublicHolidays() {
   const phDays = [];
   for (let i = 0; i < 5; i++) {
     const d = addDays(weekStart, i);
-    const key = fmtDateLocal(d);
+    const key = fmtDate(d);
     if (holidays[key]) phDays.push({ idx: i, day: DAYS[i], name: holidays[key] });
   }
   if (!phDays.length) return;
