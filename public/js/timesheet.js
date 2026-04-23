@@ -174,7 +174,7 @@ async function loadCurrentWeekCard() {
       card.classList.add("submitted");
       body.innerHTML = `
         <p style="margin:0"><strong>${weekStr}</strong></p>
-        <p style="font-size:18px;margin:8px 0 0">Timesheet submitted</p>
+        <p style="font-size:18px;margin:8px 0 0;color:#5a7a00">Timesheet submitted</p>
         <div class="ts-progress-bar mt-sm">
           <div class="ts-progress-fill submitted" style="width:${pct}%"></div>
         </div>

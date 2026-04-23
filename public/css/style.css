@@ -453,11 +453,11 @@ dialog::backdrop {
 /* -------- timesheet hub -------- */
 
 .ts-current-card.submitted {
-  border-color: var(--success);
-  background: linear-gradient(135deg, #e6f4ea 0%, #f0faf2 100%);
-  box-shadow: 0 0 20px rgba(46, 125, 58, 0.15);
+  border-color: var(--ptl-lime);
+  background: linear-gradient(135deg, #f3ffd6 0%, #f9ffe8 100%);
+  box-shadow: 0 0 20px rgba(194, 255, 0, 0.25);
 }
-.ts-current-card.submitted h2 { color: var(--success); }
+.ts-current-card.submitted h2 { color: #5a7a00; }
 
 .ts-current-card {
   padding: 32px 36px;
@@ -481,7 +481,7 @@ dialog::backdrop {
   border-radius: 999px;
   transition: width 0.4s ease;
 }
-.ts-progress-fill.submitted { background: var(--success); }
+.ts-progress-fill.submitted { background: var(--ptl-lime); }
 
 /* countdown */
 .ts-countdown {
