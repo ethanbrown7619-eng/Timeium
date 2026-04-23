@@ -680,7 +680,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -697,6 +697,9 @@ async function loadSettings() {
     const wf = data.approval_workflow || "manager_then_admin";
     const radio = document.querySelector(`input[name="approval_workflow"][value="${wf}"]`);
     if (radio) radio.checked = true;
+
+    // Manager approval gate
+    document.getElementById("force-view-before-approval").checked = !!data.force_view_before_approval;
 
     // Deadline
     document.getElementById("deadline-week").value = data.deadline_week || "following_week";
@@ -735,6 +738,23 @@ function updateDeadlinePreview() {
 document.getElementById("deadline-week").addEventListener("change", updateDeadlinePreview);
 document.getElementById("deadline-day").addEventListener("change", updateDeadlinePreview);
 document.getElementById("deadline-time").addEventListener("input", updateDeadlinePreview);
+
+// Manager approval gate save
+document.getElementById("save-view-gate-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    const { error } = await sb
+      .from("organisations")
+      .update({ force_view_before_approval: document.getElementById("force-view-before-approval").checked })
+      .eq("id", currentOrgId);
+    if (error) throw error;
+    notice("Approval gate saved", "success");
+    flashStatus("view-gate-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
 
 // Approval workflow save
 document.getElementById("save-workflow-btn").addEventListener("click", async () => {

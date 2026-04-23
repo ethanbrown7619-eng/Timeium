@@ -423,24 +423,22 @@ async function loadQuickStats() {
       }
     }
 
-    // Submission streak
-    let streak = 0;
-    const sorted = allTs.filter((t) => t.status === "submitted" || t.status === "approved")
-      .sort((a, b) => b.week_start.localeCompare(a.week_start));
-    if (sorted.length) {
-      let expected = getMonday(new Date());
-      // Current week doesn't count unless submitted
-      const currentSubmitted = sorted[0]?.week_start === fmtDate(expected);
-      if (!currentSubmitted) expected = addDays(expected, -7);
-      for (const t of sorted) {
-        if (t.week_start === fmtDate(expected)) {
-          streak++;
-          expected = addDays(expected, -7);
-        } else {
-          break;
-        }
+    // Annual leave balance (falls back to N/A if not set up)
+    let leaveLabel = "N/A";
+    let leaveValue = "—";
+    try {
+      const { data: lb } = await sb
+        .from("leave_balances")
+        .select("balance, leave_types(code, name, unit)")
+        .eq("user_id", employee.id);
+      const annual = (lb || []).find((r) => r.leave_types?.code === "ANNUAL")
+                  || (lb || [])[0];
+      if (annual?.leave_types) {
+        const unit = annual.leave_types.unit === "days" ? "days" : "h";
+        leaveValue = `${Number(annual.balance).toFixed(unit === "h" ? 0 : 1)}${unit}`;
+        leaveLabel = annual.leave_types.name.toLowerCase();
       }
-    }
+    } catch {}
 
     // Avg hours per week (last 12 weeks)
     const recent = allTs.slice(0, 12);
@@ -465,8 +463,8 @@ async function loadQuickStats() {
         <span class="stat-label">${monthName}</span>
       </div>
       <div class="stat-item">
-        <span class="stat-value">${streak}</span>
-        <span class="stat-label">week streak</span>
+        <span class="stat-value">${leaveValue}</span>
+        <span class="stat-label">${leaveLabel}</span>
       </div>
       <div class="stat-item">
         <span class="stat-value">${avgHours}h</span>

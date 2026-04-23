@@ -94,7 +94,18 @@ function renderDonut(container, submitted, total, label) {
 
 /* ---------------------------------------------------------------- load */
 
+let forceViewBeforeApproval = false;
+
+async function loadOrgSettings() {
+  if (!currentOrgId) return;
+  const { data } = await sb.from("organisations")
+    .select("force_view_before_approval").eq("id", currentOrgId).maybeSingle();
+  forceViewBeforeApproval = !!data?.force_view_before_approval;
+}
+
 async function loadDashboard() {
+  await loadOrgSettings();
+
   const thisMonday = getMonday(new Date());
   const weekEnd = addDays(thisMonday, 6);
   const weekStr = `${thisMonday.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${weekEnd.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
@@ -203,6 +214,9 @@ async function loadDashboard() {
     return;
   }
 
+  // Managers must view before approval if setting is on; admins always bypass.
+  const canApproveInline = isAdminOrDev || !forceViewBeforeApproval;
+
   body.innerHTML = myTeam.map((e) => {
     const ts = tsMap[e.id];
     const sub = isSubmitted(e.id);
@@ -210,16 +224,26 @@ async function loadDashboard() {
     const badge = sub
       ? `<span class="chip-dash chip-submitted">Submitted</span>`
       : `<span class="chip-dash chip-pending">Not submitted</span>`;
-    const approveBtn = sub && ts.status === "submitted"
-      ? `<button class="ghost small approve-btn" data-ts-id="${ts.id}">Approve</button>`
-      : (ts?.status === "approved" ? `<span class="small muted">Approved</span>` : "");
+
+    let actions = "";
+    if (ts) {
+      actions += `<a href="/timesheet-view.html?user=${e.id}&week=${ws}" class="btn-link small">View</a>`;
+    }
+    if (sub && ts.status === "submitted" && canApproveInline) {
+      actions += ` <button class="ghost small approve-btn" data-ts-id="${ts.id}">Approve</button>`;
+    } else if (sub && ts.status === "submitted" && !canApproveInline) {
+      actions += ` <span class="small muted" title="Manager must open the timesheet before approving">Review to approve</span>`;
+    } else if (ts?.status === "approved") {
+      actions += ` <span class="small muted">Approved</span>`;
+    }
+
     return `
       <tr>
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptNameMap[e.department_id] || "")}</td>
         <td>${badge}</td>
         <td class="small">${hours ? hours + "h" : ""}</td>
-        <td>${approveBtn}</td>
+        <td style="white-space:nowrap">${actions}</td>
       </tr>`;
   }).join("");
 

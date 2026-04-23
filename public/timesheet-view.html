@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>View Timesheet · PTL Timesheet</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar">      <div class="brand">        <span class="brand-logo" aria-hidden="true">ptl</span>        <span class="brand-name">Timesheet</span>      </div>      <nav></nav>      <div class="grow"></div>    </header>
+
+    <main class="container ts-container">
+      <div id="notice" class="notice hidden"></div>
+
+      <div class="row-flex mb-md">
+        <a href="/department.html" class="ghost" id="back-link">← Back to My Departments</a>
+        <div class="grow"></div>
+        <span id="ts-view-status" class="muted small"></span>
+      </div>
+
+      <h2 id="view-title" style="margin:0 0 4px">Timesheet</h2>
+      <p class="muted mb-md" id="view-subtitle"></p>
+
+      <div class="card ts-container-inner">
+        <table class="ts-grid">
+          <thead>
+            <tr>
+              <th class="col-job">Job</th>
+              <th class="col-status">Status</th>
+              <th class="col-dept">Dept</th>
+              <th class="col-task">Task</th>
+              <th class="col-desc">Description</th>
+              <th class="day-col">Mon</th>
+              <th class="day-col">Tue</th>
+              <th class="day-col">Wed</th>
+              <th class="day-col">Thu</th>
+              <th class="day-col">Fri</th>
+              <th class="day-col day-weekend">Sat</th>
+              <th class="day-col day-weekend">Sun</th>
+              <th class="col-total">Total</th>
+            </tr>
+            <tr id="date-row" class="small muted"></tr>
+          </thead>
+          <tbody id="view-body">
+            <tr><td colspan="13" class="muted small" style="text-align:center">Loading…</td></tr>
+          </tbody>
+          <tfoot>
+            <tr id="totals-row">
+              <td colspan="5" style="text-align:right"><strong>Daily totals</strong></td>
+              <td class="day-col" id="total-mon">0</td>
+              <td class="day-col" id="total-tue">0</td>
+              <td class="day-col" id="total-wed">0</td>
+              <td class="day-col" id="total-thu">0</td>
+              <td class="day-col" id="total-fri">0</td>
+              <td class="day-col day-weekend" id="total-sat">0</td>
+              <td class="day-col day-weekend" id="total-sun">0</td>
+              <td class="day-col" id="total-week"><strong>0</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <div class="row-flex mt-md" id="approve-bar" style="display:none">
+          <button class="ghost" id="reject-btn">Reject</button>
+          <div class="grow"></div>
+          <button id="approve-btn" class="primary">Approve timesheet</button>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="/js/timesheet-view.js"></script>
+  </body>
+</html>

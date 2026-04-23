@@ -564,6 +564,23 @@
           </div>
         </div>
 
+        <!-- Manager approval gate -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Manager Approval Gate</h2>
+          <p class="muted">
+            When enabled, managers must open a submitted timesheet before they can
+            approve it. Admins are always exempt and can approve inline.
+          </p>
+          <label class="row-flex" style="gap:8px;cursor:pointer">
+            <input type="checkbox" id="force-view-before-approval" />
+            <span>Require managers to view timesheet before approving</span>
+          </label>
+          <div class="mt-md">
+            <button id="save-view-gate-btn">Save</button>
+            <span id="view-gate-status" class="muted small" style="margin-left:12px"></span>
+          </div>
+        </div>
+
         <!-- Timesheet Deadline -->
         <div class="card" style="max-width:640px">
           <h2 style="margin-top:0">Timesheet Deadline</h2>
