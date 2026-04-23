@@ -238,9 +238,132 @@ async function loadDashboard() {
     });
   });
 
-  // Load pending leave requests for the team
-  await loadPendingLeaveRequests(myTeam.map((e) => e.id));
+  // Load pending + approved leave requests for the team
+  await Promise.all([
+    loadPendingLeaveRequests(myTeam.map((e) => e.id)),
+    loadApprovedLeaveRequests(myTeam.map((e) => e.id)),
+  ]);
 }
+
+let leaveTypesCache = [];
+async function ensureLeaveTypes() {
+  if (leaveTypesCache.length) return leaveTypesCache;
+  const { data } = await sb
+    .from("leave_types")
+    .select("id, name, sort_order, active")
+    .eq("organisation_id", currentOrgId)
+    .eq("active", true)
+    .order("sort_order");
+  leaveTypesCache = data || [];
+  return leaveTypesCache;
+}
+
+async function loadApprovedLeaveRequests(teamUserIds) {
+  const card = document.getElementById("approved-leave-card");
+  const body = document.getElementById("approved-leave-body");
+  if (!card) return;
+
+  if (!teamUserIds?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const { data } = await sb
+    .from("leave_requests")
+    .select("id, user_id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, users(name), leave_types(name)")
+    .eq("organisation_id", currentOrgId)
+    .eq("status", "approved")
+    .in("user_id", teamUserIds)
+    .gte("end_date", todayIso)
+    .order("start_date");
+
+  if (!data?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "";
+  body.innerHTML = data.map((r) => {
+    const dateRange = r.start_date === r.end_date
+      ? r.start_date
+      : `${r.start_date} → ${r.end_date}`;
+    return `<tr data-id="${r.id}"
+                data-leave-type-id="${r.leave_type_id}"
+                data-start="${r.start_date}"
+                data-end="${r.end_date}"
+                data-hours="${r.hours_per_day}"
+                data-skip-weekends="${r.skip_weekends}"
+                data-reason="${escapeHtml(r.reason || "")}">
+      <td>${escapeHtml(r.users?.name || "")}</td>
+      <td>${escapeHtml(r.leave_types?.name || "")}</td>
+      <td class="small">${dateRange}</td>
+      <td class="num">${r.hours_per_day}</td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td style="white-space:nowrap">
+        <button class="ghost small edit-lr-btn">Edit</button>
+        <button class="ghost small revoke-lr-btn">Revoke</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".edit-lr-btn").forEach((btn) => {
+    btn.addEventListener("click", () => openEditLeaveDialog(btn.closest("tr")));
+  });
+
+  body.querySelectorAll(".revoke-lr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!confirm("Revoke this leave? The hours will be removed from the timesheet.")) return;
+      const note = prompt("Reason for revoking (optional):") || null;
+      const { error } = await sb.rpc("revoke_leave_request", { p_request_id: id, p_note: note });
+      if (error) return notice(error.message, "error");
+      notice("Leave revoked", "success");
+      await loadDashboard();
+    });
+  });
+}
+
+async function openEditLeaveDialog(tr) {
+  const types = await ensureLeaveTypes();
+  const sel = document.getElementById("el-type");
+  sel.innerHTML = types.map((t) =>
+    `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  sel.value = tr.dataset.leaveTypeId;
+
+  document.getElementById("el-start").value = tr.dataset.start;
+  document.getElementById("el-end").value = tr.dataset.end;
+  document.getElementById("el-hours").value = tr.dataset.hours;
+  document.getElementById("el-skip-weekends").checked = tr.dataset.skipWeekends === "true";
+  document.getElementById("el-reason").value = tr.dataset.reason || "";
+
+  const form = document.getElementById("edit-leave-form");
+  form.dataset.requestId = tr.dataset.id;
+  document.getElementById("edit-leave-dialog").showModal();
+}
+
+document.getElementById("el-cancel")?.addEventListener("click", () => {
+  document.getElementById("edit-leave-dialog").close();
+});
+
+document.getElementById("edit-leave-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = Number(e.currentTarget.dataset.requestId);
+  const { error } = await sb.rpc("update_approved_leave_request", {
+    p_request_id: id,
+    p_leave_type_id: Number(document.getElementById("el-type").value),
+    p_start_date: document.getElementById("el-start").value,
+    p_end_date: document.getElementById("el-end").value,
+    p_hours_per_day: Number(document.getElementById("el-hours").value),
+    p_skip_weekends: document.getElementById("el-skip-weekends").checked,
+    p_reason: document.getElementById("el-reason").value.trim() || null,
+  });
+  if (error) return notice(error.message, "error");
+
+  document.getElementById("edit-leave-dialog").close();
+  notice("Leave updated", "success");
+  await loadDashboard();
+});
 
 async function loadPendingLeaveRequests(teamUserIds) {
   const card = document.getElementById("leave-requests-card");
