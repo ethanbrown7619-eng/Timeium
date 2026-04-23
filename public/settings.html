@@ -27,16 +27,23 @@
         <h3 style="margin:0 0 12px">Change password</h3>
         <form id="pw-form">
           <div class="mb-sm">
+            <label for="current-pw">Current password</label>
+            <input id="current-pw" type="password" required autocomplete="current-password" style="width:100%" />
+          </div>
+          <div class="mb-sm">
             <label for="new-pw">New password</label>
             <input id="new-pw" type="password" required minlength="6" autocomplete="new-password" style="width:100%" />
           </div>
           <div class="mb-md">
-            <label for="confirm-pw">Confirm password</label>
+            <label for="confirm-pw">Confirm new password</label>
             <input id="confirm-pw" type="password" required minlength="6" autocomplete="new-password" style="width:100%" />
           </div>
           <button type="submit" id="pw-btn">Update password</button>
           <span id="pw-status" class="muted small" style="margin-left:12px"></span>
         </form>
+        <p class="small" style="margin:12px 0 0">
+          <a href="/forgot-password.html">Forgot your password?</a>
+        </p>
       </div>
     </main>
 
@@ -83,17 +90,30 @@
 
       document.getElementById("pw-form").addEventListener("submit", async (e) => {
         e.preventDefault();
+        const currentPw = document.getElementById("current-pw").value;
         const pw = document.getElementById("new-pw").value;
         const confirm = document.getElementById("confirm-pw").value;
         const btn = document.getElementById("pw-btn");
         const statusEl = document.getElementById("pw-status");
 
-        if (pw !== confirm) return notice("Passwords do not match", "error");
-        if (pw.length < 6) return notice("Password must be at least 6 characters", "error");
+        if (!currentPw) return notice("Enter your current password", "error");
+        if (pw !== confirm) return notice("New passwords do not match", "error");
+        if (pw.length < 6) return notice("New password must be at least 6 characters", "error");
+        if (pw === currentPw) return notice("New password must be different from current", "error");
 
         btn.disabled = true;
-        statusEl.textContent = "Saving…";
+        statusEl.textContent = "Verifying…";
 
+        // Verify the current password by re-authenticating
+        const email = session.user.email;
+        const { error: signInErr } = await sb.auth.signInWithPassword({ email, password: currentPw });
+        if (signInErr) {
+          statusEl.textContent = "";
+          btn.disabled = false;
+          return notice("Current password is incorrect", "error");
+        }
+
+        statusEl.textContent = "Saving…";
         const { error } = await sb.auth.updateUser({ password: pw });
         if (error) {
           statusEl.textContent = "";
@@ -105,6 +125,7 @@
           await sb.from("users").update({ must_change_password: false }).eq("id", me.id);
         }
 
+        document.getElementById("current-pw").value = "";
         document.getElementById("new-pw").value = "";
         document.getElementById("confirm-pw").value = "";
         statusEl.textContent = "Saved";
