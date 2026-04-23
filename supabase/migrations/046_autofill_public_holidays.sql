@@ -9,3 +9,6 @@ alter table public.organisations
 
 alter table public.organisations
     add column if not exists public_holiday_hours numeric(4,2) not null default 8.0;
+
+alter table public.organisations
+    add column if not exists public_holiday_job_id bigint references public.jobs (id) on delete set null;

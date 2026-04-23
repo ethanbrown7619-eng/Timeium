@@ -59,6 +59,7 @@ let calMonth = new Date();
 let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
 let orgAutofillPH = false;
 let orgPHHours = 8;
+let orgPHJobId = null;
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -779,10 +780,9 @@ function setupAC(input, items, { onSelect, onClear }) {
 /* ---------------------------------------------------------------- autofill public holidays */
 
 async function autofillPublicHolidays() {
-  if (!timesheetId || !weekStart) return;
+  if (!timesheetId || !weekStart || !orgPHJobId) return;
 
-  // Find public holiday job
-  const phJob = jobs.find((j) => j.is_leave && j.job_code?.toUpperCase().includes("PUBLIC"));
+  const phJob = jobs.find((j) => j.id === orgPHJobId);
   if (!phJob) return;
 
   // Check which weekdays this week are holidays
@@ -1094,7 +1094,7 @@ async function loadOrgDeadline() {
   try {
     const { data } = await sb
       .from("organisations")
-      .select("deadline_week, deadline_day, deadline_time, autofill_public_holidays, public_holiday_hours")
+      .select("deadline_week, deadline_day, deadline_time, autofill_public_holidays, public_holiday_hours, public_holiday_job_id")
       .eq("id", currentOrgId)
       .maybeSingle();
     if (data) {
@@ -1103,6 +1103,7 @@ async function loadOrgDeadline() {
       orgDeadline.time = (data.deadline_time || "08:00").slice(0, 5);
       orgAutofillPH = !!data.autofill_public_holidays;
       orgPHHours = Number(data.public_holiday_hours) || 8;
+      orgPHJobId = data.public_holiday_job_id || null;
     }
   } catch {}
 }

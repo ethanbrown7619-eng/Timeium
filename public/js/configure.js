@@ -699,7 +699,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -723,7 +723,16 @@ async function loadSettings() {
     // Public holiday autofill
     document.getElementById("autofill-public-holidays").checked = !!data.autofill_public_holidays;
     document.getElementById("ph-hours").value = data.public_holiday_hours ?? 8;
-    document.getElementById("ph-hours-row").style.display = data.autofill_public_holidays ? "" : "none";
+    document.getElementById("ph-options").style.display = data.autofill_public_holidays ? "" : "none";
+
+    // Load jobs for the PH job picker
+    const phJobSel = document.getElementById("ph-job");
+    const { data: allJobs } = await sb.from("jobs").select("id, job_code, description")
+      .eq("organisation_id", currentOrgId).order("job_code");
+    phJobSel.innerHTML = `<option value="">— select a job —</option>` +
+      (allJobs || []).map((j) =>
+        `<option value="${j.id}"${j.id === data.public_holiday_job_id ? " selected" : ""}>${escapeHtml(j.job_code)}${j.description ? " — " + escapeHtml(j.description) : ""}</option>`
+      ).join("");
 
     // Deadline
     document.getElementById("deadline-week").value = data.deadline_week || "following_week";
@@ -782,18 +791,22 @@ document.getElementById("save-view-gate-btn").addEventListener("click", async ()
 
 // Public holiday autofill toggle
 document.getElementById("autofill-public-holidays").addEventListener("change", (e) => {
-  document.getElementById("ph-hours-row").style.display = e.target.checked ? "" : "none";
+  document.getElementById("ph-options").style.display = e.target.checked ? "" : "none";
 });
 
 document.getElementById("save-ph-autofill-btn").addEventListener("click", async () => {
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
+  const enabled = document.getElementById("autofill-public-holidays").checked;
+  const jobId = document.getElementById("ph-job").value ? Number(document.getElementById("ph-job").value) : null;
+  if (enabled && !jobId) return notice("Select a job to use for public holidays", "warn");
   try {
     const { error } = await sb
       .from("organisations")
       .update({
-        autofill_public_holidays: document.getElementById("autofill-public-holidays").checked,
+        autofill_public_holidays: enabled,
         public_holiday_hours: Number(document.getElementById("ph-hours").value) || 8,
+        public_holiday_job_id: jobId,
       })
       .eq("id", currentOrgId);
     if (error) throw error;
