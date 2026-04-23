@@ -564,12 +564,10 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
     );
 
     // Provision a login account with default password if employee has an email
-    if (payload.email && newEmp?.id) {
-      try {
-        await sb.rpc("provision_employee_login", { p_user_id: newEmp.id });
-      } catch (err) {
-        console.warn("provision_employee_login failed:", err);
-      }
+    const empId = Array.isArray(newEmp) ? newEmp[0]?.id : newEmp?.id;
+    if (payload.email && empId) {
+      const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: empId });
+      if (provErr) console.warn("provision_employee_login:", provErr.message);
     }
     notice("Employee created", "success");
   }
