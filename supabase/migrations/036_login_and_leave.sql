@@ -90,7 +90,7 @@ begin
             id, user_id, provider_id, identity_data,
             provider, last_sign_in_at, created_at, updated_at
         ) values (
-            v_uid::text, v_uid, lower(trim(v_email)),
+            v_uid, v_uid, lower(trim(v_email)),
             jsonb_build_object('sub', v_uid::text, 'email', lower(trim(v_email))),
             'email', now(), now(), now()
         );
