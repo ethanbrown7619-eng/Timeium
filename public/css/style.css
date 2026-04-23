@@ -552,8 +552,12 @@ dialog::backdrop {
 .week-calendar td.cal-holiday::after {
   content: "";
   position: absolute;
-  inset: 2px;
-  border: 2px solid var(--ptl-black);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid var(--ptl-black);
   border-radius: 50%;
   pointer-events: none;
 }
