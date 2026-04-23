@@ -775,16 +775,21 @@ document.getElementById("deadline-week").addEventListener("change", updateDeadli
 document.getElementById("deadline-day").addEventListener("change", updateDeadlinePreview);
 document.getElementById("deadline-time").addEventListener("input", updateDeadlinePreview);
 
+// Helper: save org settings via SECURITY DEFINER RPC
+async function saveOrgSettings(settings) {
+  const { error } = await sb.rpc("save_org_settings", {
+    p_org_id: currentOrgId,
+    p_settings: settings,
+  });
+  if (error) throw error;
+}
+
 // Manager approval gate save
 document.getElementById("save-view-gate-btn").addEventListener("click", async () => {
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
   try {
-    const { error } = await sb
-      .from("organisations")
-      .update({ force_view_before_approval: document.getElementById("force-view-before-approval").checked })
-      .eq("id", currentOrgId);
-    if (error) throw error;
+    await saveOrgSettings({ force_view_before_approval: document.getElementById("force-view-before-approval").checked });
     notice("Approval gate saved", "success");
     flashStatus("view-gate-status");
   } catch (err) {
@@ -804,15 +809,11 @@ document.getElementById("save-ph-autofill-btn").addEventListener("click", async 
   const jobId = document.getElementById("ph-job").value ? Number(document.getElementById("ph-job").value) : null;
   if (enabled && !jobId) return notice("Select a job to use for public holidays", "warn");
   try {
-    const { error } = await sb
-      .from("organisations")
-      .update({
-        autofill_public_holidays: enabled,
-        public_holiday_hours: Number(document.getElementById("ph-hours").value) || 8,
-        public_holiday_job_id: jobId,
-      })
-      .eq("id", currentOrgId);
-    if (error) throw error;
+    await saveOrgSettings({
+      autofill_public_holidays: enabled,
+      public_holiday_hours: Number(document.getElementById("ph-hours").value) || 8,
+      public_holiday_job_id: jobId,
+    });
     notice("Public holiday autofill saved", "success");
     flashStatus("ph-autofill-status");
   } catch (err) {
@@ -827,11 +828,7 @@ document.getElementById("save-workflow-btn").addEventListener("click", async () 
   const selected = document.querySelector('input[name="approval_workflow"]:checked');
   if (!selected) return notice("Select an option", "warn");
   try {
-    const { error } = await sb
-      .from("organisations")
-      .update({ approval_workflow: selected.value })
-      .eq("id", currentOrgId);
-    if (error) throw error;
+    await saveOrgSettings({ approval_workflow: selected.value });
     notice("Approval workflow saved", "success");
     flashStatus("workflow-status");
   } catch (err) {
@@ -844,15 +841,11 @@ document.getElementById("save-deadline-btn").addEventListener("click", async () 
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
   try {
-    const { error } = await sb
-      .from("organisations")
-      .update({
-        deadline_week: document.getElementById("deadline-week").value,
-        deadline_day: document.getElementById("deadline-day").value,
-        deadline_time: document.getElementById("deadline-time").value || "08:00",
-      })
-      .eq("id", currentOrgId);
-    if (error) throw error;
+    await saveOrgSettings({
+      deadline_week: document.getElementById("deadline-week").value,
+      deadline_day: document.getElementById("deadline-day").value,
+      deadline_time: document.getElementById("deadline-time").value || "08:00",
+    });
     notice("Deadline saved", "success");
     flashStatus("deadline-status");
   } catch (err) {
@@ -870,16 +863,12 @@ document.getElementById("save-notifications-btn").addEventListener("click", asyn
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
   try {
-    const { error } = await sb
-      .from("organisations")
-      .update({
-        notify_overdue: document.getElementById("notify-overdue").checked,
-        notify_reminder: document.getElementById("notify-reminder").checked,
-        reminder_day: document.getElementById("reminder-day").value,
-        reminder_time: document.getElementById("reminder-time").value || "09:00",
-      })
-      .eq("id", currentOrgId);
-    if (error) throw error;
+    await saveOrgSettings({
+      notify_overdue: document.getElementById("notify-overdue").checked,
+      notify_reminder: document.getElementById("notify-reminder").checked,
+      reminder_day: document.getElementById("reminder-day").value,
+      reminder_time: document.getElementById("reminder-time").value || "09:00",
+    });
     notice("Notification settings saved", "success");
     flashStatus("notifications-status");
   } catch (err) {
@@ -897,16 +886,12 @@ document.getElementById("save-clock-btn").addEventListener("click", async () => 
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
   try {
-    const { error } = await sb
-      .from("organisations")
-      .update({
-        clock_tolerance_hours: Number(document.getElementById("clock-tolerance").value) || 0.5,
-        notify_discrepancy: document.getElementById("notify-discrepancy").checked,
-        discrepancy_day: document.getElementById("discrepancy-day").value,
-        discrepancy_time: document.getElementById("discrepancy-time").value || "10:00",
-      })
-      .eq("id", currentOrgId);
-    if (error) throw error;
+    await saveOrgSettings({
+      clock_tolerance_hours: Number(document.getElementById("clock-tolerance").value) || 0.5,
+      notify_discrepancy: document.getElementById("notify-discrepancy").checked,
+      discrepancy_day: document.getElementById("discrepancy-day").value,
+      discrepancy_time: document.getElementById("discrepancy-time").value || "10:00",
+    });
     notice("Clock vs Timesheet settings saved", "success");
     flashStatus("clock-status");
   } catch (err) {
