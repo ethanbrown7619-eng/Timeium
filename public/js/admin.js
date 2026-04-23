@@ -621,6 +621,7 @@ async function buildInfusionRows() {
     }
   }
 
+  rows.sort((a, b) => a["employee name"].localeCompare(b["employee name"]) || a["date"].split("/").reverse().join("").localeCompare(b["date"].split("/").reverse().join("")));
   return rows;
 }
 
