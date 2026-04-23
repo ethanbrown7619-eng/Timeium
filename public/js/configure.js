@@ -725,10 +725,12 @@ async function loadSettings() {
     document.getElementById("ph-hours").value = data.public_holiday_hours ?? 8;
     document.getElementById("ph-options").style.display = data.autofill_public_holidays ? "" : "none";
 
-    // Load jobs for the PH job picker
+    // Load jobs for the PH job picker (leave jobs only)
     const phJobSel = document.getElementById("ph-job");
     const { data: allJobs } = await sb.from("jobs").select("id, job_code, description")
-      .eq("organisation_id", currentOrgId).order("job_code");
+      .eq("organisation_id", currentOrgId)
+      .eq("is_leave", true)
+      .order("job_code");
     phJobSel.innerHTML = `<option value="">— select a job —</option>` +
       (allJobs || []).map((j) =>
         `<option value="${j.id}"${j.id === data.public_holiday_job_id ? " selected" : ""}>${escapeHtml(j.job_code)}${j.description ? " — " + escapeHtml(j.description) : ""}</option>`
