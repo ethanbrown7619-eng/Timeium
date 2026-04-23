@@ -545,8 +545,34 @@ dialog::backdrop {
 .week-calendar .cal-total-row td { padding: 10px 8px; }
 .week-calendar .week-status { font-size: 12px; }
 .week-calendar .week-action { font-size: 12px; color: var(--ptl-black); font-weight: 600; }
+.week-calendar td.cal-weekend { background: rgba(0,0,0,0.04); }
+.week-calendar td.cal-holiday {
+  position: relative;
+}
+.week-calendar td.cal-holiday::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 2px solid var(--ptl-black);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.week-calendar th.cal-weekend-hdr { color: var(--text-muted); opacity: 0.6; }
 
 /* -------- timesheet grid -------- */
+
+.ts-grid .day-weekend { background: rgba(0,0,0,0.04); }
+.ts-grid th.day-holiday {
+  position: relative;
+}
+.ts-grid th.day-holiday::after {
+  content: "";
+  position: absolute;
+  inset: 0px 4px;
+  border: 2px solid var(--ptl-black);
+  border-radius: 50%;
+  pointer-events: none;
+}
 
 .ts-container { max-width: none; padding: 12px 16px 64px; }
 

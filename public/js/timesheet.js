@@ -54,6 +54,7 @@ let entries = [];
 let jobs = [];
 let tasks = [];
 let deptCodes = [];
+let holidays = {};
 let calMonth = new Date();
 let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
 
@@ -77,6 +78,16 @@ function weekLabel() {
 }
 
 const thisMonday = getMonday(new Date());
+
+async function loadHolidays() {
+  const { data } = await sb
+    .from("public_holidays")
+    .select("holiday_date, name")
+    .eq("organisation_id", currentOrgId);
+  holidays = {};
+  for (const h of data || []) holidays[h.holiday_date] = h.name;
+}
+loadHolidays();
 
 /* ---------------------------------------------------------------- views */
 
@@ -380,7 +391,15 @@ async function renderCalendar() {
     for (let i = 0; i < 7; i++) {
       const d = addDays(mon, i);
       const inMonth = d.getMonth() === month;
-      dayCells.push(`<td class="${inMonth ? "" : "muted"}" style="${inMonth ? "" : "opacity:0.4"}">${d.getDate()}</td>`);
+      const isWeekend = i >= 5;
+      const isHoliday = !!holidays[fmtDate(d)];
+      const cls = [
+        inMonth ? "" : "muted",
+        isWeekend ? "cal-weekend" : "",
+        isHoliday ? "cal-holiday" : "",
+      ].filter(Boolean).join(" ");
+      const title = isHoliday ? ` title="${escapeHtml(holidays[fmtDate(d)])}"` : "";
+      dayCells.push(`<td class="${cls}" style="${inMonth ? "" : "opacity:0.4"}"${title}>${d.getDate()}</td>`);
     }
 
     const statusBadge = ts
@@ -487,7 +506,18 @@ async function loadWeek() {
 
   const dateRow = document.getElementById("date-row");
   dateRow.innerHTML = `<td colspan="5"></td>` +
-    DAYS.map((_, i) => `<td class="day-col">${fmtShortDate(addDays(weekStart, i))}</td>`).join("") +
+    DAYS.map((_, i) => {
+      const d = addDays(weekStart, i);
+      const isWeekend = i >= 5;
+      const hol = holidays[fmtDate(d)];
+      const cls = [
+        "day-col",
+        isWeekend ? "day-weekend" : "",
+        hol ? "day-holiday" : "",
+      ].filter(Boolean).join(" ");
+      const title = hol ? ` title="${escapeHtml(hol)}"` : "";
+      return `<td class="${cls}"${title}>${fmtShortDate(d)}</td>`;
+    }).join("") +
     `<td class="day-col"></td><td></td>`;
 
   try {
@@ -654,8 +684,8 @@ function renderGrid() {
         <td>
           <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" />
         </td>
-        ${DAYS.map((d) => `
-          <td class="day-col">
+        ${DAYS.map((d, i) => `
+          <td class="day-col${i >= 5 ? " day-weekend" : ""}">
             <input type="number" class="hours-input" data-day="${d}"
               value="${Number(e[`${d}_hours`]) || ""}" min="0" max="24" step="0.25"
               style="text-align:center" />

@@ -47,7 +47,9 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-jobs").style.display      = activeTab === "jobs"      ? "" : "none";
     document.getElementById("tab-tasks").style.display     = activeTab === "tasks"     ? "" : "none";
     document.getElementById("tab-deptcodes").style.display = activeTab === "deptcodes" ? "" : "none";
+    document.getElementById("tab-holidays").style.display  = activeTab === "holidays"  ? "" : "none";
     document.getElementById("tab-settings").style.display  = activeTab === "settings"  ? "" : "none";
+    if (activeTab === "holidays") loadHolidays();
     if (activeTab === "settings") loadSettings();
   });
 });
@@ -607,6 +609,74 @@ function makeController(kind) {
 
   return { load, loadImportConfig };
 }
+
+/* ---------------------------------------------------------------- holidays */
+
+let holidayRows = [];
+
+async function loadHolidays() {
+  if (!currentOrgId) return;
+  const { data, error } = await sb
+    .from("public_holidays")
+    .select("id, holiday_date, name")
+    .eq("organisation_id", currentOrgId)
+    .order("holiday_date");
+  if (error) return notice(error.message, "error");
+  holidayRows = data || [];
+  renderHolidays();
+}
+
+function renderHolidays() {
+  const body = document.getElementById("holidays-body");
+  document.getElementById("holidays-count").textContent = `${holidayRows.length} holiday${holidayRows.length === 1 ? "" : "s"}`;
+
+  if (!holidayRows.length) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">No holidays added yet.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = holidayRows.map((h) => {
+    const d = new Date(h.holiday_date + "T00:00:00");
+    const label = d.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    return `<tr data-id="${h.id}">
+      <td>${escapeHtml(label)}</td>
+      <td>${escapeHtml(h.name)}</td>
+      <td><button class="ghost small hol-delete" title="Delete">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".hol-delete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!confirm("Delete this holiday?")) return;
+      const { error } = await sb.from("public_holidays").delete().eq("id", id);
+      if (error) return notice(error.message, "error");
+      notice("Deleted", "success");
+      await loadHolidays();
+    });
+  });
+}
+
+document.getElementById("hol-add-btn").addEventListener("click", async () => {
+  const dateVal = document.getElementById("hol-date").value;
+  const nameVal = document.getElementById("hol-name").value.trim();
+  if (!dateVal || !nameVal) return notice("Date and name are required", "warn");
+
+  const { error } = await sb.from("public_holidays").insert({
+    organisation_id: currentOrgId,
+    holiday_date: dateVal,
+    name: nameVal,
+  });
+  if (error) {
+    if (error.message?.includes("public_holidays_organisation_id_holiday_date_key"))
+      return notice("A holiday already exists on that date", "warn");
+    return notice(error.message, "error");
+  }
+  document.getElementById("hol-date").value = "";
+  document.getElementById("hol-name").value = "";
+  notice("Holiday added", "success");
+  await loadHolidays();
+});
 
 /* ---------------------------------------------------------------- settings */
 

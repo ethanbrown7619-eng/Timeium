@@ -16,6 +16,7 @@
         <button class="tab active" data-tab="jobs">Jobs</button>
         <button class="tab" data-tab="tasks">Tasks</button>
         <button class="tab" data-tab="deptcodes">Dept Codes</button>
+        <button class="tab" data-tab="holidays">Holidays</button>
         <button class="tab" data-tab="settings">Settings</button>
       </div>
 
@@ -499,6 +500,40 @@
       <!-- ============================================================ -->
       <!-- Settings tab                                                 -->
       <!-- ============================================================ -->
+      <!-- ============================================================ -->
+      <!-- Holidays tab                                                 -->
+      <!-- ============================================================ -->
+      <section id="tab-holidays" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:640px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Public Holidays</h2>
+            <div class="grow"></div>
+            <span id="holidays-count" class="muted small"></span>
+          </div>
+
+          <div class="row-flex mb-md" style="gap:8px">
+            <input id="hol-date" type="date" required />
+            <input id="hol-name" placeholder="Holiday name" required style="width:240px" />
+            <button id="hol-add-btn">+ Add</button>
+          </div>
+
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Name</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="holidays-body">
+                <tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section id="tab-settings" class="tab-panel" style="display:none">
         <!-- Approval Workflow -->
         <div class="card" style="max-width:640px">
