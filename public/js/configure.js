@@ -47,10 +47,8 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-jobs").style.display      = activeTab === "jobs"      ? "" : "none";
     document.getElementById("tab-tasks").style.display     = activeTab === "tasks"     ? "" : "none";
     document.getElementById("tab-deptcodes").style.display = activeTab === "deptcodes" ? "" : "none";
-    document.getElementById("tab-holidays").style.display  = activeTab === "holidays"  ? "" : "none";
     document.getElementById("tab-settings").style.display  = activeTab === "settings"  ? "" : "none";
-    if (activeTab === "holidays") loadHolidays();
-    if (activeTab === "settings") loadSettings();
+    if (activeTab === "settings") { loadSettings(); loadHolidays(); }
   });
 });
 
