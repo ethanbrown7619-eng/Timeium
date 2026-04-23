@@ -60,7 +60,6 @@ a:hover { text-decoration: underline; }
   top: 0;
   z-index: 10;
   min-height: 48px;
-  view-transition-name: topbar;
 }
 
 .pagination {
@@ -128,6 +127,16 @@ a:hover { text-decoration: underline; }
   display: flex;
   gap: 16px;
   flex: 1;
+  animation: topbar-fade-in 0.25s ease;
+}
+
+.topbar .row-flex {
+  animation: topbar-fade-in 0.25s ease;
+}
+
+@keyframes topbar-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .topbar nav a {
