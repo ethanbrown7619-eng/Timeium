@@ -52,6 +52,7 @@
                   <tr>
                     <th>Code</th>
                     <th>Description</th>
+                    <th>Leave</th>
                     <th>Status</th>
                     <th>Source</th>
                     <th>Last synced</th>
@@ -59,7 +60,7 @@
                   </tr>
                 </thead>
                 <tbody id="jobs-body">
-                  <tr><td colspan="6" class="muted small" style="text-align:center">Loading…</td></tr>
+                  <tr><td colspan="7" class="muted small" style="text-align:center">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -80,7 +81,7 @@
                 <label for="aj-desc">Description</label>
                 <input id="aj-desc" style="width:100%" placeholder="Shown in the timesheet autosuggest" />
               </div>
-              <div class="mb-md">
+              <div class="mb-sm">
                 <label for="aj-status">Status</label>
                 <select id="aj-status" style="width:100%">
                   <option value="ACTIVE" selected>ACTIVE</option>
@@ -90,6 +91,13 @@
                   <option value="DEP">DEP</option>
                   <option value="COMPLETED">COMPLETED</option>
                 </select>
+              </div>
+              <div class="mb-md">
+                <label class="row-flex" style="gap:8px;cursor:pointer">
+                  <input type="checkbox" id="aj-leave" />
+                  <span>Leave job</span>
+                  <span class="small muted">— hours logged against this job count as leave</span>
+                </label>
               </div>
               <button type="submit">Add job</button>
             </form>

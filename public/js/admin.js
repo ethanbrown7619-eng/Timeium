@@ -61,11 +61,13 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
-    document.getElementById("tab-dashboard").style.display = activeTab === "dashboard" ? "" : "none";
-    document.getElementById("tab-clockvts").style.display  = activeTab === "clockvts"  ? "" : "none";
-    document.getElementById("tab-infusion").style.display  = activeTab === "infusion"  ? "" : "none";
+    document.getElementById("tab-dashboard").style.display    = activeTab === "dashboard"   ? "" : "none";
+    document.getElementById("tab-clockvts").style.display    = activeTab === "clockvts"    ? "" : "none";
+    document.getElementById("tab-infusion").style.display    = activeTab === "infusion"    ? "" : "none";
+    document.getElementById("tab-leavereport").style.display = activeTab === "leavereport" ? "" : "none";
     if (activeTab === "clockvts") loadClockComparison();
     if (activeTab === "infusion") loadInfusionStatus();
+    if (activeTab === "leavereport") loadLeaveReport();
   });
 });
 
@@ -731,6 +733,217 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
 
     statusEl.textContent = "Done";
     notice(`Exported ${infRows.length} rows`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) {
+    notice(err.message || "Export failed", "error");
+    statusEl.textContent = "";
+  }
+});
+
+/* ================================================================
+ * Leave Report tab
+ * ================================================================ */
+
+let lvWeek = new Date(thisMonday);
+let lvRows = [];
+
+function updateLvWeekLabel() {
+  const end = addDays(lvWeek, 6);
+  document.getElementById("lv-week-label").textContent =
+    `${lvWeek.toLocaleDateString("en-AU", { month: "short", day: "numeric" })} — ${end.toLocaleDateString("en-AU", { month: "short", day: "numeric", year: "numeric" })}`;
+}
+updateLvWeekLabel();
+
+document.getElementById("lv-prev").addEventListener("click", () => {
+  lvWeek = addDays(lvWeek, -7);
+  updateLvWeekLabel();
+  loadLeaveReport();
+});
+document.getElementById("lv-next").addEventListener("click", () => {
+  lvWeek = addDays(lvWeek, 7);
+  updateLvWeekLabel();
+  loadLeaveReport();
+});
+document.getElementById("lv-include-drafts")?.addEventListener("change", () => loadLeaveReport());
+
+async function buildLeaveRows() {
+  if (!currentOrgId) return [];
+
+  const ws = fmtDate(lvWeek);
+  const includeDrafts = document.getElementById("lv-include-drafts").checked;
+
+  const { data: employees } = await sb
+    .from("users")
+    .select("id, name, employee_code, department_id, employment_type, active")
+    .eq("organisation_id", currentOrgId)
+    .eq("active", true);
+
+  const { data: departments } = await sb
+    .from("departments")
+    .select("id, name")
+    .eq("organisation_id", currentOrgId);
+
+  // Only get leave jobs
+  const { data: leaveJobs } = await sb
+    .from("jobs")
+    .select("id, job_code, description")
+    .eq("organisation_id", currentOrgId)
+    .eq("is_leave", true);
+
+  if (!leaveJobs?.length) return [];
+
+  const leaveJobIds = leaveJobs.map((j) => j.id);
+  const jobMap = {};
+  for (const j of leaveJobs) jobMap[j.id] = j;
+
+  let tsQuery = sb
+    .from("timesheets")
+    .select("id, user_id, status")
+    .eq("organisation_id", currentOrgId)
+    .eq("week_start", ws);
+  if (!includeDrafts) {
+    tsQuery = tsQuery.in("status", ["submitted", "approved"]);
+  }
+  const { data: timesheets } = await tsQuery;
+  if (!timesheets?.length) return [];
+
+  const tsIds = timesheets.map((t) => t.id);
+  const tsUserMap = {};
+  for (const t of timesheets) tsUserMap[t.id] = t.user_id;
+
+  // Only load entries for leave jobs
+  const { data: entries } = await sb
+    .from("timesheet_entries")
+    .select("id, timesheet_id, job_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+    .in("timesheet_id", tsIds)
+    .in("job_id", leaveJobIds);
+
+  if (!entries?.length) return [];
+
+  const empMap = {};
+  for (const e of employees || []) empMap[e.id] = e;
+  const deptMap = {};
+  for (const d of departments || []) deptMap[d.id] = d;
+
+  const rows = [];
+  for (const entry of entries) {
+    const userId = tsUserMap[entry.timesheet_id];
+    const emp = empMap[userId];
+    if (!emp) continue;
+
+    const job = jobMap[entry.job_id];
+    const dept = emp.department_id ? deptMap[emp.department_id] : null;
+    const totalHours = DAYS.reduce((sum, d) => sum + (Number(entry[`${d}_hours`]) || 0), 0);
+
+    if (totalHours === 0) continue;
+
+    const dailyHours = {};
+    for (let i = 0; i < 7; i++) {
+      dailyHours[DAY_LABELS[i]] = Number(entry[`${DAYS[i]}_hours`]) || 0;
+    }
+
+    rows.push({
+      employee: emp.name || "",
+      employee_code: emp.employee_code || "",
+      department: dept?.name || "",
+      employment_type: emp.employment_type || "",
+      leave_type: job?.job_code || "",
+      leave_description: job?.description || "",
+      note: entry.description || "",
+      ...dailyHours,
+      total: totalHours,
+    });
+  }
+
+  rows.sort((a, b) => a.employee.localeCompare(b.employee) || a.leave_type.localeCompare(b.leave_type));
+  return rows;
+}
+
+async function loadLeaveReport() {
+  const preview = document.getElementById("lv-preview");
+  const summary = document.getElementById("lv-summary");
+  preview.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+
+  try {
+    lvRows = await buildLeaveRows();
+    summary.textContent = lvRows.length
+      ? `${lvRows.length} leave entr${lvRows.length === 1 ? "y" : "ies"}`
+      : "";
+
+    if (!lvRows.length) {
+      preview.innerHTML = `<p class="muted small" style="text-align:center">No leave entries found for this week.</p>`;
+      return;
+    }
+
+    preview.innerHTML = `
+      <table class="small">
+        <thead>
+          <tr>
+            <th>Employee</th><th>Code</th><th>Department</th><th>Type</th>
+            <th>Leave</th><th>Note</th>
+            <th class="num">Mon</th><th class="num">Tue</th><th class="num">Wed</th>
+            <th class="num">Thu</th><th class="num">Fri</th><th class="num">Sat</th>
+            <th class="num">Sun</th><th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lvRows.map((r) => `
+            <tr>
+              <td>${escapeHtml(r.employee)}</td>
+              <td>${escapeHtml(r.employee_code)}</td>
+              <td>${escapeHtml(r.department)}</td>
+              <td>${escapeHtml(r.employment_type)}</td>
+              <td><strong>${escapeHtml(r.leave_type)}</strong></td>
+              <td>${escapeHtml(r.note)}</td>
+              ${DAY_LABELS.map((d) => `<td class="num">${r[d] || ""}</td>`).join("")}
+              <td class="num"><strong>${r.total}</strong></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    preview.innerHTML = `<p class="muted small" style="text-align:center">Error: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+// Leave export
+document.getElementById("lv-export-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("lv-status");
+  statusEl.textContent = "Generating…";
+
+  try {
+    if (!lvRows.length) lvRows = await buildLeaveRows();
+
+    if (!lvRows.length) {
+      notice("No leave data to export for this week", "warn");
+      statusEl.textContent = "";
+      return;
+    }
+
+    const headers = [
+      "Employee", "Employee Code", "Department", "Employment Type",
+      "Leave Type", "Leave Description", "Note",
+      "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total",
+    ];
+
+    const wsData = [headers];
+    for (const r of lvRows) {
+      wsData.push([
+        r.employee, r.employee_code, r.department, r.employment_type,
+        r.leave_type, r.leave_description, r.note,
+        r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat, r.Sun, r.total,
+      ]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Leave Report");
+
+    XLSX.writeFile(wb, `leave-report-${fmtDate(lvWeek)}.xlsx`);
+
+    statusEl.textContent = "Done";
+    notice(`Exported ${lvRows.length} leave entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
   } catch (err) {
     notice(err.message || "Export failed", "error");

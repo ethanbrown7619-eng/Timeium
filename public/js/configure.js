@@ -117,7 +117,7 @@ function makeController(kind) {
       while (true) {
         const { data, error } = await sb
           .from(table)
-          .select(`id, ${codeField}, description, status, source, last_synced_at`)
+          .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`)
           .eq("organisation_id", currentOrgId)
           .order(codeField, { ascending: true })
           .range(from, from + PAGE - 1);
@@ -163,7 +163,7 @@ function makeController(kind) {
     document.getElementById(`${prefix}-summary`).textContent =
       `${filtered.length} total · page ${state.page} of ${totalPages}`;
 
-    const colCount = c.hasStatus ? 6 : 5;
+    const colCount = kind === "jobs" ? 7 : (c.hasStatus ? 6 : 5);
     if (!pageRows.length) {
       body.innerHTML = `<tr><td colspan="${colCount}" class="muted small" style="text-align:center">No ${kind} match.</td></tr>`;
       paginationEl.innerHTML = "";
@@ -174,6 +174,9 @@ function makeController(kind) {
       <tr data-id="${r.id}">
         <td><strong>${escapeHtml(r[codeField])}</strong></td>
         <td>${escapeHtml(r.description || "")}</td>
+        ${kind === "jobs" ? `<td style="text-align:center">
+          <input type="checkbox" class="leave-cell" ${r.is_leave ? "checked" : ""} ${ctx.isAdminOrHigher ? "" : "disabled"} />
+        </td>` : ""}
         ${c.hasStatus ? `<td>
           <select class="status-cell" ${ctx.isAdminOrHigher ? "" : "disabled"}>
             ${STATUSES.map((s) =>
@@ -225,6 +228,23 @@ function makeController(kind) {
       });
     });
 
+    if (kind === "jobs") body.querySelectorAll(".leave-cell").forEach((cb) => {
+      cb.addEventListener("change", async (e) => {
+        const tr = e.target.closest("tr");
+        const id = Number(tr.dataset.id);
+        const val = e.target.checked;
+        try {
+          const { error } = await sb.from(table).update({ is_leave: val }).eq("id", id);
+          if (error) throw error;
+          const r = state.rows.find((x) => x.id === id);
+          if (r) r.is_leave = val;
+          notice("Updated", "success");
+        } catch (err) {
+          notice(err.message || "Update failed", "error");
+        }
+      });
+    });
+
     body.querySelectorAll(".delete-btn").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         const tr = e.target.closest("tr");
@@ -265,10 +285,14 @@ function makeController(kind) {
     const status = statusInput ? statusInput.value : "ACTIVE";
     if (!code) return;
     try {
+      const row = { organisation_id: currentOrgId, [codeField]: code, description: desc, status, source: "manual" };
+      if (kind === "jobs") {
+        row.is_leave = document.getElementById("aj-leave").checked;
+      }
       const { error } = await sb
         .from(table)
         .upsert(
-          { organisation_id: currentOrgId, [codeField]: code, description: desc, status, source: "manual" },
+          row,
           { onConflict: `organisation_id,${codeField}` }
         );
       if (error) throw error;

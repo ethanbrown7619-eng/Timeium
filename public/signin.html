@@ -68,6 +68,20 @@
           return;
         }
 
+        // Check if this user must change their default password
+        const { data: { session: sess } } = await sb.auth.getSession();
+        if (sess) {
+          const { data: me } = await sb
+            .from("users")
+            .select("must_change_password")
+            .eq("auth_user_id", sess.user.id)
+            .maybeSingle();
+          if (me?.must_change_password) {
+            location.replace("/change-password.html");
+            return;
+          }
+        }
+
         await routeAfterAuth(sb);
       });
     </script>

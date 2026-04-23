@@ -16,6 +16,7 @@
         <button class="tab active" data-tab="dashboard">Dashboard</button>
         <button class="tab" data-tab="clockvts">Timesheet vs Clock</button>
         <button class="tab" data-tab="infusion">Infusion Export</button>
+        <button class="tab" data-tab="leavereport">Leave Report</button>
       </div>
 
       <!-- ==================== Dashboard ==================== -->
@@ -108,6 +109,36 @@
             <button id="inf-preview-btn" class="ghost">Preview</button>
             <button id="inf-export-btn">Export to Excel</button>
             <span id="inf-status" class="muted small"></span>
+          </div>
+        </div>
+      </section>
+      <!-- ==================== Leave Report ==================== -->
+      <section id="tab-leavereport" class="tab-panel" style="display:none">
+        <h2 style="margin:0 0 4px">Leave Report</h2>
+        <p class="muted mb-md">Export leave hours for payroll processing.</p>
+
+        <div class="card">
+          <div class="row-flex mb-md">
+            <button class="ghost" id="lv-prev">&larr;</button>
+            <h3 id="lv-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+            <button class="ghost" id="lv-next">&rarr;</button>
+          </div>
+
+          <div class="row-flex mb-md">
+            <label class="row-flex small muted" style="gap:4px;margin:0">
+              <input type="checkbox" id="lv-include-drafts" /> Include draft timesheets
+            </label>
+            <div class="grow"></div>
+            <span id="lv-summary" class="muted small"></span>
+          </div>
+
+          <div id="lv-preview" style="overflow-x:auto;max-height:500px;overflow-y:auto;margin-bottom:16px">
+            <p class="muted small" style="text-align:center">Loading…</p>
+          </div>
+
+          <div class="row-flex">
+            <button id="lv-export-btn">Export to Excel</button>
+            <span id="lv-status" class="muted small"></span>
           </div>
         </div>
       </section>

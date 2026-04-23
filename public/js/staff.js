@@ -545,7 +545,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
     );
     notice("Saved", "success");
   } else {
-    const { error } = await sb.rpc("create_employee", {
+    const { data: newEmp, error } = await sb.rpc("create_employee", {
       p_org_id: currentOrgId,
       p_name: payload.name,
       p_email: payload.email,
@@ -562,6 +562,15 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
         : error.message,
       "error"
     );
+
+    // Provision a login account with default password if employee has an email
+    if (payload.email && newEmp?.id) {
+      try {
+        await sb.rpc("provision_employee_login", { p_user_id: newEmp.id });
+      } catch (err) {
+        console.warn("provision_employee_login failed:", err);
+      }
+    }
     notice("Employee created", "success");
   }
 
