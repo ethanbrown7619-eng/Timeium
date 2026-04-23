@@ -476,6 +476,14 @@ function openDialog(empId) {
     deact.classList.add("hidden");
   }
 
+  const delBtn = document.getElementById("delete-emp-btn");
+  if (isEdit && ctx.isDeveloper) {
+    delBtn.classList.remove("hidden");
+    delBtn.onclick = () => deleteEmployee(emp.id, emp.name);
+  } else {
+    delBtn.classList.add("hidden");
+  }
+
   // Gate form controls for manager role.
   const form = document.getElementById("employee-form");
   form.querySelectorAll("input,select,button[type=submit]").forEach((el) => {
@@ -596,6 +604,18 @@ async function reactivateEmployee(id) {
   if (error) return notice(error.message, "error");
   document.getElementById("employee-dialog").close();
   notice("Reactivated", "success");
+  await reloadAll();
+}
+async function deleteEmployee(id, name) {
+  if (!confirm(`Permanently delete ${name}? This cannot be undone.`)) return;
+  const { error } = await sb
+    .from("users")
+    .delete()
+    .eq("id", id)
+    .eq("organisation_id", currentOrgId);
+  if (error) return notice(error.message, "error");
+  document.getElementById("employee-dialog").close();
+  notice("Deleted", "success");
   await reloadAll();
 }
 
