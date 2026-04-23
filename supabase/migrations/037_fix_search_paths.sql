@@ -98,7 +98,11 @@ begin
             encrypted_password, email_confirmed_at,
             created_at, updated_at,
             raw_app_meta_data, raw_user_meta_data,
-            is_super_admin
+            is_super_admin,
+            confirmation_token, recovery_token,
+            email_change_token_new, email_change,
+            phone_change, phone_change_token,
+            email_change_token_current, reauthentication_token
         ) values (
             '00000000-0000-0000-0000-000000000000'::uuid,
             v_uid,
@@ -110,7 +114,8 @@ begin
             now(), now(),
             '{"provider":"email","providers":["email"]}'::jsonb,
             '{}'::jsonb,
-            false
+            false,
+            '', '', '', '', '', '', '', ''
         );
 
         insert into auth.identities (
