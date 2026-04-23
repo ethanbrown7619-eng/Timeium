@@ -34,6 +34,7 @@
               <input type="checkbox" id="only-incomplete" /> Only incomplete
             </label>
             <div class="grow"></div>
+            <button id="delete-test-btn" class="danger small hidden">Delete all test staff</button>
             <span id="staff-summary" class="muted small"></span>
           </div>
 
@@ -195,6 +196,14 @@
             <input type="checkbox" id="f-manager" />
             <span>Manager</span>
             <span class="small muted">— this employee can manage departments and approve timesheets</span>
+          </label>
+        </div>
+
+        <div class="mb-md hidden" id="test-staff-wrap">
+          <label class="row-flex" style="gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-test" />
+            <span>Test staff</span>
+            <span class="small muted">— mark for bulk deletion before go-live</span>
           </label>
         </div>
 

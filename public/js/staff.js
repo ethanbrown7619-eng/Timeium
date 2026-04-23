@@ -125,6 +125,21 @@ if (!ctx.isAdminOrHigher) {
 
 await reloadAll();
 
+if (ctx.isDeveloper) {
+  const delTestBtn = document.getElementById("delete-test-btn");
+  delTestBtn.classList.remove("hidden");
+  delTestBtn.addEventListener("click", async () => {
+    const testEmps = employees.filter((e) => e.is_test);
+    if (!testEmps.length) return notice("No test staff to delete", "info");
+    if (!confirm(`Permanently delete ${testEmps.length} test employee${testEmps.length === 1 ? "" : "s"}?`)) return;
+    for (const emp of testEmps) {
+      await sb.from("users").delete().eq("id", emp.id).eq("organisation_id", currentOrgId);
+    }
+    notice(`Deleted ${testEmps.length} test employee${testEmps.length === 1 ? "" : "s"}`, "success");
+    await reloadAll();
+  });
+}
+
 async function reloadAll() {
   if (!currentOrgId) return;
   await Promise.all([loadDepartments(), loadEmployees()]);
@@ -138,7 +153,7 @@ async function loadEmployees() {
   const { data, error } = await sb
     .from("users")
     .select(
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id, is_manager"
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id, is_manager, is_test"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
@@ -443,6 +458,10 @@ function openDialog(empId) {
   updateRateRef(emp?.department_id);
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
   document.getElementById("f-manager").checked = emp?.is_manager || false;
+  if (ctx.isDeveloper) {
+    document.getElementById("test-staff-wrap").classList.remove("hidden");
+    document.getElementById("f-test").checked = emp?.is_test || false;
+  }
 
   document.getElementById("f-specific-rate").onchange = (e) => {
     document.getElementById("rate-fields").style.display = e.target.checked ? "" : "none";
@@ -530,6 +549,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
         ? null
         : Number(document.getElementById("f-ot").value),
     is_manager: document.getElementById("f-manager").checked,
+    is_test: ctx.isDeveloper ? document.getElementById("f-test").checked : undefined,
   };
 
   if (!payload.name) {
