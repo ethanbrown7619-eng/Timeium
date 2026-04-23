@@ -614,6 +614,25 @@ function makeController(kind) {
 
 let holidayRows = [];
 
+// Populate year dropdown
+const holYearSel = document.getElementById("hol-year");
+const thisYear = new Date().getFullYear();
+for (let y = thisYear; y <= thisYear + 3; y++) {
+  holYearSel.innerHTML += `<option value="${y}">${y}</option>`;
+}
+
+document.getElementById("hol-generate-btn").addEventListener("click", async () => {
+  const year = Number(holYearSel.value);
+  if (!year || !currentOrgId) return;
+  const { data, error } = await sb.rpc("seed_public_holidays_for_year", {
+    p_org_id: currentOrgId,
+    p_year: year,
+  });
+  if (error) return notice(error.message, "error");
+  notice(`Generated NZ holidays for ${year} (${data} added)`, "success");
+  await loadHolidays();
+});
+
 async function loadHolidays() {
   if (!currentOrgId) return;
   const { data, error } = await sb
