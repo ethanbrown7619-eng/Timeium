@@ -587,6 +587,28 @@
           </div>
         </div>
 
+        <!-- Public Holiday Autofill -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Public Holiday Autofill</h2>
+          <p class="muted">
+            When enabled, public holidays that fall on an employee's working
+            day are automatically added to their timesheet as a public holiday
+            entry (8 hours by default).
+          </p>
+          <label class="row-flex" style="gap:8px;cursor:pointer">
+            <input type="checkbox" id="autofill-public-holidays" />
+            <span>Auto-fill public holidays on timesheets</span>
+          </label>
+          <div class="row-flex mt-sm mb-md" id="ph-hours-row" style="display:none;gap:8px;align-items:center">
+            <label for="ph-hours" class="small muted" style="margin:0">Hours per holiday:</label>
+            <input id="ph-hours" type="number" step="0.5" min="0" max="24" value="8" style="width:80px" />
+          </div>
+          <div class="mt-md">
+            <button id="save-ph-autofill-btn">Save</button>
+            <span id="ph-autofill-status" class="muted small" style="margin-left:12px"></span>
+          </div>
+        </div>
+
         <!-- Timesheet Deadline -->
         <div class="card" style="max-width:640px">
           <h2 style="margin-top:0">Timesheet Deadline</h2>

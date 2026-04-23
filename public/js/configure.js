@@ -699,7 +699,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -719,6 +719,11 @@ async function loadSettings() {
 
     // Manager approval gate
     document.getElementById("force-view-before-approval").checked = !!data.force_view_before_approval;
+
+    // Public holiday autofill
+    document.getElementById("autofill-public-holidays").checked = !!data.autofill_public_holidays;
+    document.getElementById("ph-hours").value = data.public_holiday_hours ?? 8;
+    document.getElementById("ph-hours-row").style.display = data.autofill_public_holidays ? "" : "none";
 
     // Deadline
     document.getElementById("deadline-week").value = data.deadline_week || "following_week";
@@ -770,6 +775,30 @@ document.getElementById("save-view-gate-btn").addEventListener("click", async ()
     if (error) throw error;
     notice("Approval gate saved", "success");
     flashStatus("view-gate-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
+// Public holiday autofill toggle
+document.getElementById("autofill-public-holidays").addEventListener("change", (e) => {
+  document.getElementById("ph-hours-row").style.display = e.target.checked ? "" : "none";
+});
+
+document.getElementById("save-ph-autofill-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    const { error } = await sb
+      .from("organisations")
+      .update({
+        autofill_public_holidays: document.getElementById("autofill-public-holidays").checked,
+        public_holiday_hours: Number(document.getElementById("ph-hours").value) || 8,
+      })
+      .eq("id", currentOrgId);
+    if (error) throw error;
+    notice("Public holiday autofill saved", "success");
+    flashStatus("ph-autofill-status");
   } catch (err) {
     notice(err.message || "Save failed", "error");
   }

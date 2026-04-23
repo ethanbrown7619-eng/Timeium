@@ -57,6 +57,8 @@ let deptCodes = [];
 let holidays = {};
 let calMonth = new Date();
 let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
+let orgAutofillPH = false;
+let orgPHHours = 8;
 
 function getMonday(d) {
   const dt = new Date(d);
@@ -614,7 +616,7 @@ async function loadLookups() {
   while (true) {
     const { data, error } = await sb
       .from("jobs")
-      .select("id, job_code, description, status")
+      .select("id, job_code, description, status, is_leave")
       .eq("organisation_id", currentOrgId)
       .order("job_code")
       .range(from, from + PAGE - 1);
@@ -696,6 +698,11 @@ async function loadWeek() {
     entries = [];
   }
 
+  // Auto-fill public holiday entries if setting is on and timesheet is draft
+  if (orgAutofillPH && tsStatus === "draft") {
+    await autofillPublicHolidays();
+  }
+
   renderGrid();
 }
 
@@ -766,6 +773,49 @@ function setupAC(input, items, { onSelect, onClear }) {
     input.dataset.selectedId = String(it.id);
     list.classList.remove("open");
     if (onSelect) onSelect(it);
+  }
+}
+
+/* ---------------------------------------------------------------- autofill public holidays */
+
+async function autofillPublicHolidays() {
+  if (!timesheetId || !weekStart) return;
+
+  // Find public holiday job
+  const phJob = jobs.find((j) => j.is_leave && j.job_code?.toUpperCase().includes("PUBLIC"));
+  if (!phJob) return;
+
+  // Check which weekdays this week are holidays
+  const phDays = [];
+  for (let i = 0; i < 5; i++) {
+    const d = addDays(weekStart, i);
+    const key = fmtDate(d);
+    if (holidays[key]) phDays.push({ idx: i, day: DAYS[i], name: holidays[key] });
+  }
+  if (!phDays.length) return;
+
+  // Check if an entry for the PH job already exists
+  const existing = entries.find((e) => e.job_id === phJob.id);
+  if (existing) return;
+
+  // Create the entry with hours on the holiday days
+  const hoursCols = {};
+  for (const d of DAYS) hoursCols[`${d}_hours`] = 0;
+  for (const ph of phDays) hoursCols[`${ph.day}_hours`] = orgPHHours;
+
+  const { data: newEntry, error } = await sb
+    .from("timesheet_entries")
+    .insert({
+      timesheet_id: timesheetId,
+      job_id: phJob.id,
+      description: phDays.map((p) => p.name).join(", "),
+      ...hoursCols,
+    })
+    .select()
+    .maybeSingle();
+
+  if (!error && newEntry) {
+    entries.push(newEntry);
   }
 }
 
@@ -1044,13 +1094,15 @@ async function loadOrgDeadline() {
   try {
     const { data } = await sb
       .from("organisations")
-      .select("deadline_week, deadline_day, deadline_time")
+      .select("deadline_week, deadline_day, deadline_time, autofill_public_holidays, public_holiday_hours")
       .eq("id", currentOrgId)
       .maybeSingle();
     if (data) {
       orgDeadline.week = data.deadline_week || "following_week";
       orgDeadline.day = data.deadline_day || "monday";
       orgDeadline.time = (data.deadline_time || "08:00").slice(0, 5);
+      orgAutofillPH = !!data.autofill_public_holidays;
+      orgPHHours = Number(data.public_holiday_hours) || 8;
     }
   } catch {}
 }
