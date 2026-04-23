@@ -491,6 +491,15 @@ document.getElementById("cancel-edit").addEventListener("click", () =>
   document.getElementById("employee-dialog").close()
 );
 
+function friendlyConstraintMsg(error, payload) {
+  const msg = error.message || "";
+  if (msg.includes("users_org_employee_code_uniq"))
+    return `Employee code "${payload.employee_code}" is already in use.`;
+  if (msg.includes("users_org_email_uniq"))
+    return `Email "${payload.email}" is already in use.`;
+  return msg;
+}
+
 document.getElementById("employee-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!ctx.isAdminOrHigher) return;
@@ -537,12 +546,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       .update(updatePayload)
       .eq("id", empId)
       .eq("organisation_id", currentOrgId);
-    if (error) return notice(
-      error.message?.includes("users_org_employee_code_uniq")
-        ? `Employee code "${payload.employee_code}" is already in use by another employee in this organisation.`
-        : error.message,
-      "error"
-    );
+    if (error) return notice(friendlyConstraintMsg(error, payload), "error");
     notice("Saved", "success");
   } else {
     const { data: newEmp, error } = await sb.rpc("create_employee", {
@@ -556,12 +560,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       p_employee_code: payload.employee_code,
       p_overtime_threshold_hours: payload.overtime_threshold_hours,
     });
-    if (error) return notice(
-      error.message?.includes("users_org_employee_code_uniq")
-        ? `Employee code "${payload.employee_code}" is already in use by another employee in this organisation.`
-        : error.message,
-      "error"
-    );
+    if (error) return notice(friendlyConstraintMsg(error, payload), "error");
 
     // Provision a login account with default password if employee has an email
     const empId = Array.isArray(newEmp) ? newEmp[0]?.id : newEmp?.id;
