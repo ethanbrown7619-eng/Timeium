@@ -843,7 +843,7 @@ function renderStatusBadge() {
     const mon = d.toLocaleString("en-NZ", { month: "short" });
     const yr = d.getFullYear();
     const time = d.toLocaleString("en-NZ", { hour: "numeric", minute: "2-digit", hour12: true });
-    timeStr = `<span class="ts-status-time">${day} ${mon} ${yr} at ${time}</span>`;
+    timeStr = `<span class="ts-status-time">Submitted ${day} ${mon} ${yr} at ${time}</span>`;
   }
   const dotClass = tsStatus === "approved" ? "approved" : "submitted";
   el.className = `ts-status-badge ts-status-${dotClass}`;
