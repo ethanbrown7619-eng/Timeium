@@ -187,16 +187,28 @@ async function loadDashboard() {
 
   body.innerHTML = employees.map((e) => {
     const ts = tsMap[e.id];
-    const submitted = ts && (ts.status === "submitted" || ts.status === "approved");
     const hours = ts ? (hoursMap[ts.id] || 0) : 0;
-    const badge = submitted
-      ? `<span class="chip-dash chip-submitted">Submitted</span>`
-      : `<span class="chip-dash chip-pending">Not submitted</span>`;
+
+    let badge, badgeClass;
+    if (ts?.status === "approved") {
+      badge = "Approved";
+      badgeClass = "dept-badge dept-badge-approved";
+    } else if (ts && (ts.status === "submitted" || ts.status === "approved")) {
+      badge = "Submitted";
+      badgeClass = "dept-badge dept-badge-submitted";
+    } else if (ts?.status === "draft") {
+      badge = "Draft";
+      badgeClass = "dept-badge dept-badge-draft";
+    } else {
+      badge = "Not submitted";
+      badgeClass = "dept-badge dept-badge-none";
+    }
+
     return `
       <tr>
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptName(e.department_id))}</td>
-        <td>${badge}</td>
+        <td><span class="${badgeClass}">${badge}</span></td>
         <td class="small">${hours ? hours + "h" : ""}</td>
       </tr>`;
   }).join("");

@@ -243,27 +243,37 @@ async function loadDashboard() {
     const ts = tsMap[e.id];
     const sub = isSubmitted(e.id);
     const hours = ts ? (hoursMap[ts.id] || 0) : 0;
-    const badge = sub
-      ? `<span class="chip-dash chip-submitted">Submitted</span>`
-      : `<span class="chip-dash chip-pending">Not submitted</span>`;
+
+    let badge, badgeClass;
+    if (ts?.status === "approved") {
+      badge = "Approved";
+      badgeClass = "dept-badge dept-badge-approved";
+    } else if (sub) {
+      badge = "Submitted";
+      badgeClass = "dept-badge dept-badge-submitted";
+    } else if (ts?.status === "draft") {
+      badge = "Draft";
+      badgeClass = "dept-badge dept-badge-draft";
+    } else {
+      badge = "Not submitted";
+      badgeClass = "dept-badge dept-badge-none";
+    }
 
     let actions = "";
     if (ts) {
-      actions += `<a href="/timesheet-view.html?user=${e.id}&week=${ws}" class="btn-link small">View</a>`;
+      actions += `<a href="/timesheet-view.html?user=${e.id}&week=${ws}" class="dept-view-btn">View</a>`;
     }
     if (sub && ts.status === "submitted" && canApproveInline) {
-      actions += ` <button class="ghost small approve-btn" data-ts-id="${ts.id}">Approve</button>`;
+      actions += `<button class="dept-approve-btn approve-btn" data-ts-id="${ts.id}">Approve</button>`;
     } else if (sub && ts.status === "submitted" && !canApproveInline) {
-      actions += ` <span class="small muted" title="Manager must open the timesheet before approving">Review to approve</span>`;
-    } else if (ts?.status === "approved") {
-      actions += ` <span class="small muted">Approved</span>`;
+      actions += `<span class="small muted" title="Manager must open the timesheet before approving">Review to approve</span>`;
     }
 
     return `
       <tr>
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptNameMap[e.department_id] || "")}</td>
-        <td>${badge}</td>
+        <td><span class="${badgeClass}">${badge}</span></td>
         <td class="small">${hours ? hours + "h" : ""}</td>
         <td style="white-space:nowrap">${actions}</td>
       </tr>`;

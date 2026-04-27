@@ -901,6 +901,60 @@ details.card[open] > summary::before { content: "▾ "; }
   color: #b45309;
 }
 
+/* -------- department employee table badges & actions -------- */
+.dept-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dept-badge::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dept-badge-approved { background: #e6f4ea; color: var(--success); }
+.dept-badge-approved::before { background: var(--success); }
+.dept-badge-submitted { background: #e8f0fe; color: #1a56c7; }
+.dept-badge-submitted::before { background: #1a56c7; }
+.dept-badge-draft { background: var(--surface-alt); color: var(--text-muted); }
+.dept-badge-draft::before { background: var(--text-muted); }
+.dept-badge-none { background: #fef4e5; color: #b45309; }
+.dept-badge-none::before { background: #b45309; }
+
+.dept-view-btn {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.dept-view-btn:hover { background: var(--border); }
+.dept-approve-btn {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--success);
+  background: #e6f4ea;
+  border: 1px solid #c3e6cb;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: background 0.15s;
+}
+.dept-approve-btn:hover { background: #d4edda; }
+
 /* -------- approval workflow radio -------- */
 
 .workflow-options {
