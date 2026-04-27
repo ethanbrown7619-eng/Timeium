@@ -22,15 +22,6 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="card" id="linked-card" style="display:none">
-        <h2 id="linked-heading">You're all set</h2>
-        <p class="muted">
-          Your account is linked to <strong id="linked-name"></strong>. The
-          weekly timesheet page is coming in the next release — you'll be able
-          to enter hours here once it's ready.
-        </p>
-      </div>
-
       <div class="card" id="unlinked-card" style="display:none">
         <h2>Almost there</h2>
         <p>
@@ -83,13 +74,24 @@
         console.warn("initial claim failed", err);
       }
 
-      if (claim?.claimed) {
-        document.getElementById("linked-card").style.display = "";
-        document.getElementById("linked-name").textContent = claim.name || session.user.email;
-      } else {
-        document.getElementById("unlinked-card").style.display = "";
-        document.getElementById("unlinked-email").textContent = session.user.email || "your email";
+      // If employee is linked, go straight to timesheets
+      if (claim?.claimed || claim?.already_linked) {
+        location.replace("/timesheet.html");
+        return;
       }
+
+      // Also check if user already has an employee record
+      try {
+        const { data } = await sb.from("users").select("id").eq("auth_user_id", session.user.id).maybeSingle();
+        if (data) {
+          location.replace("/timesheet.html");
+          return;
+        }
+      } catch {}
+
+      // Not linked — show the unlinked message
+      document.getElementById("unlinked-card").style.display = "";
+      document.getElementById("unlinked-email").textContent = session.user.email || "your email";
     </script>
   </body>
 </html>

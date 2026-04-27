@@ -160,6 +160,15 @@ export async function routeAfterAuth(sb) {
     return;
   }
 
+  // Fallback: check if user already has an employee record
+  try {
+    const { data } = await sb.from("users").select("id").eq("auth_user_id", session.user.id).maybeSingle();
+    if (data) {
+      location.replace("/timesheet.html");
+      return;
+    }
+  } catch {}
+
   location.replace("/welcome.html?unlinked=1");
 }
 
