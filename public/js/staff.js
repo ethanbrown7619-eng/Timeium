@@ -620,6 +620,14 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       .eq("id", empId)
       .eq("organisation_id", currentOrgId);
     if (error) return notice(friendlyConstraintMsg(error, payload), "error");
+
+    // Provision a login account if email was added and no auth account exists
+    const prev = employees.find((e) => e.id === empId);
+    if (payload.email && !prev?.auth_user_id) {
+      const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: empId });
+      if (provErr) console.warn("provision_employee_login:", provErr.message);
+    }
+
     notice("Saved", "success");
   } else {
     const { data: newEmp, error } = await sb.rpc("create_employee", {
