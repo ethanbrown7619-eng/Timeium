@@ -1061,7 +1061,7 @@ document.getElementById("import-last-week").addEventListener("click", async () =
 
 /* ---------------------------------------------------------------- submit timesheet */
 
-document.getElementById("submit-ts-btn").addEventListener("click", async () => {
+document.getElementById("submit-ts-btn").addEventListener("click", () => {
   if (!timesheetId) return;
   if (tsStatus === "submitted" || tsStatus === "approved") return;
 
@@ -1078,14 +1078,32 @@ document.getElementById("submit-ts-btn").addEventListener("click", async () => {
     return;
   }
 
-  if (!confirm(`Submit this timesheet with ${totalHours}h across ${entries.length} task${entries.length !== 1 ? "s" : ""}? You won't be able to edit it after submission.`)) return;
+  const taskCount = entries.length;
+  const dialog = document.getElementById("submit-confirm-dialog");
+  const msgEl = document.getElementById("submit-confirm-msg");
+  const warnEl = document.getElementById("submit-confirm-warn");
+
+  msgEl.textContent = `Submit ${totalHours}h across ${taskCount} task${taskCount !== 1 ? "s" : ""}?`;
+  warnEl.textContent = totalHours < 40
+    ? `This timesheet has less than 40 hours logged. You won't be able to edit it after submission.`
+    : `You won't be able to edit it after submission.`;
+
+  dialog.showModal();
+});
+
+document.getElementById("submit-cancel-btn").addEventListener("click", () => {
+  document.getElementById("submit-confirm-dialog").close();
+});
+
+document.getElementById("submit-confirm-btn").addEventListener("click", async () => {
+  const dialog = document.getElementById("submit-confirm-dialog");
+  dialog.close();
 
   const btn = document.getElementById("submit-ts-btn");
   btn.disabled = true;
   btn.textContent = "Submitting…";
 
   try {
-    // Snapshot job statuses
     try {
       await sb.rpc("snapshot_timesheet_job_statuses", { p_timesheet_id: timesheetId });
     } catch {}
