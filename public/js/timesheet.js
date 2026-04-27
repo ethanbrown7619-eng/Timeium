@@ -835,15 +835,24 @@ function renderGrid() {
   const taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
 
   // Show/hide submit bar based on status
-  const submitBar = document.getElementById("submit-bar");
   const submitBtn = document.getElementById("submit-ts-btn");
+  const lockedMsg = document.getElementById("ts-locked-msg");
   if (isSubmitted) {
-    submitBar.style.display = "none";
+    submitBtn.style.display = "none";
+    lockedMsg.style.display = "";
+    lockedMsg.textContent = `This timesheet has been ${tsStatus} and cannot be edited.`;
   } else {
-    submitBar.style.display = "";
+    submitBtn.style.display = "";
     submitBtn.textContent = "Submit Timesheet";
     submitBtn.disabled = false;
+    lockedMsg.style.display = "none";
   }
+
+  // Disable editing controls when submitted/approved
+  const addRowBtn = document.getElementById("add-row-btn");
+  const importBtn = document.getElementById("import-last-week");
+  if (addRowBtn) addRowBtn.style.display = isSubmitted ? "none" : "";
+  if (importBtn) importBtn.style.display = isSubmitted ? "none" : "";
 
   if (!entries.length) {
     body.innerHTML = `<tr><td colspan="14" class="muted small" style="text-align:center;padding:24px">No tasks yet — click "+ Add task" below to start.</td></tr>`;
@@ -858,117 +867,122 @@ function renderGrid() {
     const task = tasks.find((t) => t.id === e.task_id);
     const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
 
+    const ro = isSubmitted ? "readonly" : "";
+    const dis = isSubmitted ? "disabled" : "";
+
     return `
       <tr data-entry-id="${e.id}" data-idx="${idx}">
         <td>
           <div class="ac-wrap">
-            <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" />
+            <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" ${ro} />
             <div class="ac-list"></div>
           </div>
         </td>
         <td><span class="small status-badge status-${jobStatus.toLowerCase()}">${escapeHtml(jobStatus)}</span></td>
         <td>
           <div class="ac-wrap">
-            <input class="ac-dept" value="${escapeHtml(dept?.code || "")}" data-selected-id="${e.dept_code_id || ""}" placeholder="Dept…" />
+            <input class="ac-dept" value="${escapeHtml(dept?.code || "")}" data-selected-id="${e.dept_code_id || ""}" placeholder="Dept…" ${ro} />
             <div class="ac-list"></div>
           </div>
         </td>
         <td>
           <div class="ac-wrap">
-            <input class="ac-task" value="${escapeHtml(task?.task_code || "")}" data-selected-id="${e.task_id || ""}" placeholder="Task…" />
+            <input class="ac-task" value="${escapeHtml(task?.task_code || "")}" data-selected-id="${e.task_id || ""}" placeholder="Task…" ${ro} />
             <div class="ac-list"></div>
           </div>
         </td>
         <td>
-          <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" />
+          <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" ${ro} />
         </td>
         ${DAYS.map((d, i) => `
           <td class="day-col${i >= 5 ? " day-weekend" : ""}">
             <input type="number" class="hours-input" data-day="${d}"
               value="${Number(e[`${d}_hours`]) || ""}" min="0" max="24" step="0.25"
-              style="text-align:center" />
+              style="text-align:center" ${ro} />
           </td>
         `).join("")}
         <td class="day-col row-total"><strong>${rowTotal}</strong></td>
         <td>
-          <button class="ghost small delete-entry-btn" title="Remove row">✕</button>
+          ${isSubmitted ? "" : `<button class="ghost small delete-entry-btn" title="Remove row">✕</button>`}
         </td>
       </tr>
     `;
   }).join("");
 
-  // Wire up autocomplete
-  body.querySelectorAll("tr[data-idx]").forEach((row) => {
-    const idx = Number(row.dataset.idx);
+  if (!isSubmitted) {
+    // Wire up autocomplete
+    body.querySelectorAll("tr[data-idx]").forEach((row) => {
+      const idx = Number(row.dataset.idx);
 
-    setupAC(row.querySelector(".ac-job"), jobItems, {
-      onSelect: (it) => {
-        entries[idx].job_id = it.id;
-        saveEntry(entries[idx]);
-        const badge = row.querySelector(".status-badge");
-        if (badge) {
-          badge.textContent = it.status || "";
-          badge.className = `small status-badge status-${(it.status || "").toLowerCase()}`;
+      setupAC(row.querySelector(".ac-job"), jobItems, {
+        onSelect: (it) => {
+          entries[idx].job_id = it.id;
+          saveEntry(entries[idx]);
+          const badge = row.querySelector(".status-badge");
+          if (badge) {
+            badge.textContent = it.status || "";
+            badge.className = `small status-badge status-${(it.status || "").toLowerCase()}`;
+          }
+        },
+        onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); },
+      });
+
+      setupAC(row.querySelector(".ac-dept"), deptItems, {
+        onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
+        onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx]); },
+      });
+
+      setupAC(row.querySelector(".ac-task"), taskItems, {
+        onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx]); },
+        onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx]); },
+      });
+    });
+
+    // Description debounced save
+    body.querySelectorAll(".desc-input").forEach((inp) => {
+      let timer;
+      inp.addEventListener("input", (e) => {
+        const row = e.target.closest("tr");
+        const idx = Number(row.dataset.idx);
+        entries[idx].description = inp.value;
+        clearTimeout(timer);
+        timer = setTimeout(() => saveEntry(entries[idx]), 600);
+      });
+    });
+
+    // Hours inputs
+    body.querySelectorAll(".hours-input").forEach((inp) => {
+      let timer;
+      inp.addEventListener("input", (e) => {
+        const row = e.target.closest("tr");
+        const idx = Number(row.dataset.idx);
+        const day = inp.dataset.day;
+        entries[idx][`${day}_hours`] = parseFloat(inp.value) || 0;
+        const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
+        row.querySelector(".row-total strong").textContent = rowTotal;
+        updateTotals();
+        clearTimeout(timer);
+        timer = setTimeout(() => saveEntry(entries[idx]), 400);
+      });
+    });
+
+    // Delete buttons
+    body.querySelectorAll(".delete-entry-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const row = e.target.closest("tr");
+        const entryId = Number(row.dataset.entryId);
+        try {
+          const { error } = await sb.from("timesheet_entries").delete().eq("id", entryId);
+          if (error) throw error;
+          entries = entries.filter((x) => x.id !== entryId);
+          renderGrid();
+          notice("Row removed", "success");
+        } catch (err) {
+          notice(err.message || "Delete failed", "error");
         }
-      },
-      onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); },
+      });
     });
-
-    setupAC(row.querySelector(".ac-dept"), deptItems, {
-      onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
-      onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx]); },
-    });
-
-    setupAC(row.querySelector(".ac-task"), taskItems, {
-      onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx]); },
-      onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx]); },
-    });
-  });
-
-  // Description debounced save
-  body.querySelectorAll(".desc-input").forEach((inp) => {
-    let timer;
-    inp.addEventListener("input", (e) => {
-      const row = e.target.closest("tr");
-      const idx = Number(row.dataset.idx);
-      entries[idx].description = inp.value;
-      clearTimeout(timer);
-      timer = setTimeout(() => saveEntry(entries[idx]), 600);
-    });
-  });
-
-  // Hours inputs
-  body.querySelectorAll(".hours-input").forEach((inp) => {
-    let timer;
-    inp.addEventListener("input", (e) => {
-      const row = e.target.closest("tr");
-      const idx = Number(row.dataset.idx);
-      const day = inp.dataset.day;
-      entries[idx][`${day}_hours`] = parseFloat(inp.value) || 0;
-      const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
-      row.querySelector(".row-total strong").textContent = rowTotal;
-      updateTotals();
-      clearTimeout(timer);
-      timer = setTimeout(() => saveEntry(entries[idx]), 400);
-    });
-  });
-
-  // Delete buttons
-  body.querySelectorAll(".delete-entry-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const row = e.target.closest("tr");
-      const entryId = Number(row.dataset.entryId);
-      try {
-        const { error } = await sb.from("timesheet_entries").delete().eq("id", entryId);
-        if (error) throw error;
-        entries = entries.filter((x) => x.id !== entryId);
-        renderGrid();
-        notice("Row removed", "success");
-      } catch (err) {
-        notice(err.message || "Delete failed", "error");
-      }
-    });
-  });
+  }
 
   updateTotals();
 }
