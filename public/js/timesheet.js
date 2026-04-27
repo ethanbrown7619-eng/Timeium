@@ -716,7 +716,7 @@ async function loadWeek() {
 
 /* ---------------------------------------------------------------- autocomplete helper */
 
-function setupAC(input, items, { onSelect, onClear }) {
+function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
   const wrap = input.closest(".ac-wrap");
   const list = wrap.querySelector(".ac-list");
   let highlighted = -1;
@@ -725,7 +725,7 @@ function setupAC(input, items, { onSelect, onClear }) {
     const q = (query || "").toLowerCase();
     const filtered = q
       ? items.filter((it) => it._label.toLowerCase().includes(q) || (it._desc || "").toLowerCase().includes(q))
-      : [];
+      : (requireQuery ? [] : items);
     const show = filtered.slice(0, 100);
     highlighted = -1;
     list.innerHTML =
@@ -740,7 +740,7 @@ function setupAC(input, items, { onSelect, onClear }) {
     list._items = show;
   }
 
-  input.addEventListener("focus", () => { if (input.value) render(input.value); });
+  input.addEventListener("focus", () => { if (!requireQuery || input.value) render(input.value); });
   input.addEventListener("input", () => render(input.value));
 
   input.addEventListener("keydown", (e) => {
@@ -941,6 +941,7 @@ function renderGrid() {
       const idx = Number(row.dataset.idx);
 
       setupAC(row.querySelector(".ac-job"), jobItems, {
+        requireQuery: true,
         onSelect: (it) => {
           entries[idx].job_id = it.id;
           saveEntry(entries[idx]);
