@@ -22,7 +22,11 @@
       <!-- ==================== Dashboard ==================== -->
       <section id="tab-dashboard" class="tab-panel">
         <h2 style="margin:0 0 4px">Admin Dashboard</h2>
-        <p class="muted mb-md" id="week-label"></p>
+        <div class="row-flex mb-md">
+          <button class="ghost" id="dash-prev">←</button>
+          <h3 id="week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+          <button class="ghost" id="dash-next">→</button>
+        </div>
 
         <div class="dash-charts">
           <div class="card dash-chart-card">

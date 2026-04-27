@@ -80,9 +80,25 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
  * Dashboard tab
  * ================================================================ */
 
-const weekEnd = addDays(thisMonday, 6);
-const weekStr = `${thisMonday.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${weekEnd.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
-document.getElementById("week-label").textContent = `Week of ${weekStr}`;
+let dashWeek = new Date(thisMonday);
+
+function updateDashWeekLabel() {
+  const end = addDays(dashWeek, 6);
+  document.getElementById("week-label").textContent =
+    `${dashWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+updateDashWeekLabel();
+
+document.getElementById("dash-prev").addEventListener("click", () => {
+  dashWeek = addDays(dashWeek, -7);
+  updateDashWeekLabel();
+  loadDashboard();
+});
+document.getElementById("dash-next").addEventListener("click", () => {
+  dashWeek = addDays(dashWeek, 7);
+  updateDashWeekLabel();
+  loadDashboard();
+});
 
 function renderDonut(containerId, submitted, total, colorFill, colorEmpty) {
   const el = document.getElementById(containerId);
@@ -109,7 +125,7 @@ function renderDonut(containerId, submitted, total, colorFill, colorEmpty) {
 async function loadDashboard() {
   if (!currentOrgId) return;
 
-  const ws = fmtDate(thisMonday);
+  const ws = fmtDate(dashWeek);
 
   const [empRes, deptRes, tsRes] = await Promise.all([
     sb.from("users").select("id, name, department_id, active").eq("organisation_id", currentOrgId).eq("active", true).order("name"),
