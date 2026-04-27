@@ -97,6 +97,28 @@ function renderDonut(container, submitted, total, label) {
   container.appendChild(card);
 }
 
+/* ---------------------------------------------------------------- week nav */
+
+let deptWeek = getMonday(new Date());
+
+function updateDeptWeekLabel() {
+  const end = addDays(deptWeek, 6);
+  document.getElementById("mgr-week-label").textContent =
+    `${deptWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+updateDeptWeekLabel();
+
+document.getElementById("dept-prev").addEventListener("click", () => {
+  deptWeek = addDays(deptWeek, -7);
+  updateDeptWeekLabel();
+  loadDashboard();
+});
+document.getElementById("dept-next").addEventListener("click", () => {
+  deptWeek = addDays(deptWeek, 7);
+  updateDeptWeekLabel();
+  loadDashboard();
+});
+
 /* ---------------------------------------------------------------- load */
 
 let forceViewBeforeApproval = false;
@@ -111,12 +133,7 @@ async function loadOrgSettings() {
 async function loadDashboard() {
   await loadOrgSettings();
 
-  const thisMonday = getMonday(new Date());
-  const weekEnd = addDays(thisMonday, 6);
-  const weekStr = `${thisMonday.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${weekEnd.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
-  document.getElementById("mgr-week-label").textContent = `Week of ${weekStr}`;
-
-  const ws = fmtDate(thisMonday);
+  const ws = fmtDate(deptWeek);
 
   // Load all active departments with manager info
   const { data: allDepts } = await sb
