@@ -50,6 +50,7 @@ const DAY_NAMES = ["sunday","monday","tuesday","wednesday","thursday","friday","
 let weekStart = null;
 let timesheetId = null;
 let tsStatus = "draft";
+let tsSubmittedAt = null;
 let entries = [];
 let jobs = [];
 let tasks = [];
@@ -684,9 +685,10 @@ async function loadWeek() {
   }
 
   try {
-    const { data } = await sb.from("timesheets").select("status").eq("id", timesheetId).maybeSingle();
+    const { data } = await sb.from("timesheets").select("status, submitted_at").eq("id", timesheetId).maybeSingle();
     tsStatus = data?.status || "draft";
-    document.getElementById("ts-status").textContent = tsStatus ? `Status: ${tsStatus}` : "";
+    tsSubmittedAt = data?.submitted_at || null;
+    renderStatusBadge();
   } catch {}
 
   try {
@@ -822,6 +824,30 @@ async function autofillPublicHolidays() {
   if (!error && newEntry) {
     entries.push(newEntry);
   }
+}
+
+/* ---------------------------------------------------------------- status badge */
+
+function renderStatusBadge() {
+  const el = document.getElementById("ts-status");
+  if (tsStatus === "draft" || !tsStatus) {
+    el.className = "ts-status-badge ts-status-draft";
+    el.innerHTML = `<span class="ts-status-dot draft"></span> Draft`;
+    return;
+  }
+  const label = tsStatus.charAt(0).toUpperCase() + tsStatus.slice(1);
+  let timeStr = "";
+  if (tsSubmittedAt) {
+    const d = new Date(tsSubmittedAt);
+    const day = d.getDate();
+    const mon = d.toLocaleString("en-NZ", { month: "short" });
+    const yr = d.getFullYear();
+    const time = d.toLocaleString("en-NZ", { hour: "numeric", minute: "2-digit", hour12: true });
+    timeStr = `<span class="ts-status-time">${day} ${mon} ${yr} at ${time}</span>`;
+  }
+  const dotClass = tsStatus === "approved" ? "approved" : "submitted";
+  el.className = `ts-status-badge ts-status-${dotClass}`;
+  el.innerHTML = `<span class="ts-status-dot ${dotClass}"></span> ${label}${timeStr}`;
 }
 
 /* ---------------------------------------------------------------- render grid */
@@ -1115,7 +1141,8 @@ document.getElementById("submit-confirm-btn").addEventListener("click", async ()
     if (error) throw error;
 
     tsStatus = "submitted";
-    document.getElementById("ts-status").textContent = "Status: submitted";
+    tsSubmittedAt = new Date().toISOString();
+    renderStatusBadge();
     notice("Timesheet submitted", "success");
     renderGrid();
   } catch (err) {
