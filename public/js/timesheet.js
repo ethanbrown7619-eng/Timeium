@@ -725,7 +725,7 @@ function setupAC(input, items, { onSelect, onClear }) {
     const q = (query || "").toLowerCase();
     const filtered = q
       ? items.filter((it) => it._label.toLowerCase().includes(q) || (it._desc || "").toLowerCase().includes(q))
-      : items;
+      : [];
     const show = filtered.slice(0, 100);
     highlighted = -1;
     list.innerHTML =
@@ -740,7 +740,7 @@ function setupAC(input, items, { onSelect, onClear }) {
     list._items = show;
   }
 
-  input.addEventListener("focus", () => render(input.value));
+  input.addEventListener("focus", () => { if (input.value) render(input.value); });
   input.addEventListener("input", () => render(input.value));
 
   input.addEventListener("keydown", (e) => {
