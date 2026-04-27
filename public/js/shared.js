@@ -162,6 +162,7 @@ export async function routeAfterAuth(sb) {
 
   // Fallback: check if user already has an employee record
   try {
+    const { data: { session } } = await sb.auth.getSession();
     const { data } = await sb.from("users").select("id").eq("auth_user_id", session.user.id).maybeSingle();
     if (data) {
       location.replace("/timesheet.html");
