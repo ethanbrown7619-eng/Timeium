@@ -746,11 +746,15 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
 });
 
 /* ================================================================
- * Leave Report tab
+ * Leave / Overtime Report tab
  * ================================================================ */
 
 let lvWeek = new Date(thisMonday);
 let lvRows = [];
+let lvSortCol = "employee";
+let lvSortAsc = true;
+
+const LV_STANDARD_HOURS = 8;
 
 function updateLvWeekLabel() {
   const end = addDays(lvWeek, 6);
@@ -788,18 +792,14 @@ async function buildLeaveRows() {
     .select("id, name")
     .eq("organisation_id", currentOrgId);
 
-  // Only get leave jobs
-  const { data: leaveJobs } = await sb
+  const { data: allJobs } = await sb
     .from("jobs")
-    .select("id, job_code, description")
-    .eq("organisation_id", currentOrgId)
-    .eq("is_leave", true);
+    .select("id, job_code, description, is_leave")
+    .eq("organisation_id", currentOrgId);
 
-  if (!leaveJobs?.length) return [];
-
-  const leaveJobIds = leaveJobs.map((j) => j.id);
+  const leaveJobIds = new Set((allJobs || []).filter((j) => j.is_leave).map((j) => j.id));
   const jobMap = {};
-  for (const j of leaveJobs) jobMap[j.id] = j;
+  for (const j of allJobs || []) jobMap[j.id] = j;
 
   let tsQuery = sb
     .from("timesheets")
@@ -816,12 +816,10 @@ async function buildLeaveRows() {
   const tsUserMap = {};
   for (const t of timesheets) tsUserMap[t.id] = t.user_id;
 
-  // Only load entries for leave jobs
   const { data: entries } = await sb
     .from("timesheet_entries")
     .select("id, timesheet_id, job_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-    .in("timesheet_id", tsIds)
-    .in("job_id", leaveJobIds);
+    .in("timesheet_id", tsIds);
 
   if (!entries?.length) return [];
 
@@ -831,7 +829,10 @@ async function buildLeaveRows() {
   for (const d of departments || []) deptMap[d.id] = d;
 
   const rows = [];
+
+  // Leave rows
   for (const entry of entries) {
+    if (!leaveJobIds.has(entry.job_id)) continue;
     const userId = tsUserMap[entry.timesheet_id];
     const emp = empMap[userId];
     if (!emp) continue;
@@ -839,7 +840,6 @@ async function buildLeaveRows() {
     const job = jobMap[entry.job_id];
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
     const totalHours = DAYS.reduce((sum, d) => sum + (Number(entry[`${d}_hours`]) || 0), 0);
-
     if (totalHours === 0) continue;
 
     const dailyHours = {};
@@ -852,16 +852,136 @@ async function buildLeaveRows() {
       employee_code: emp.employee_code || "",
       department: dept?.name || "",
       employment_type: emp.employment_type || "",
-      leave_type: job?.job_code || "",
-      leave_description: job?.description || "",
+      event: "Leave",
+      event_detail: job?.job_code || "",
+      event_description: job?.description || "",
       note: entry.description || "",
       ...dailyHours,
       total: totalHours,
     });
   }
 
-  rows.sort((a, b) => a.employee.localeCompare(b.employee) || a.leave_type.localeCompare(b.leave_type));
+  // Overtime rows: per-employee daily totals > standard hours
+  const empDayTotals = {};
+  for (const entry of entries) {
+    const userId = tsUserMap[entry.timesheet_id];
+    if (!userId) continue;
+    if (!empDayTotals[userId]) empDayTotals[userId] = {};
+    for (let i = 0; i < 7; i++) {
+      const h = Number(entry[`${DAYS[i]}_hours`]) || 0;
+      empDayTotals[userId][i] = (empDayTotals[userId][i] || 0) + h;
+    }
+  }
+
+  for (const [userId, dayTotals] of Object.entries(empDayTotals)) {
+    const emp = empMap[userId];
+    if (!emp) continue;
+    const dept = emp.department_id ? deptMap[emp.department_id] : null;
+
+    const dailyOT = {};
+    let totalOT = 0;
+    for (let i = 0; i < 7; i++) {
+      const excess = Math.max(0, (dayTotals[i] || 0) - LV_STANDARD_HOURS);
+      dailyOT[DAY_LABELS[i]] = excess;
+      totalOT += excess;
+    }
+    if (totalOT === 0) continue;
+
+    rows.push({
+      employee: emp.name || "",
+      employee_code: emp.employee_code || "",
+      department: dept?.name || "",
+      employment_type: emp.employment_type || "",
+      event: "Overtime",
+      event_detail: "OT",
+      event_description: `Hours exceeding ${LV_STANDARD_HOURS}h/day`,
+      note: "",
+      ...dailyOT,
+      total: totalOT,
+    });
+  }
+
   return rows;
+}
+
+function sortLvRows(rows) {
+  const col = lvSortCol;
+  const dir = lvSortAsc ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    let cmp = 0;
+    const av = a[col], bv = b[col];
+    if (typeof av === "number" && typeof bv === "number") {
+      cmp = av - bv;
+    } else {
+      cmp = String(av || "").localeCompare(String(bv || ""));
+    }
+    if (cmp !== 0) return cmp * dir;
+    if (col !== "employee") {
+      cmp = (a.employee || "").localeCompare(b.employee || "");
+      if (cmp !== 0) return cmp;
+    }
+    return (a.event_detail || "").localeCompare(b.event_detail || "");
+  });
+}
+
+function lvSortArrow(col) {
+  if (lvSortCol !== col) return "";
+  return lvSortAsc ? " &#9650;" : " &#9660;";
+}
+
+function renderLvTable() {
+  const preview = document.getElementById("lv-preview");
+  const sorted = sortLvRows(lvRows);
+
+  const cols = [
+    { key: "employee",        label: "Employee" },
+    { key: "employee_code",   label: "Code" },
+    { key: "department",      label: "Department" },
+    { key: "employment_type", label: "Type" },
+    { key: "event",           label: "Event" },
+    { key: "event_detail",    label: "Detail" },
+    { key: "note",            label: "Note" },
+  ];
+
+  preview.innerHTML = `
+    <table class="small lv-sortable">
+      <thead>
+        <tr>
+          ${cols.map((c) => `<th class="lv-sort-hdr" data-col="${c.key}" style="cursor:pointer;user-select:none">${c.label}${lvSortArrow(c.key)}</th>`).join("")}
+          ${DAY_LABELS.map((d) => `<th class="num lv-sort-hdr" data-col="${d}" style="cursor:pointer;user-select:none">${d}${lvSortArrow(d)}</th>`).join("")}
+          <th class="num lv-sort-hdr" data-col="total" style="cursor:pointer;user-select:none">Total${lvSortArrow("total")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map((r) => `
+          <tr class="${r.event === "Overtime" ? "lv-row-ot" : ""}">
+            <td>${escapeHtml(r.employee)}</td>
+            <td>${escapeHtml(r.employee_code)}</td>
+            <td>${escapeHtml(r.department)}</td>
+            <td>${escapeHtml(r.employment_type)}</td>
+            <td><strong>${escapeHtml(r.event)}</strong></td>
+            <td>${escapeHtml(r.event_detail)}</td>
+            <td>${escapeHtml(r.note)}</td>
+            ${DAY_LABELS.map((d) => `<td class="num">${r[d] || ""}</td>`).join("")}
+            <td class="num"><strong>${r.total}</strong></td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+
+  preview.querySelectorAll(".lv-sort-hdr").forEach((th) => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.col;
+      if (lvSortCol === col) {
+        lvSortAsc = !lvSortAsc;
+      } else {
+        lvSortCol = col;
+        lvSortAsc = true;
+      }
+      renderLvTable();
+    });
+  });
 }
 
 async function loadLeaveReport() {
@@ -871,48 +991,25 @@ async function loadLeaveReport() {
 
   try {
     lvRows = await buildLeaveRows();
-    summary.textContent = lvRows.length
-      ? `${lvRows.length} leave entr${lvRows.length === 1 ? "y" : "ies"}`
-      : "";
+    const leaveCount = lvRows.filter((r) => r.event === "Leave").length;
+    const otCount = lvRows.filter((r) => r.event === "Overtime").length;
+    const parts = [];
+    if (leaveCount) parts.push(`${leaveCount} leave`);
+    if (otCount) parts.push(`${otCount} overtime`);
+    summary.textContent = parts.length ? parts.join(", ") : "";
 
     if (!lvRows.length) {
-      preview.innerHTML = `<p class="muted small" style="text-align:center">No leave entries found for this week.</p>`;
+      preview.innerHTML = `<p class="muted small" style="text-align:center">No leave or overtime entries found for this week.</p>`;
       return;
     }
 
-    preview.innerHTML = `
-      <table class="small">
-        <thead>
-          <tr>
-            <th>Employee</th><th>Code</th><th>Department</th><th>Type</th>
-            <th>Leave</th><th>Note</th>
-            <th class="num">Mon</th><th class="num">Tue</th><th class="num">Wed</th>
-            <th class="num">Thu</th><th class="num">Fri</th><th class="num">Sat</th>
-            <th class="num">Sun</th><th class="num">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${lvRows.map((r) => `
-            <tr>
-              <td>${escapeHtml(r.employee)}</td>
-              <td>${escapeHtml(r.employee_code)}</td>
-              <td>${escapeHtml(r.department)}</td>
-              <td>${escapeHtml(r.employment_type)}</td>
-              <td><strong>${escapeHtml(r.leave_type)}</strong></td>
-              <td>${escapeHtml(r.note)}</td>
-              ${DAY_LABELS.map((d) => `<td class="num">${r[d] || ""}</td>`).join("")}
-              <td class="num"><strong>${r.total}</strong></td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
+    renderLvTable();
   } catch (err) {
     preview.innerHTML = `<p class="muted small" style="text-align:center">Error: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-// Leave export
+// Leave / Overtime export
 document.getElementById("lv-export-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("lv-status");
   statusEl.textContent = "Generating…";
@@ -921,34 +1018,36 @@ document.getElementById("lv-export-btn").addEventListener("click", async () => {
     if (!lvRows.length) lvRows = await buildLeaveRows();
 
     if (!lvRows.length) {
-      notice("No leave data to export for this week", "warn");
+      notice("No data to export for this week", "warn");
       statusEl.textContent = "";
       return;
     }
 
+    const sorted = sortLvRows(lvRows);
+
     const headers = [
       "Employee", "Employee Code", "Department", "Employment Type",
-      "Leave Type", "Leave Description", "Note",
+      "Event", "Detail", "Description", "Note",
       "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total",
     ];
 
     const wsData = [headers];
-    for (const r of lvRows) {
+    for (const r of sorted) {
       wsData.push([
         r.employee, r.employee_code, r.department, r.employment_type,
-        r.leave_type, r.leave_description, r.note,
+        r.event, r.event_detail, r.event_description, r.note,
         r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat, r.Sun, r.total,
       ]);
     }
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leave Report");
+    XLSX.utils.book_append_sheet(wb, ws, "Leave Overtime");
 
-    XLSX.writeFile(wb, `leave-report-${fmtDate(lvWeek)}.xlsx`);
+    XLSX.writeFile(wb, `leave-overtime-${fmtDate(lvWeek)}.xlsx`);
 
     statusEl.textContent = "Done";
-    notice(`Exported ${lvRows.length} leave entries`, "success");
+    notice(`Exported ${sorted.length} entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
   } catch (err) {
     notice(err.message || "Export failed", "error");

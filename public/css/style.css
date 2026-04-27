@@ -796,6 +796,10 @@ details.card[open] > summary::before { content: "▾ "; }
 .cvt-row-flag td.cvt-sticky,
 .cvt-row-flag td.cvt-sticky-dept { border-left: 3px solid var(--danger); }
 
+/* -------- leave/overtime sortable headers -------- */
+.lv-sort-hdr:hover { background: var(--surface-alt); }
+.lv-row-ot td { background: rgba(255, 165, 0, 0.08); }
+
 /* -------- dashboard (donut charts) -------- */
 
 .dash-charts {
