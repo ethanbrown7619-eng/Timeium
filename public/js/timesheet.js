@@ -120,6 +120,19 @@ function showHub() {
 }
 
 let leaveTypes = [];
+let leaveJobs = [];
+
+async function loadLeaveJobs() {
+  if (leaveJobs.length) return leaveJobs;
+  const { data } = await sb
+    .from("jobs")
+    .select("id, job_code, description, leave_type_id")
+    .eq("organisation_id", currentOrgId)
+    .eq("is_leave", true)
+    .order("job_code");
+  leaveJobs = data || [];
+  return leaveJobs;
+}
 
 async function loadLeaveBalances() {
   const card = document.getElementById("leave-balance-card");
@@ -215,11 +228,15 @@ async function loadMyLeaveRequests() {
   });
 }
 
-document.getElementById("request-leave-btn")?.addEventListener("click", () => {
+document.getElementById("request-leave-btn")?.addEventListener("click", async () => {
+  await loadLeaveJobs();
   const dialog = document.getElementById("leave-request-dialog");
   const sel = document.getElementById("lr-type");
-  sel.innerHTML = leaveTypes.map((t) =>
-    `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  sel.innerHTML = leaveJobs
+    .filter((j) => j.leave_type_id)
+    .map((j) =>
+      `<option value="${j.leave_type_id}">${escapeHtml(j.job_code)}${j.description ? " — " + escapeHtml(j.description) : ""}</option>`
+    ).join("");
   document.getElementById("lr-start").value = "";
   document.getElementById("lr-end").value = "";
   document.getElementById("lr-hours").value = "8";
@@ -1280,11 +1297,15 @@ async function loadOverheadLeaveRequests() {
   });
 }
 
-document.getElementById("oh-request-leave-btn")?.addEventListener("click", () => {
+document.getElementById("oh-request-leave-btn")?.addEventListener("click", async () => {
+  await loadLeaveJobs();
   const dialog = document.getElementById("leave-request-dialog");
   const sel = document.getElementById("lr-type");
-  sel.innerHTML = leaveTypes.map((t) =>
-    `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  sel.innerHTML = leaveJobs
+    .filter((j) => j.leave_type_id)
+    .map((j) =>
+      `<option value="${j.leave_type_id}">${escapeHtml(j.job_code)}${j.description ? " — " + escapeHtml(j.description) : ""}</option>`
+    ).join("");
   document.getElementById("lr-start").value = "";
   document.getElementById("lr-end").value = "";
   document.getElementById("lr-hours").value = "8";
