@@ -12,7 +12,7 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="tabs">
+      <div class="tabs" id="admin-tabs">
         <button class="tab active" data-tab="dashboard">Dashboard</button>
         <button class="tab" data-tab="clockvts">Timesheet vs Clock</button>
         <button class="tab" data-tab="infusion">Infusion Export</button>
@@ -144,6 +144,49 @@
             <button id="lv-export-btn">Export to Excel</button>
             <span id="lv-status" class="muted small"></span>
           </div>
+        </div>
+      </section>
+
+      <!-- ==================== Dev Tools (developer-only) ==================== -->
+      <section id="tab-devtools" class="tab-panel" style="display:none">
+        <h2 style="margin:0 0 4px">Developer Tools</h2>
+        <p class="muted mb-md">Generate test data for validation.</p>
+
+        <div class="card" style="max-width:640px">
+          <h3 style="margin-top:0">Generate Test Timesheets</h3>
+          <p class="muted">
+            Creates realistic timesheets for all employees in a department for the
+            selected week. Includes a mix of jobs, leave entries, and occasional overtime.
+          </p>
+
+          <div class="row-flex mb-sm">
+            <div class="grow">
+              <label for="gen-dept">Department</label>
+              <select id="gen-dept" style="width:100%"></select>
+            </div>
+            <div class="grow">
+              <label for="gen-week">Week starting (Monday)</label>
+              <input id="gen-week" type="date" style="width:100%" />
+            </div>
+          </div>
+
+          <div class="row-flex mb-sm">
+            <div class="grow">
+              <label for="gen-status">Timesheet status</label>
+              <select id="gen-status" style="width:100%">
+                <option value="draft">Draft</option>
+                <option value="submitted" selected>Submitted</option>
+                <option value="approved">Approved</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row-flex mt-md">
+            <button id="gen-timesheets-btn">Generate Timesheets</button>
+            <span id="gen-status-msg" class="muted small"></span>
+          </div>
+
+          <div id="gen-results" style="display:none" class="mt-md"></div>
         </div>
       </section>
     </main>

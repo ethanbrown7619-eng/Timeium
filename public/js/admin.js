@@ -59,6 +59,15 @@ const thisMonday = getMonday(new Date());
 
 /* ---------------------------------------------------------------- tabs */
 
+if (ctx.isDeveloper) {
+  const tabBar = document.getElementById("admin-tabs");
+  const devBtn = document.createElement("button");
+  devBtn.className = "tab";
+  devBtn.dataset.tab = "devtools";
+  devBtn.textContent = "Dev Tools";
+  tabBar.appendChild(devBtn);
+}
+
 let activeTab = "dashboard";
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -67,12 +76,14 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
     document.getElementById("tab-dashboard").style.display    = activeTab === "dashboard"   ? "" : "none";
-    document.getElementById("tab-clockvts").style.display    = activeTab === "clockvts"    ? "" : "none";
-    document.getElementById("tab-infusion").style.display    = activeTab === "infusion"    ? "" : "none";
-    document.getElementById("tab-leavereport").style.display = activeTab === "leavereport" ? "" : "none";
+    document.getElementById("tab-clockvts").style.display     = activeTab === "clockvts"    ? "" : "none";
+    document.getElementById("tab-infusion").style.display     = activeTab === "infusion"    ? "" : "none";
+    document.getElementById("tab-leavereport").style.display  = activeTab === "leavereport" ? "" : "none";
+    document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
     if (activeTab === "clockvts") loadClockComparison();
     if (activeTab === "infusion") loadInfusionStatus();
     if (activeTab === "leavereport") loadLeaveReport();
+    if (activeTab === "devtools") loadDevToolsForm();
   });
 });
 
@@ -1088,6 +1099,259 @@ document.getElementById("lv-export-btn").addEventListener("click", async () => {
     notice(err.message || "Export failed", "error");
     statusEl.textContent = "";
   }
+});
+
+/* ================================================================
+ * Dev Tools — Generate Test Timesheets
+ * ================================================================ */
+
+let devToolsLoaded = false;
+
+async function loadDevToolsForm() {
+  if (devToolsLoaded) return;
+  devToolsLoaded = true;
+
+  const { data: depts } = await sb
+    .from("departments")
+    .select("id, name, is_overhead")
+    .eq("organisation_id", currentOrgId)
+    .eq("active", true)
+    .order("name");
+
+  const sel = document.getElementById("gen-dept");
+  sel.innerHTML = (depts || [])
+    .filter((d) => !d.is_overhead)
+    .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`)
+    .join("");
+
+  const monday = getMonday(new Date());
+  document.getElementById("gen-week").value = fmtDate(monday);
+}
+
+document.getElementById("gen-timesheets-btn")?.addEventListener("click", async () => {
+  const deptId = Number(document.getElementById("gen-dept").value);
+  const weekStr = document.getElementById("gen-week").value;
+  const targetStatus = document.getElementById("gen-status").value;
+  const statusMsg = document.getElementById("gen-status-msg");
+  const resultsEl = document.getElementById("gen-results");
+
+  if (!deptId || !weekStr) return notice("Select a department and week", "warn");
+
+  const btn = document.getElementById("gen-timesheets-btn");
+  btn.disabled = true;
+  statusMsg.textContent = "Loading data…";
+  resultsEl.style.display = "none";
+
+  try {
+    const [empRes, jobRes, taskRes, dcRes] = await Promise.all([
+      sb.from("users").select("id, name").eq("organisation_id", currentOrgId).eq("department_id", deptId).eq("active", true),
+      sb.from("jobs").select("id, job_code, status, is_leave, leave_type_id").eq("organisation_id", currentOrgId),
+      sb.from("tasks").select("id, task_code").eq("organisation_id", currentOrgId).eq("status", "ACTIVE"),
+      sb.from("department_codes").select("id, code").eq("organisation_id", currentOrgId).eq("status", "ACTIVE"),
+    ]);
+
+    const employees = empRes.data || [];
+    const allJobs = jobRes.data || [];
+    const tasks = taskRes.data || [];
+    const deptCodes = dcRes.data || [];
+
+    if (!employees.length) {
+      statusMsg.textContent = "";
+      btn.disabled = false;
+      return notice("No active employees in this department", "warn");
+    }
+
+    const regularJobs = allJobs.filter((j) => !j.is_leave && j.status === "ACTIVE");
+    const nonActiveJobs = allJobs.filter((j) => !j.is_leave && j.status !== "ACTIVE");
+    const leaveJobs = allJobs.filter((j) => j.is_leave);
+
+    if (!regularJobs.length) {
+      statusMsg.textContent = "";
+      btn.disabled = false;
+      return notice("No active jobs found — add some jobs first", "warn");
+    }
+
+    function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+    function randBetween(min, max) { return Math.round((min + Math.random() * (max - min)) * 4) / 4; }
+
+    const results = [];
+    let created = 0;
+
+    for (const emp of employees) {
+      statusMsg.textContent = `Generating for ${emp.name}…`;
+
+      // Create or get timesheet
+      const { data: tsId, error: tsErr } = await sb.rpc("get_or_create_timesheet", {
+        p_week_start: weekStr,
+        p_user_id: emp.id,
+      });
+
+      let timesheetId = tsId;
+
+      if (tsErr) {
+        // RPC may not accept p_user_id — insert directly
+        const { data: existing } = await sb
+          .from("timesheets")
+          .select("id")
+          .eq("user_id", emp.id)
+          .eq("week_start", weekStr)
+          .maybeSingle();
+
+        if (existing) {
+          timesheetId = existing.id;
+        } else {
+          const { data: newTs, error: insErr } = await sb
+            .from("timesheets")
+            .insert({ organisation_id: currentOrgId, user_id: emp.id, week_start: weekStr, status: "draft" })
+            .select("id")
+            .single();
+          if (insErr) { results.push({ name: emp.name, error: insErr.message }); continue; }
+          timesheetId = newTs.id;
+        }
+      }
+
+      // Clear any existing entries
+      await sb.from("timesheet_entries").delete().eq("timesheet_id", timesheetId);
+
+      // Decide how many regular job entries (2-4)
+      const numRegular = 2 + Math.floor(Math.random() * 3);
+      // Maybe add a leave entry (30% chance)
+      const hasLeave = leaveJobs.length > 0 && Math.random() < 0.3;
+      // Maybe add overtime on 1-2 days (20% chance)
+      const hasOvertime = Math.random() < 0.2;
+      // 10% chance of a non-active job
+      const hasNonActive = nonActiveJobs.length > 0 && Math.random() < 0.1;
+
+      const entries = [];
+      let sortOrder = 0;
+
+      // Regular job entries
+      const usedJobs = new Set();
+      for (let i = 0; i < numRegular; i++) {
+        let job;
+        let attempts = 0;
+        do { job = pick(regularJobs); attempts++; } while (usedJobs.has(job.id) && attempts < 20);
+        usedJobs.add(job.id);
+
+        const hours = { mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0 };
+        const dayKeys = ["mon_hours", "tue_hours", "wed_hours", "thu_hours", "fri_hours"];
+
+        for (const day of dayKeys) {
+          if (Math.random() < 0.7) {
+            hours[day] = randBetween(1, 4);
+          }
+        }
+
+        entries.push({
+          timesheet_id: timesheetId,
+          job_id: job.id,
+          task_id: tasks.length ? pick(tasks).id : null,
+          dept_code_id: deptCodes.length ? pick(deptCodes).id : null,
+          description: "",
+          sort_order: sortOrder++,
+          ...hours,
+        });
+      }
+
+      // Non-active job entry
+      if (hasNonActive) {
+        const job = pick(nonActiveJobs);
+        const hours = { mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0 };
+        const day = pick(["mon_hours", "tue_hours", "wed_hours", "thu_hours", "fri_hours"]);
+        hours[day] = randBetween(1, 3);
+        entries.push({
+          timesheet_id: timesheetId,
+          job_id: job.id,
+          task_id: tasks.length ? pick(tasks).id : null,
+          dept_code_id: deptCodes.length ? pick(deptCodes).id : null,
+          description: "",
+          sort_order: sortOrder++,
+          ...hours,
+        });
+      }
+
+      // Leave entry
+      if (hasLeave) {
+        const leaveJob = pick(leaveJobs);
+        const hours = { mon_hours: 0, tue_hours: 0, wed_hours: 0, thu_hours: 0, fri_hours: 0, sat_hours: 0, sun_hours: 0 };
+        // 1-2 days of leave
+        const leaveDays = 1 + Math.floor(Math.random() * 2);
+        const possibleDays = ["mon_hours", "tue_hours", "wed_hours", "thu_hours", "fri_hours"];
+        for (let i = 0; i < leaveDays && possibleDays.length; i++) {
+          const idx = Math.floor(Math.random() * possibleDays.length);
+          hours[possibleDays.splice(idx, 1)[0]] = 8;
+        }
+        entries.push({
+          timesheet_id: timesheetId,
+          job_id: leaveJob.id,
+          task_id: null,
+          dept_code_id: null,
+          description: "",
+          sort_order: sortOrder++,
+          ...hours,
+        });
+      }
+
+      // Normalize so daily totals are around 8h (with slight variance)
+      const dayKeys = ["mon_hours", "tue_hours", "wed_hours", "thu_hours", "fri_hours"];
+      for (const day of dayKeys) {
+        const total = entries.reduce((s, e) => s + (e[day] || 0), 0);
+        let target = randBetween(7.5, 8.5);
+        if (hasOvertime && Math.random() < 0.3) target = randBetween(9, 11);
+        if (total > 0 && total !== target) {
+          const scale = target / total;
+          for (const e of entries) {
+            e[day] = Math.round((e[day] || 0) * scale * 4) / 4;
+          }
+        }
+      }
+
+      // Insert entries
+      const { error: entErr } = await sb.from("timesheet_entries").insert(entries);
+      if (entErr) { results.push({ name: emp.name, error: entErr.message }); continue; }
+
+      // Update status
+      const update = { status: targetStatus };
+      if (targetStatus === "submitted" || targetStatus === "approved") {
+        update.submitted_at = new Date().toISOString();
+      }
+      await sb.from("timesheets").update(update).eq("id", timesheetId);
+
+      const totalHours = entries.reduce((s, e) =>
+        s + (e.mon_hours || 0) + (e.tue_hours || 0) + (e.wed_hours || 0) + (e.thu_hours || 0) + (e.fri_hours || 0) + (e.sat_hours || 0) + (e.sun_hours || 0), 0);
+
+      results.push({ name: emp.name, hours: Math.round(totalHours * 10) / 10, entries: entries.length, hasLeave, hasOvertime });
+      created++;
+    }
+
+    statusMsg.textContent = "";
+    resultsEl.style.display = "";
+    resultsEl.innerHTML = `
+      <p style="color:var(--success);font-weight:600">${created} timesheet${created !== 1 ? "s" : ""} generated</p>
+      <table class="small">
+        <thead><tr><th>Employee</th><th>Entries</th><th class="num">Hours</th><th>Leave</th><th>OT</th></tr></thead>
+        <tbody>
+          ${results.map((r) => r.error
+            ? `<tr><td>${escapeHtml(r.name)}</td><td colspan="4" style="color:var(--danger)">${escapeHtml(r.error)}</td></tr>`
+            : `<tr>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${r.entries}</td>
+                <td class="num">${r.hours}h</td>
+                <td>${r.hasLeave ? "✓" : ""}</td>
+                <td>${r.hasOvertime ? "✓" : ""}</td>
+              </tr>`
+          ).join("")}
+        </tbody>
+      </table>
+    `;
+
+    notice(`Generated ${created} timesheets for ${weekStr}`, "success");
+  } catch (err) {
+    notice(err.message || "Generation failed", "error");
+    statusMsg.textContent = "";
+  }
+
+  btn.disabled = false;
 });
 
 /* ---------------------------------------------------------------- boot */
