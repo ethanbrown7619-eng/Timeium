@@ -44,10 +44,12 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     activeTab = btn.dataset.tab;
-    document.getElementById("tab-jobs").style.display      = activeTab === "jobs"      ? "" : "none";
-    document.getElementById("tab-tasks").style.display     = activeTab === "tasks"     ? "" : "none";
-    document.getElementById("tab-deptcodes").style.display = activeTab === "deptcodes" ? "" : "none";
-    document.getElementById("tab-settings").style.display  = activeTab === "settings"  ? "" : "none";
+    document.getElementById("tab-jobs").style.display        = activeTab === "jobs"        ? "" : "none";
+    document.getElementById("tab-tasks").style.display      = activeTab === "tasks"      ? "" : "none";
+    document.getElementById("tab-deptcodes").style.display  = activeTab === "deptcodes"  ? "" : "none";
+    document.getElementById("tab-stafftypes").style.display = activeTab === "stafftypes" ? "" : "none";
+    document.getElementById("tab-settings").style.display   = activeTab === "settings"   ? "" : "none";
+    if (activeTab === "stafftypes") loadSettings();
     if (activeTab === "settings") { loadSettings(); loadHolidays(); }
   });
 });
