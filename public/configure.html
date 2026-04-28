@@ -107,7 +107,20 @@
         <!-- Jobs: Import -->
         <div id="jobs-import" class="sub-panel" style="display:none">
           <div class="card" style="max-width:780px">
-            <h2 style="margin-top:0">Upload from Excel</h2>
+            <h2 style="margin-top:0">Sync Job Statuses</h2>
+            <p class="muted">
+              Drop your Infusion Excel file to instantly sync all job codes,
+              descriptions, and statuses. Uses your saved column mapping.
+            </p>
+            <div id="jobs-quick-sync-zone" class="drop-zone">
+              <span class="drop-zone-text">Drag &amp; drop your Excel file here, or click to browse</span>
+              <input type="file" id="jobs-quick-file" accept=".xlsx,.xlsm,.csv" style="display:none" />
+            </div>
+            <div id="jobs-quick-result" style="display:none" class="mt-sm"></div>
+          </div>
+
+          <details class="card" style="max-width:780px">
+            <summary><strong>Manual import with column mapping</strong></summary>
             <p class="muted">
               Drop an <code>.xlsx</code> or <code>.xlsm</code> file here (or
               click to browse). The sheet is parsed in your browser and
@@ -151,7 +164,7 @@
                 <span id="jobs-upload-progress" class="muted small"></span>
               </div>
             </div>
-          </div>
+          </details>
 
           <details class="card" style="max-width:780px">
             <summary><strong>Advanced: Power Automate webhook</strong></summary>

@@ -912,6 +912,124 @@ const jobsCtl      = makeController("jobs");
 const tasksCtl     = makeController("tasks");
 const deptCodesCtl = makeController("deptcodes");
 
+/* ---------------------------------------------------------------- quick sync */
+
+(function setupQuickSync() {
+  const dropZone = document.getElementById("jobs-quick-sync-zone");
+  const fileInput = document.getElementById("jobs-quick-file");
+  const resultEl = document.getElementById("jobs-quick-result");
+  if (!dropZone || !fileInput) return;
+
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    if (e.dataTransfer.files[0]) runQuickSync(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) runQuickSync(fileInput.files[0]);
+  });
+
+  async function runQuickSync(file) {
+    resultEl.style.display = "";
+    resultEl.className = "mt-sm muted small";
+    resultEl.textContent = "Reading file…";
+
+    // Load saved mapping
+    let mapping = {};
+    try {
+      const { data } = await sb.from("organisations")
+        .select("jobs_import_map").eq("id", currentOrgId).maybeSingle();
+      mapping = data?.jobs_import_map || {};
+    } catch {}
+
+    const codeCol = mapping.code_column || "jobid";
+    const descCol = mapping.description_column || "title";
+    const statusCol = mapping.status_column || "status";
+    const statusMap = mapping.status_map || {};
+
+    let rows;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    } catch (err) {
+      resultEl.className = "mt-sm";
+      resultEl.innerHTML = `<span style="color:var(--danger)">Failed to read file: ${escapeHtml(err.message)}</span>`;
+      return;
+    }
+
+    if (!rows.length) {
+      resultEl.textContent = "File is empty.";
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+    if (!headers.includes(codeCol)) {
+      resultEl.className = "mt-sm";
+      resultEl.innerHTML = `<span style="color:var(--danger)">Column "${escapeHtml(codeCol)}" not found. Found: ${escapeHtml(headers.join(", "))}. Check your saved column mapping.</span>`;
+      return;
+    }
+
+    resultEl.textContent = `Syncing ${rows.length} jobs…`;
+
+    function resolveStatus(raw) {
+      const trimmed = String(raw || "").trim();
+      if (statusMap[trimmed]) return statusMap[trimmed];
+      const upper = trimmed.replace(/\*/g, "").toUpperCase();
+      if (JOB_STATUSES.includes(upper)) return upper;
+      if (upper.startsWith("COMP")) return "COMPLETED";
+      if (upper.startsWith("DISP") || upper === "DSPCH") return "DISPATCHED";
+      if (upper.startsWith("INV")) return "INVOICED";
+      return "ACTIVE";
+    }
+
+    const deduped = new Map();
+    for (const r of rows) {
+      const code = String(r[codeCol] || "").trim();
+      if (!code) continue;
+      deduped.set(code, {
+        organisation_id: currentOrgId,
+        job_code: code,
+        description: descCol && r[descCol] ? String(r[descCol]).trim() : null,
+        status: statusCol && r[statusCol] ? resolveStatus(r[statusCol]) : "ACTIVE",
+        source: "import",
+      });
+    }
+
+    const allRows = [...deduped.values()];
+    const BATCH = 500;
+    let imported = 0;
+    let errors = 0;
+
+    for (let i = 0; i < allRows.length; i += BATCH) {
+      const batch = allRows.slice(i, i + BATCH);
+      try {
+        const { error } = await sb.from("jobs").upsert(batch, { onConflict: "organisation_id,job_code" });
+        if (error) throw error;
+        imported += batch.length;
+      } catch (err) {
+        console.error("Batch error", err);
+        errors += batch.length;
+      }
+      resultEl.textContent = `Syncing… ${imported + errors} / ${allRows.length}`;
+    }
+
+    resultEl.className = "mt-sm";
+    if (errors) {
+      resultEl.innerHTML = `<span style="color:var(--warning)">Synced ${imported} jobs, ${errors} failed.</span>`;
+    } else {
+      resultEl.innerHTML = `<span style="color:var(--success)">Synced ${imported} jobs successfully.</span>`;
+    }
+
+    fileInput.value = "";
+    jobsCtl.load();
+  }
+})();
+
 // Generic copy-buttons (for both panels)
 document.querySelectorAll("[data-copy]").forEach((btn) => {
   btn.addEventListener("click", async () => {
