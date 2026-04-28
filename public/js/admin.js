@@ -752,13 +752,7 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
       return;
     }
 
-    const headers = [
-      "Transaction No", "jobid", "date", "employee name", "desc",
-      "code", "rate", "qty", "sell",
-      "empty", "empty", "empty", "dept",
-    ];
-
-    const wsData = [headers];
+    const wsData = [];
     for (const r of infRows) {
       wsData.push([
         r["Transaction No"],

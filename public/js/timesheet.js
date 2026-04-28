@@ -1126,6 +1126,20 @@ document.getElementById("submit-ts-btn").addEventListener("click", () => {
     return;
   }
 
+  // Validate that every entry has a job and department
+  const incomplete = [];
+  entries.forEach((e, i) => {
+    const hasHours = DAYS.some((d) => Number(e[`${d}_hours`]) > 0);
+    if (!hasHours) return;
+    if (!e.job_id || !e.dept_code_id) {
+      incomplete.push(i + 1);
+    }
+  });
+  if (incomplete.length) {
+    notice(`Row${incomplete.length > 1 ? "s" : ""} ${incomplete.join(", ")} missing a Job or Department. Please check before submitting.`, "warn");
+    return;
+  }
+
   const totalHours = entries.reduce((sum, e) =>
     sum + DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0), 0);
 
