@@ -20,7 +20,7 @@ try {
   adminRow = r.data;
 } catch {}
 try {
-  const r = await sb.from("users").select("id, organisation_id, name, is_manager, department_id, departments(is_overhead)").eq("auth_user_id", session.user.id).maybeSingle();
+  const r = await sb.from("users").select("id, organisation_id, name, is_manager, department_id").eq("auth_user_id", session.user.id).maybeSingle();
   employee = r.data;
   isManager = !!r.data?.is_manager;
 } catch {}
@@ -31,7 +31,14 @@ if (!employee) {
 }
 
 const currentOrgId = employee.organisation_id;
-const isOverhead = !!employee.departments?.is_overhead;
+
+let isOverhead = false;
+if (employee.department_id) {
+  try {
+    const { data: dept } = await sb.from("departments").select("is_overhead").eq("id", employee.department_id).maybeSingle();
+    isOverhead = !!dept?.is_overhead;
+  } catch {}
+}
 
 renderTopbar({
   session,
