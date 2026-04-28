@@ -82,7 +82,7 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
     if (activeTab === "clockvts") loadClockComparison();
     if (activeTab === "infusion") loadInfusionStatus();
-    if (activeTab === "leavereport") loadLeaveReport();
+    if (activeTab === "leavereport") { if (lvSubView === "waged") loadWagedReport(); else loadSalariedReport(); }
     if (activeTab === "devtools") loadDevToolsForm();
   });
 });
@@ -789,37 +789,28 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
  * Leave / Overtime Report tab
  * ================================================================ */
 
-let lvWeek = new Date(thisMonday);
-let lvRows = [];
-let lvSortCol = "employee";
-let lvSortAsc = true;
-
 const LV_STANDARD_HOURS = 8;
 
-function updateLvWeekLabel() {
-  const end = addDays(lvWeek, 6);
-  document.getElementById("lv-week-label").textContent =
-    `${lvWeek.toLocaleDateString("en-AU", { month: "short", day: "numeric" })} — ${end.toLocaleDateString("en-AU", { month: "short", day: "numeric", year: "numeric" })}`;
-}
-updateLvWeekLabel();
+/* ---------- sub-tab switching ---------- */
 
-document.getElementById("lv-prev").addEventListener("click", () => {
-  lvWeek = addDays(lvWeek, -7);
-  updateLvWeekLabel();
-  loadLeaveReport();
+let lvSubView = "waged";
+
+document.querySelectorAll("[data-lv-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-lv-view]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    lvSubView = btn.dataset.lvView;
+    document.getElementById("lv-waged").style.display = lvSubView === "waged" ? "" : "none";
+    document.getElementById("lv-salaried").style.display = lvSubView === "salaried" ? "" : "none";
+    if (lvSubView === "waged") loadWagedReport();
+    if (lvSubView === "salaried") loadSalariedReport();
+  });
 });
-document.getElementById("lv-next").addEventListener("click", () => {
-  lvWeek = addDays(lvWeek, 7);
-  updateLvWeekLabel();
-  loadLeaveReport();
-});
-document.getElementById("lv-include-drafts")?.addEventListener("change", () => loadLeaveReport());
 
-async function buildLeaveRows() {
-  if (!currentOrgId) return [];
+/* ---------- shared: build per-day leave/OT rows for a set of week_starts ---------- */
 
-  const ws = fmtDate(lvWeek);
-  const includeDrafts = document.getElementById("lv-include-drafts").checked;
+async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
+  if (!currentOrgId || !weekStarts.length) return [];
 
   const { data: employees } = await sb
     .from("users")
@@ -843,9 +834,9 @@ async function buildLeaveRows() {
 
   let tsQuery = sb
     .from("timesheets")
-    .select("id, user_id, status")
+    .select("id, user_id, status, week_start")
     .eq("organisation_id", currentOrgId)
-    .eq("week_start", ws);
+    .in("week_start", weekStarts);
   if (!includeDrafts) {
     tsQuery = tsQuery.in("status", ["submitted", "approved"]);
   }
@@ -853,8 +844,8 @@ async function buildLeaveRows() {
   if (!timesheets?.length) return [];
 
   const tsIds = timesheets.map((t) => t.id);
-  const tsUserMap = {};
-  for (const t of timesheets) tsUserMap[t.id] = t.user_id;
+  const tsMap = {};
+  for (const t of timesheets) tsMap[t.id] = { user_id: t.user_id, week_start: t.week_start };
 
   const { data: entries } = await sb
     .from("timesheet_entries")
@@ -868,81 +859,90 @@ async function buildLeaveRows() {
   const deptMap = {};
   for (const d of departments || []) deptMap[d.id] = d;
 
+  // Filter by employment type
+  const filteredEmpIds = new Set(
+    (employees || []).filter((e) => !typeFilter || e.employment_type === typeFilter).map((e) => e.id)
+  );
+
   const rows = [];
 
-  // Leave rows
+  // Leave rows — one row per day with hours
   for (const entry of entries) {
     if (!leaveJobIds.has(entry.job_id)) continue;
-    const userId = tsUserMap[entry.timesheet_id];
-    const emp = empMap[userId];
-    if (!emp) continue;
+    const ts = tsMap[entry.timesheet_id];
+    if (!ts) continue;
+    const emp = empMap[ts.user_id];
+    if (!emp || !filteredEmpIds.has(emp.id)) continue;
 
     const job = jobMap[entry.job_id];
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
-    const totalHours = DAYS.reduce((sum, d) => sum + (Number(entry[`${d}_hours`]) || 0), 0);
-    if (totalHours === 0) continue;
+    const wsDate = new Date(ts.week_start + "T00:00:00");
 
-    const dailyHours = {};
-    for (let i = 0; i < 7; i++) {
-      dailyHours[DAY_LABELS[i]] = Number(entry[`${DAYS[i]}_hours`]) || 0;
-    }
-
-    rows.push({
-      employee: emp.name || "",
-      employee_code: emp.employee_code || "",
-      department: dept?.name || "",
-      employment_type: emp.employment_type || "",
-      event: "Leave",
-      event_detail: job?.job_code || "",
-      event_description: job?.description || "",
-      note: entry.description || "",
-      ...dailyHours,
-      total: totalHours,
-    });
-  }
-
-  // Overtime rows: per-employee daily totals > standard hours
-  const empDayTotals = {};
-  for (const entry of entries) {
-    const userId = tsUserMap[entry.timesheet_id];
-    if (!userId) continue;
-    if (!empDayTotals[userId]) empDayTotals[userId] = {};
     for (let i = 0; i < 7; i++) {
       const h = Number(entry[`${DAYS[i]}_hours`]) || 0;
-      empDayTotals[userId][i] = (empDayTotals[userId][i] || 0) + h;
+      if (h === 0) continue;
+      const dayDate = addDays(wsDate, i);
+      rows.push({
+        employee: emp.name || "",
+        employee_code: emp.employee_code || "",
+        department: dept?.name || "",
+        employment_type: emp.employment_type || "",
+        date: fmtDate(dayDate),
+        date_display: dayDate.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" }),
+        event: "Leave",
+        event_detail: job?.job_code || "",
+        event_description: job?.description || "",
+        note: entry.description || "",
+        hours: h,
+      });
     }
   }
 
-  for (const [userId, dayTotals] of Object.entries(empDayTotals)) {
+  // Overtime rows — per employee per day
+  const empDayTotals = {};
+  for (const entry of entries) {
+    const ts = tsMap[entry.timesheet_id];
+    if (!ts) continue;
+    if (!filteredEmpIds.has(ts.user_id)) continue;
+    const key = `${ts.user_id}_${ts.week_start}`;
+    if (!empDayTotals[key]) empDayTotals[key] = { userId: ts.user_id, wsDate: new Date(ts.week_start + "T00:00:00"), days: {} };
+    for (let i = 0; i < 7; i++) {
+      const h = Number(entry[`${DAYS[i]}_hours`]) || 0;
+      empDayTotals[key].days[i] = (empDayTotals[key].days[i] || 0) + h;
+    }
+  }
+
+  for (const { userId, wsDate, days } of Object.values(empDayTotals)) {
     const emp = empMap[userId];
     if (!emp) continue;
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
-
-    const dailyOT = {};
-    let totalOT = 0;
     for (let i = 0; i < 7; i++) {
-      const excess = Math.max(0, (dayTotals[i] || 0) - LV_STANDARD_HOURS);
-      dailyOT[DAY_LABELS[i]] = excess;
-      totalOT += excess;
+      const excess = Math.max(0, (days[i] || 0) - LV_STANDARD_HOURS);
+      if (excess === 0) continue;
+      const dayDate = addDays(wsDate, i);
+      rows.push({
+        employee: emp.name || "",
+        employee_code: emp.employee_code || "",
+        department: dept?.name || "",
+        employment_type: emp.employment_type || "",
+        date: fmtDate(dayDate),
+        date_display: dayDate.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" }),
+        event: "Overtime",
+        event_detail: "OT",
+        event_description: `Hours exceeding ${LV_STANDARD_HOURS}h/day`,
+        note: "",
+        hours: excess,
+      });
     }
-    if (totalOT === 0) continue;
-
-    rows.push({
-      employee: emp.name || "",
-      employee_code: emp.employee_code || "",
-      department: dept?.name || "",
-      employment_type: emp.employment_type || "",
-      event: "Overtime",
-      event_detail: "OT",
-      event_description: `Hours exceeding ${LV_STANDARD_HOURS}h/day`,
-      note: "",
-      ...dailyOT,
-      total: totalOT,
-    });
   }
 
   return rows;
 }
+
+/* ---------- shared: sort + render ---------- */
+
+let lvSortCol = "employee";
+let lvSortAsc = true;
 
 function sortLvRows(rows) {
   const col = lvSortCol;
@@ -960,7 +960,7 @@ function sortLvRows(rows) {
       cmp = (a.employee || "").localeCompare(b.employee || "");
       if (cmp !== 0) return cmp;
     }
-    return (a.event_detail || "").localeCompare(b.event_detail || "");
+    return (a.date || "").localeCompare(b.date || "");
   });
 }
 
@@ -969,27 +969,26 @@ function lvSortArrow(col) {
   return lvSortAsc ? " &#9650;" : " &#9660;";
 }
 
-function renderLvTable() {
-  const preview = document.getElementById("lv-preview");
-  const sorted = sortLvRows(lvRows);
+const LV_COLS = [
+  { key: "employee",      label: "Employee" },
+  { key: "employee_code", label: "Code" },
+  { key: "department",    label: "Department" },
+  { key: "date",          label: "Date" },
+  { key: "event",         label: "Event" },
+  { key: "event_detail",  label: "Detail" },
+  { key: "note",          label: "Note" },
+  { key: "hours",         label: "Hours" },
+];
 
-  const cols = [
-    { key: "employee",        label: "Employee" },
-    { key: "employee_code",   label: "Code" },
-    { key: "department",      label: "Department" },
-    { key: "employment_type", label: "Type" },
-    { key: "event",           label: "Event" },
-    { key: "event_detail",    label: "Detail" },
-    { key: "note",            label: "Note" },
-  ];
+function renderLvRows(previewId, rows) {
+  const preview = document.getElementById(previewId);
+  const sorted = sortLvRows(rows);
 
   preview.innerHTML = `
     <table class="small lv-sortable">
       <thead>
         <tr>
-          ${cols.map((c) => `<th class="lv-sort-hdr" data-col="${c.key}" style="cursor:pointer;user-select:none">${c.label}${lvSortArrow(c.key)}</th>`).join("")}
-          ${DAY_LABELS.map((d) => `<th class="num lv-sort-hdr" data-col="${d}" style="cursor:pointer;user-select:none">${d}${lvSortArrow(d)}</th>`).join("")}
-          <th class="num lv-sort-hdr" data-col="total" style="cursor:pointer;user-select:none">Total${lvSortArrow("total")}</th>
+          ${LV_COLS.map((c) => `<th class="${c.key === "hours" ? "num " : ""}lv-sort-hdr" data-col="${c.key}" style="cursor:pointer;user-select:none">${c.label}${lvSortArrow(c.key)}</th>`).join("")}
         </tr>
       </thead>
       <tbody>
@@ -998,12 +997,11 @@ function renderLvTable() {
             <td>${escapeHtml(r.employee)}</td>
             <td>${escapeHtml(r.employee_code)}</td>
             <td>${escapeHtml(r.department)}</td>
-            <td>${escapeHtml(r.employment_type)}</td>
+            <td class="nowrap">${escapeHtml(r.date_display)}</td>
             <td><strong>${escapeHtml(r.event)}</strong></td>
             <td>${escapeHtml(r.event_detail)}</td>
             <td>${escapeHtml(r.note)}</td>
-            ${DAY_LABELS.map((d) => `<td class="num">${r[d] || ""}</td>`).join("")}
-            <td class="num"><strong>${r.total}</strong></td>
+            <td class="num"><strong>${r.hours}</strong></td>
           </tr>
         `).join("")}
       </tbody>
@@ -1013,86 +1011,145 @@ function renderLvTable() {
   preview.querySelectorAll(".lv-sort-hdr").forEach((th) => {
     th.addEventListener("click", () => {
       const col = th.dataset.col;
-      if (lvSortCol === col) {
-        lvSortAsc = !lvSortAsc;
-      } else {
-        lvSortCol = col;
-        lvSortAsc = true;
-      }
-      renderLvTable();
+      if (lvSortCol === col) lvSortAsc = !lvSortAsc;
+      else { lvSortCol = col; lvSortAsc = true; }
+      renderLvRows(previewId, rows);
     });
   });
 }
 
-async function loadLeaveReport() {
+function lvExportToExcel(rows, filename) {
+  const sorted = sortLvRows(rows);
+  const headers = ["Employee", "Employee Code", "Department", "Date", "Event", "Detail", "Description", "Note", "Hours"];
+  const wsData = [headers];
+  for (const r of sorted) {
+    wsData.push([r.employee, r.employee_code, r.department, r.date, r.event, r.event_detail, r.event_description, r.note, r.hours]);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Leave Overtime");
+  XLSX.writeFile(wb, filename);
+}
+
+function lvSummaryText(rows) {
+  const leaveCount = rows.filter((r) => r.event === "Leave").length;
+  const otCount = rows.filter((r) => r.event === "Overtime").length;
+  const parts = [];
+  if (leaveCount) parts.push(`${leaveCount} leave`);
+  if (otCount) parts.push(`${otCount} overtime`);
+  return parts.length ? parts.join(", ") : "";
+}
+
+/* ---------- Waged (weekly) ---------- */
+
+let lvWeek = new Date(thisMonday);
+let lvWagedRows = [];
+
+function updateLvWeekLabel() {
+  const end = addDays(lvWeek, 6);
+  document.getElementById("lv-week-label").textContent =
+    `${lvWeek.toLocaleDateString("en-NZ", { month: "short", day: "numeric" })} — ${end.toLocaleDateString("en-NZ", { month: "short", day: "numeric", year: "numeric" })}`;
+}
+updateLvWeekLabel();
+
+document.getElementById("lv-prev").addEventListener("click", () => { lvWeek = addDays(lvWeek, -7); updateLvWeekLabel(); loadWagedReport(); });
+document.getElementById("lv-next").addEventListener("click", () => { lvWeek = addDays(lvWeek, 7); updateLvWeekLabel(); loadWagedReport(); });
+document.getElementById("lv-include-drafts")?.addEventListener("change", () => loadWagedReport());
+
+async function loadWagedReport() {
   const preview = document.getElementById("lv-preview");
   const summary = document.getElementById("lv-summary");
   preview.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
 
   try {
-    lvRows = await buildLeaveRows();
-    const leaveCount = lvRows.filter((r) => r.event === "Leave").length;
-    const otCount = lvRows.filter((r) => r.event === "Overtime").length;
-    const parts = [];
-    if (leaveCount) parts.push(`${leaveCount} leave`);
-    if (otCount) parts.push(`${otCount} overtime`);
-    summary.textContent = parts.length ? parts.join(", ") : "";
+    lvWagedRows = await buildLeaveRowsForWeeks([fmtDate(lvWeek)], "waged", document.getElementById("lv-include-drafts").checked);
+    summary.textContent = lvSummaryText(lvWagedRows);
 
-    if (!lvRows.length) {
-      preview.innerHTML = `<p class="muted small" style="text-align:center">No leave or overtime entries found for this week.</p>`;
+    if (!lvWagedRows.length) {
+      preview.innerHTML = `<p class="muted small" style="text-align:center">No leave or overtime entries found for waged employees this week.</p>`;
       return;
     }
-
-    renderLvTable();
+    renderLvRows("lv-preview", lvWagedRows);
   } catch (err) {
     preview.innerHTML = `<p class="muted small" style="text-align:center">Error: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-// Leave / Overtime export
 document.getElementById("lv-export-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("lv-status");
   statusEl.textContent = "Generating…";
+  try {
+    if (!lvWagedRows.length) lvWagedRows = await buildLeaveRowsForWeeks([fmtDate(lvWeek)], "waged", document.getElementById("lv-include-drafts").checked);
+    if (!lvWagedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
+    lvExportToExcel(lvWagedRows, `leave-overtime-waged-${fmtDate(lvWeek)}.xlsx`);
+    statusEl.textContent = "Done";
+    notice(`Exported ${lvWagedRows.length} entries`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
+});
+
+/* ---------- Salaried (monthly) ---------- */
+
+let lvMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let lvSalariedRows = [];
+
+function updateLvMonthLabel() {
+  document.getElementById("lv-month-label").textContent =
+    lvMonth.toLocaleDateString("en-NZ", { month: "long", year: "numeric" });
+}
+updateLvMonthLabel();
+
+document.getElementById("lv-month-prev").addEventListener("click", () => { lvMonth = new Date(lvMonth.getFullYear(), lvMonth.getMonth() - 1, 1); updateLvMonthLabel(); loadSalariedReport(); });
+document.getElementById("lv-month-next").addEventListener("click", () => { lvMonth = new Date(lvMonth.getFullYear(), lvMonth.getMonth() + 1, 1); updateLvMonthLabel(); loadSalariedReport(); });
+document.getElementById("lv-sal-include-drafts")?.addEventListener("change", () => loadSalariedReport());
+
+function getMondaysInMonth(year, month) {
+  const mondays = [];
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  let d = getMonday(first);
+  while (d <= last) {
+    mondays.push(fmtDate(d));
+    d = addDays(d, 7);
+  }
+  return mondays;
+}
+
+async function loadSalariedReport() {
+  const preview = document.getElementById("lv-sal-preview");
+  const summary = document.getElementById("lv-sal-summary");
+  preview.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
 
   try {
-    if (!lvRows.length) lvRows = await buildLeaveRows();
+    const weeks = getMondaysInMonth(lvMonth.getFullYear(), lvMonth.getMonth());
+    lvSalariedRows = await buildLeaveRowsForWeeks(weeks, "salaried", document.getElementById("lv-sal-include-drafts").checked);
+    summary.textContent = lvSummaryText(lvSalariedRows);
 
-    if (!lvRows.length) {
-      notice("No data to export for this week", "warn");
-      statusEl.textContent = "";
+    if (!lvSalariedRows.length) {
+      preview.innerHTML = `<p class="muted small" style="text-align:center">No leave or overtime entries found for salaried employees this month.</p>`;
       return;
     }
-
-    const sorted = sortLvRows(lvRows);
-
-    const headers = [
-      "Employee", "Employee Code", "Department", "Employment Type",
-      "Event", "Detail", "Description", "Note",
-      "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Total",
-    ];
-
-    const wsData = [headers];
-    for (const r of sorted) {
-      wsData.push([
-        r.employee, r.employee_code, r.department, r.employment_type,
-        r.event, r.event_detail, r.event_description, r.note,
-        r.Mon, r.Tue, r.Wed, r.Thu, r.Fri, r.Sat, r.Sun, r.total,
-      ]);
-    }
-
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leave Overtime");
-
-    XLSX.writeFile(wb, `leave-overtime-${fmtDate(lvWeek)}.xlsx`);
-
-    statusEl.textContent = "Done";
-    notice(`Exported ${sorted.length} entries`, "success");
-    setTimeout(() => statusEl.textContent = "", 3000);
+    renderLvRows("lv-sal-preview", lvSalariedRows);
   } catch (err) {
-    notice(err.message || "Export failed", "error");
-    statusEl.textContent = "";
+    preview.innerHTML = `<p class="muted small" style="text-align:center">Error: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+document.getElementById("lv-sal-export-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("lv-sal-status");
+  statusEl.textContent = "Generating…";
+  try {
+    if (!lvSalariedRows.length) {
+      const weeks = getMondaysInMonth(lvMonth.getFullYear(), lvMonth.getMonth());
+      lvSalariedRows = await buildLeaveRowsForWeeks(weeks, "salaried", document.getElementById("lv-sal-include-drafts").checked);
+    }
+    if (!lvSalariedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
+    const monthStr = `${lvMonth.getFullYear()}-${String(lvMonth.getMonth() + 1).padStart(2, "0")}`;
+    lvExportToExcel(lvSalariedRows, `leave-overtime-salaried-${monthStr}.xlsx`);
+    statusEl.textContent = "Done";
+    notice(`Exported ${lvSalariedRows.length} entries`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
 });
 
 /* ================================================================

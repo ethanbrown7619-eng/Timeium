@@ -121,7 +121,13 @@
         <h2 style="margin:0 0 4px">Leave / Overtime Report</h2>
         <p class="muted mb-md">Export leave and overtime hours for payroll processing.</p>
 
-        <div class="card">
+        <div class="tabs sub" id="lv-sub-tabs">
+          <button class="tab active" data-lv-view="waged">Waged (Weekly)</button>
+          <button class="tab" data-lv-view="salaried">Salaried (Monthly)</button>
+        </div>
+
+        <!-- Waged: weekly -->
+        <div id="lv-waged" class="card">
           <div class="row-flex mb-md">
             <button class="ghost" id="lv-prev">&larr;</button>
             <h3 id="lv-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
@@ -143,6 +149,32 @@
           <div class="row-flex">
             <button id="lv-export-btn">Export to Excel</button>
             <span id="lv-status" class="muted small"></span>
+          </div>
+        </div>
+
+        <!-- Salaried: monthly -->
+        <div id="lv-salaried" class="card" style="display:none">
+          <div class="row-flex mb-md">
+            <button class="ghost" id="lv-month-prev">&larr;</button>
+            <h3 id="lv-month-label" style="margin:0;min-width:240px;text-align:center"></h3>
+            <button class="ghost" id="lv-month-next">&rarr;</button>
+          </div>
+
+          <div class="row-flex mb-md">
+            <label class="row-flex small muted" style="gap:4px;margin:0">
+              <input type="checkbox" id="lv-sal-include-drafts" /> Include draft timesheets
+            </label>
+            <div class="grow"></div>
+            <span id="lv-sal-summary" class="muted small"></span>
+          </div>
+
+          <div id="lv-sal-preview" style="overflow-x:auto;max-height:500px;overflow-y:auto;margin-bottom:16px">
+            <p class="muted small" style="text-align:center">Select a month above.</p>
+          </div>
+
+          <div class="row-flex">
+            <button id="lv-sal-export-btn">Export to Excel</button>
+            <span id="lv-sal-status" class="muted small"></span>
           </div>
         </div>
       </section>
