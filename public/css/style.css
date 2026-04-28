@@ -33,6 +33,10 @@
   navigation: auto;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -169,6 +173,11 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius-box);
   padding: 16px 20px;
   margin-bottom: 20px;
+  animation: fadeSlideIn 0.25s ease;
+}
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .card h2 { margin: 0 0 12px; font-size: 16px; }
@@ -188,6 +197,7 @@ input, select, textarea {
   border-radius: var(--radius-box);
   background: var(--surface);
   color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 button {
   font: inherit;
@@ -196,11 +206,13 @@ button {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
 }
 input:focus, select:focus, textarea:focus {
   outline: 2px solid var(--primary);
   outline-offset: -1px;
 }
+button:active:not(:disabled) { transform: scale(0.97); }
 
 input[type="number"] { width: 70px; text-align: right; }
 
@@ -245,6 +257,7 @@ th {
   background: var(--surface-alt);
   font-weight: 600;
 }
+tr { transition: background 0.12s; }
 tr:last-child td { border-bottom: none; }
 
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -300,6 +313,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   border-radius: var(--radius-box);
   margin-bottom: 16px;
   font-size: 13px;
+  animation: noticeIn 0.3s ease;
+}
+@keyframes noticeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .notice.info    { background: #e6f0ff; color: #1c4da0; border: 1px solid #b8cfef; }
 .notice.warn    { background: #fdecd3; color: #a56a10; border: 1px solid #f5d89a; }
@@ -339,12 +357,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .tabs.sub .tab { border-radius: 999px; padding: 4px 12px; font-size: 13px; }
 .tab:hover { color: var(--text); background: var(--surface-alt); }
+.tab:active { transform: scale(0.97); }
 .tab.active {
   color: var(--text);
   background: var(--surface);
   border-color: var(--border);
   border-bottom-color: var(--surface);
   margin-bottom: -1px;
+}
+.tab-panel {
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .tabs.sub .tab.active {
   background: var(--ptl-lime);
@@ -445,9 +471,19 @@ dialog {
   border-radius: var(--radius-box);
   padding: 0;
   box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  animation: dialogIn 0.2s ease;
+}
+@keyframes dialogIn {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
+  animation: backdropIn 0.2s ease;
+}
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* -------- timesheet hub -------- */
@@ -533,7 +569,7 @@ dialog::backdrop {
 .week-calendar { width: 100%; border-collapse: collapse; }
 .week-calendar th { font-size: 11px; text-transform: uppercase; padding: 10px 8px; text-align: center; }
 .week-calendar td { padding: 18px 8px; text-align: center; font-size: 14px; }
-.week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); }
+.week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); transition: background 0.15s; }
 .week-calendar tr.week-row:hover { background: var(--surface-alt); }
 .week-calendar tr.week-row.current-week { background: rgba(194, 255, 0, 0.12); font-weight: 600; }
 .week-calendar tr.week-row.current-week:hover { background: rgba(194, 255, 0, 0.22); }
@@ -679,7 +715,11 @@ dialog::backdrop {
   border-radius: 0 0 var(--radius-box) var(--radius-box);
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
-.ac-list.open { display: block; }
+.ac-list.open { display: block; animation: dropIn 0.15s ease; }
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .ac-item {
   padding: 6px 8px;
   cursor: pointer;
@@ -688,6 +728,7 @@ dialog::backdrop {
   justify-content: space-between;
   gap: 8px;
 }
+.ac-item { transition: background 0.1s, color 0.1s; }
 .ac-item:hover, .ac-item.highlighted { background: var(--ptl-lime); color: var(--ptl-black); }
 .ac-item .ac-desc { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-item:hover .ac-desc, .ac-item.highlighted .ac-desc { color: var(--ptl-black); opacity: 0.7; }
@@ -790,8 +831,9 @@ button.small {
   text-align: center;
   cursor: pointer;
   color: var(--text-muted);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.2s, background 0.2s, transform 0.15s;
 }
+.drop-zone:hover { transform: scale(1.005); }
 .drop-zone:hover, .drop-zone.drag-over {
   border-color: var(--primary);
   background: rgba(36, 96, 199, 0.04);

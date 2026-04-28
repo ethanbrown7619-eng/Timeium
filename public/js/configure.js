@@ -697,7 +697,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -756,6 +756,9 @@ async function loadSettings() {
     document.getElementById("discrepancy-day").value = data.discrepancy_day || "monday";
     document.getElementById("discrepancy-time").value = (data.discrepancy_time || "10:00").slice(0, 5);
     document.getElementById("discrepancy-schedule").style.display = data.notify_discrepancy ? "" : "none";
+
+    // Staff Types
+    renderStaffTypes(data.employment_type_settings);
   } catch (err) {
     notice(err.message || "Failed to load settings", "error");
   }
@@ -905,6 +908,75 @@ function flashStatus(id) {
   el.textContent = "Saved";
   setTimeout(() => el.textContent = "", 3000);
 }
+
+/* -------------------------------------------------------- staff types */
+
+const EMPLOYMENT_TYPES = ["waged", "salaried", "contractor"];
+const ENTITLEMENT_KEYS = [
+  { key: "public_holidays", label: "Public holidays" },
+  { key: "sick_leave",      label: "Sick leave" },
+  { key: "annual_leave",    label: "Annual leave" },
+];
+
+const DEFAULT_TYPE_SETTINGS = {
+  waged:      { public_holidays: true,  sick_leave: true,  annual_leave: true },
+  salaried:   { public_holidays: true,  sick_leave: true,  annual_leave: true },
+  contractor: { public_holidays: false, sick_leave: false, annual_leave: false },
+};
+
+function renderStaffTypes(settings) {
+  const merged = { ...DEFAULT_TYPE_SETTINGS, ...(settings || {}) };
+  const container = document.getElementById("staff-types-container");
+
+  container.innerHTML = EMPLOYMENT_TYPES.map((type) => {
+    const cfg = merged[type] || {};
+    const label = type.charAt(0).toUpperCase() + type.slice(1);
+    return `
+      <div style="border:1px solid var(--border);border-radius:var(--radius-box);padding:14px">
+        <strong style="display:block;margin-bottom:8px">${escapeHtml(label)}</strong>
+        <div class="settings-checks">
+          ${ENTITLEMENT_KEYS.map((ent) => `
+            <label class="settings-check">
+              <input type="checkbox"
+                     data-staff-type="${type}"
+                     data-entitlement="${ent.key}"
+                     ${cfg[ent.key] ? "checked" : ""} />
+              <div>
+                <strong>${escapeHtml(ent.label)}</strong>
+              </div>
+            </label>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function collectStaffTypeSettings() {
+  const result = {};
+  for (const type of EMPLOYMENT_TYPES) {
+    result[type] = {};
+    for (const ent of ENTITLEMENT_KEYS) {
+      const cb = document.querySelector(
+        `input[data-staff-type="${type}"][data-entitlement="${ent.key}"]`
+      );
+      result[type][ent.key] = cb ? cb.checked : false;
+    }
+  }
+  return result;
+}
+
+document.getElementById("save-staff-types-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    await saveOrgSettings({ employment_type_settings: collectStaffTypeSettings() });
+    notice("Staff type settings saved", "success");
+    flashStatus("staff-types-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
 
 /* ---------------------------------------------------------------- boot */
 
