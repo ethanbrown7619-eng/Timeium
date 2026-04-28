@@ -34,18 +34,18 @@
 }
 
 ::view-transition-old(root) {
-  animation: vtFadeOut 0.15s ease forwards;
+  animation: vtOut 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 ::view-transition-new(root) {
-  animation: vtFadeIn 0.2s ease forwards;
+  animation: vtIn 0.25s cubic-bezier(0, 0, 0.2, 1) forwards;
 }
-@keyframes vtFadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
+@keyframes vtOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.98); }
 }
-@keyframes vtFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes vtIn {
+  from { opacity: 0; transform: scale(1.01); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 html {
@@ -79,10 +79,12 @@ a:hover { text-decoration: underline; }
   top: 0;
   z-index: 10;
   min-height: 48px;
-  animation: topbarIn 0.25s ease;
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.92);
+  animation: topbarIn 0.35s cubic-bezier(0, 0, 0.2, 1);
 }
 @keyframes topbarIn {
-  from { opacity: 0; transform: translateY(-4px); }
+  from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -149,10 +151,10 @@ a:hover { text-decoration: underline; }
 
 .topbar nav {
   display: flex;
-  gap: 16px;
+  gap: 6px;
   flex: 1;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.4s cubic-bezier(0, 0, 0.2, 1);
 }
 .topbar nav.ready {
   opacity: 1;
@@ -160,7 +162,7 @@ a:hover { text-decoration: underline; }
 
 .topbar .row-flex {
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.4s cubic-bezier(0, 0, 0.2, 1);
 }
 .topbar .row-flex.ready {
   opacity: 1;
@@ -168,17 +170,25 @@ a:hover { text-decoration: underline; }
 
 .topbar nav a {
   color: var(--text-muted);
-  padding: 6px 12px;
+  padding: 7px 14px;
   border-radius: 999px;
   font-weight: 500;
-  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  font-size: 13px;
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.topbar nav a:hover { background: var(--surface-alt); text-decoration: none; color: var(--text); }
-.topbar nav a:active { transform: scale(0.95); }
+.topbar nav a:hover {
+  background: var(--surface-alt);
+  text-decoration: none;
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.topbar nav a:active { transform: scale(0.94); }
 .topbar nav a.active {
   color: var(--ptl-black);
   background: var(--ptl-lime);
-  box-shadow: 0 1px 4px rgba(194, 255, 0, 0.35);
+  box-shadow: 0 2px 8px rgba(194, 255, 0, 0.4), 0 1px 2px rgba(0,0,0,0.06);
+  font-weight: 600;
 }
 
 .topbar .who {
@@ -190,10 +200,11 @@ a:hover { text-decoration: underline; }
   max-width: 1280px;
   margin: 0 auto;
   padding: 20px 24px 64px;
-  animation: pageIn 0.3s ease;
+  animation: pageIn 0.4s cubic-bezier(0, 0, 0.2, 1);
 }
 @keyframes pageIn {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(16px); }
+  60% { opacity: 1; }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -203,10 +214,19 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius-box);
   padding: 16px 20px;
   margin-bottom: 20px;
-  animation: fadeSlideIn 0.25s ease;
+  animation: fadeSlideIn 0.35s cubic-bezier(0, 0, 0.2, 1) backwards;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
 }
+.card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+.card:nth-child(1) { animation-delay: 0s; }
+.card:nth-child(2) { animation-delay: 0.05s; }
+.card:nth-child(3) { animation-delay: 0.1s; }
+.card:nth-child(4) { animation-delay: 0.15s; }
+.card:nth-child(5) { animation-delay: 0.2s; }
 @keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -227,7 +247,7 @@ input, select, textarea {
   border-radius: var(--radius-box);
   background: var(--surface);
   color: var(--text);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 button {
   font: inherit;
@@ -236,13 +256,14 @@ button {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid var(--primary);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--ptl-black);
+  box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.1);
 }
-button:active:not(:disabled) { transform: scale(0.97); }
+button:active:not(:disabled) { transform: scale(0.96); }
 
 input[type="number"] { width: 70px; text-align: right; }
 
@@ -253,7 +274,7 @@ button {
   border-color: var(--ptl-black);
   font-weight: 600;
 }
-button:hover { background: #2a2a2a; border-color: #2a2a2a; }
+button:hover { background: #2a2a2a; border-color: #2a2a2a; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transform: translateY(-1px); }
 button.accent {
   background: var(--ptl-lime);
   color: var(--ptl-black);
@@ -266,7 +287,7 @@ button.ghost {
   border-color: var(--border);
   font-weight: 500;
 }
-button.ghost:hover { background: var(--surface-alt); }
+button.ghost:hover { background: var(--surface-alt); transform: translateY(-1px); box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -332,8 +353,13 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   display: grid;
   place-items: center;
   padding: 40px 20px;
+  animation: authIn 0.5s cubic-bezier(0, 0, 0.2, 1);
 }
-.auth-wrap .card { max-width: 360px; width: 100%; margin: 0; }
+@keyframes authIn {
+  from { opacity: 0; transform: scale(0.96) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.auth-wrap .card { max-width: 360px; width: 100%; margin: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
 .auth-wrap h1 { margin: 0 0 16px; font-size: 20px; }
 
 /* -------- notices -------- */
@@ -384,10 +410,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   border-radius: 8px 8px 0 0;
   font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.tabs.sub .tab { border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+.tabs.sub .tab { border-radius: 999px; padding: 5px 14px; font-size: 13px; }
 .tab:hover { color: var(--text); background: var(--surface-alt); }
-.tab:active { transform: scale(0.97); }
+.tab:active { transform: scale(0.96); }
 .tab.active {
   color: var(--text);
   background: var(--surface);
@@ -396,17 +423,21 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   margin-bottom: -1px;
 }
 .tab-panel {
-  animation: fadeIn 0.2s ease;
+  animation: panelIn 0.3s cubic-bezier(0, 0, 0.2, 1);
 }
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.sub-panel {
+  animation: panelIn 0.25s cubic-bezier(0, 0, 0.2, 1);
+}
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .tabs.sub .tab.active {
   background: var(--ptl-lime);
   color: var(--ptl-black);
   border-color: var(--ptl-lime);
   margin-bottom: 0;
+  box-shadow: 0 1px 4px rgba(194, 255, 0, 0.3);
 }
 
 /* -------- organisation columns -------- */
@@ -455,8 +486,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   padding: 8px 10px;
   cursor: grab;
   user-select: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
 }
-.org-card:active { cursor: grabbing; }
+.org-card:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.org-card:active { cursor: grabbing; transform: scale(0.98); }
 .org-card.dragging { opacity: 0.4; }
 .org-card.incomplete { border-left: 3px solid var(--warning); }
 .org-card.is-manager {
@@ -497,19 +530,20 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* -------- dialog -------- */
 
 dialog {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-box);
+  border: none;
+  border-radius: 14px;
   padding: 0;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-  animation: dialogIn 0.2s ease;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.08);
+  animation: dialogIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @keyframes dialogIn {
-  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  from { opacity: 0; transform: scale(0.9) translateY(20px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.35);
-  animation: backdropIn 0.2s ease;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  animation: backdropIn 0.25s cubic-bezier(0, 0, 0.2, 1);
 }
 @keyframes backdropIn {
   from { opacity: 0; }
@@ -579,6 +613,11 @@ dialog::backdrop {
   border-radius: var(--radius-box);
   padding: 16px 28px;
   flex: 1;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 }
 .stat-value {
   font-size: 28px;
@@ -644,6 +683,11 @@ dialog::backdrop {
   border: 1px solid var(--border);
   border-radius: var(--radius-box);
   background: var(--surface);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.leave-balance-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
 }
 .leave-balance-tile .lb-name {
   font-size: 13px;
@@ -701,8 +745,9 @@ dialog::backdrop {
   width: 44px !important;
 }
 .ts-grid .hours-input:focus {
-  outline: 2px solid var(--ptl-lime);
-  outline-offset: -1px;
+  outline: none;
+  border-color: var(--ptl-lime-dark);
+  box-shadow: 0 0 0 3px rgba(194, 255, 0, 0.3);
 }
 .ts-grid .desc-input {
   width: 100%;
@@ -713,7 +758,7 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
 }
-.ts-grid .desc-input:focus { outline: 2px solid var(--ptl-lime); outline-offset: -1px; }
+.ts-grid .desc-input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(194, 255, 0, 0.3); }
 .ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
 .ts-grid .row-total { background: var(--surface-alt); }
 
@@ -729,7 +774,7 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
 }
-.ac-wrap input:focus { outline: 2px solid var(--ptl-lime); outline-offset: -1px; }
+.ac-wrap input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(194, 255, 0, 0.3); }
 .ac-list {
   display: none;
   position: absolute;
@@ -1009,9 +1054,9 @@ details.card[open] > summary::before { content: "▾ "; }
   color: var(--text);
   background: var(--surface-alt);
   border: 1px solid var(--border);
-  transition: background 0.15s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.dept-view-btn:hover { background: var(--border); }
+.dept-view-btn:hover { background: var(--border); text-decoration: none; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
 .dept-approve-btn {
   display: inline-block;
   padding: 4px 14px;
@@ -1023,9 +1068,9 @@ details.card[open] > summary::before { content: "▾ "; }
   border: 1px solid #c3e6cb;
   cursor: pointer;
   margin-left: 6px;
-  transition: background 0.15s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.dept-approve-btn:hover { background: #d4edda; }
+.dept-approve-btn:hover { background: #d4edda; transform: translateY(-1px); box-shadow: 0 2px 6px rgba(46,125,58,0.15); }
 
 /* -------- approval workflow radio -------- */
 
@@ -1043,7 +1088,7 @@ details.card[open] > summary::before { content: "▾ "; }
   border: 2px solid var(--border);
   border-radius: var(--radius-box);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .workflow-option:hover {
   background: var(--surface-alt);
@@ -1090,7 +1135,7 @@ details.card[open] > summary::before { content: "▾ "; }
   border: 1px solid var(--border);
   border-radius: var(--radius-box);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .settings-check:hover { background: var(--surface-alt); }
 .settings-check:has(input:checked) {
@@ -1117,4 +1162,13 @@ button.primary {
 button.primary:hover {
   background: var(--ptl-lime-dark);
   border-color: var(--ptl-lime-dark);
+  box-shadow: 0 2px 8px rgba(194, 255, 0, 0.4);
+}
+
+/* -------- reduced motion -------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
