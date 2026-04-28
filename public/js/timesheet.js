@@ -33,10 +33,12 @@ if (!employee) {
 const currentOrgId = employee.organisation_id;
 
 let isOverhead = false;
+let requireTask = false;
 if (employee.department_id) {
   try {
-    const { data: dept } = await sb.from("departments").select("is_overhead").eq("id", employee.department_id).maybeSingle();
+    const { data: dept } = await sb.from("departments").select("is_overhead, require_task").eq("id", employee.department_id).maybeSingle();
     isOverhead = !!dept?.is_overhead;
+    requireTask = !!dept?.require_task;
   } catch {}
 }
 
@@ -924,6 +926,10 @@ function renderGrid() {
 
     const ro = isSubmitted ? "readonly" : "";
     const dis = isSubmitted ? "disabled" : "";
+    const isLeaveRow = !!job?.is_leave;
+    const leaveRo = isLeaveRow ? "readonly" : "";
+    const deptRo = isSubmitted || isLeaveRow ? "readonly" : "";
+    const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
 
     return `
       <tr data-entry-id="${e.id}" data-idx="${idx}">
@@ -936,13 +942,13 @@ function renderGrid() {
         <td><span class="small status-badge status-${jobStatus.toLowerCase()}">${escapeHtml(jobStatus)}</span></td>
         <td>
           <div class="ac-wrap">
-            <input class="ac-dept" value="${escapeHtml(dept?.code || "")}" data-selected-id="${e.dept_code_id || ""}" placeholder="Dept…" ${ro} />
+            <input class="ac-dept" value="${isLeaveRow ? "" : escapeHtml(dept?.code || "")}" data-selected-id="${isLeaveRow ? "" : (e.dept_code_id || "")}" placeholder="${isLeaveRow ? "—" : "Dept…"}" ${deptRo} style="${isLeaveRow ? "background:var(--surface-alt);color:var(--text-muted)" : ""}" />
             <div class="ac-list"></div>
           </div>
         </td>
         <td>
           <div class="ac-wrap">
-            <input class="ac-task" value="${escapeHtml(task?.task_code || "")}" data-selected-id="${e.task_id || ""}" placeholder="Task…" ${ro} />
+            <input class="ac-task" value="${isLeaveRow ? "" : escapeHtml(task?.task_code || "")}" data-selected-id="${isLeaveRow ? "" : (e.task_id || "")}" placeholder="${isLeaveRow ? "—" : "Task…"}" ${taskRo} style="${isLeaveRow ? "background:var(--surface-alt);color:var(--text-muted)" : ""}" />
             <div class="ac-list"></div>
           </div>
         </td>
@@ -973,25 +979,30 @@ function renderGrid() {
         requireQuery: true,
         onSelect: (it) => {
           entries[idx].job_id = it.id;
-          saveEntry(entries[idx]);
-          const badge = row.querySelector(".status-badge");
-          if (badge) {
-            badge.textContent = it.status || "";
-            badge.className = `small status-badge status-${(it.status || "").toLowerCase()}`;
+          if (it.is_leave) {
+            entries[idx].dept_code_id = null;
+            entries[idx].task_id = null;
           }
+          saveEntry(entries[idx]);
+          renderGrid();
         },
-        onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); },
+        onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); renderGrid(); },
       });
 
-      setupAC(row.querySelector(".ac-dept"), deptItems, {
-        onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
-        onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx]); },
-      });
+      const entryJob = jobs.find((j) => j.id === entries[idx]?.job_id);
+      if (!entryJob?.is_leave) {
+        setupAC(row.querySelector(".ac-dept"), deptItems, {
+          onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
+          onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx]); },
+        });
+      }
 
-      setupAC(row.querySelector(".ac-task"), taskItems, {
-        onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx]); },
-        onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx]); },
-      });
+      if (!entryJob?.is_leave) {
+        setupAC(row.querySelector(".ac-task"), taskItems, {
+          onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx]); },
+          onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx]); },
+        });
+      }
     });
 
     // Description debounced save
@@ -1126,17 +1137,22 @@ document.getElementById("submit-ts-btn").addEventListener("click", () => {
     return;
   }
 
-  // Validate that every entry has a job and department
+  // Validate that every entry has required fields
   const incomplete = [];
   entries.forEach((e, i) => {
     const hasHours = DAYS.some((d) => Number(e[`${d}_hours`]) > 0);
     if (!hasHours) return;
-    if (!e.job_id || !e.dept_code_id) {
-      incomplete.push(i + 1);
-    }
+    const job = jobs.find((j) => j.id === e.job_id);
+    if (job?.is_leave) return;
+    const missing = [];
+    if (!e.job_id) missing.push("Job");
+    if (!e.dept_code_id) missing.push("Department");
+    if (requireTask && !e.task_id) missing.push("Task");
+    if (missing.length) incomplete.push({ row: i + 1, missing });
   });
   if (incomplete.length) {
-    notice(`Row${incomplete.length > 1 ? "s" : ""} ${incomplete.join(", ")} missing a Job or Department. Please check before submitting.`, "warn");
+    const msg = incomplete.map((r) => `Row ${r.row}: ${r.missing.join(", ")}`).join(". ");
+    notice(`Please fill in required fields — ${msg}`, "warn");
     return;
   }
 

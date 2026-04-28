@@ -169,7 +169,7 @@ async function loadEmployees() {
 async function loadDepartments() {
   const { data, error } = await sb
     .from("departments")
-    .select("id, name, active, manager_id, cost_rate, sell_rate, is_overhead")
+    .select("id, name, active, manager_id, cost_rate, sell_rate, is_overhead, require_task")
     .eq("organisation_id", currentOrgId)
     .order("name");
   if (error) {
@@ -341,6 +341,7 @@ function openDeptDialog(deptId) {
   document.getElementById("dept-dialog-title").textContent = isEdit ? "Edit department" : "Add department";
   document.getElementById("fd-name").value = dept?.name || "";
   document.getElementById("fd-overhead").checked = dept?.is_overhead || false;
+  document.getElementById("fd-require-task").checked = dept?.require_task || false;
   document.getElementById("fd-cost").value = dept?.cost_rate ?? "";
   document.getElementById("fd-sell").value = dept?.sell_rate ?? "";
   document.getElementById("fd-active").checked = dept?.active ?? true;
@@ -384,6 +385,7 @@ document.getElementById("dept-form").addEventListener("submit", async (e) => {
   const payload = {
     name,
     is_overhead: isOverhead,
+    require_task: document.getElementById("fd-require-task").checked,
     cost_rate: isOverhead ? null : (document.getElementById("fd-cost").value === "" ? null : Number(document.getElementById("fd-cost").value)),
     sell_rate: isOverhead ? null : (document.getElementById("fd-sell").value === "" ? null : Number(document.getElementById("fd-sell").value)),
     active: document.getElementById("fd-active").checked,
