@@ -33,6 +33,21 @@
   navigation: auto;
 }
 
+::view-transition-old(root) {
+  animation: vtFadeOut 0.15s ease forwards;
+}
+::view-transition-new(root) {
+  animation: vtFadeIn 0.2s ease forwards;
+}
+@keyframes vtFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes vtFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 html {
   scroll-behavior: smooth;
 }
@@ -64,6 +79,11 @@ a:hover { text-decoration: underline; }
   top: 0;
   z-index: 10;
   min-height: 48px;
+  animation: topbarIn 0.25s ease;
+}
+@keyframes topbarIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .pagination {
@@ -151,10 +171,15 @@ a:hover { text-decoration: underline; }
   padding: 6px 12px;
   border-radius: 999px;
   font-weight: 500;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
 }
-.topbar nav a:hover { background: var(--surface-alt); text-decoration: none; }
-.topbar nav a.active { color: var(--ptl-black); background: var(--ptl-lime); }
+.topbar nav a:hover { background: var(--surface-alt); text-decoration: none; color: var(--text); }
+.topbar nav a:active { transform: scale(0.95); }
+.topbar nav a.active {
+  color: var(--ptl-black);
+  background: var(--ptl-lime);
+  box-shadow: 0 1px 4px rgba(194, 255, 0, 0.35);
+}
 
 .topbar .who {
   color: var(--text-muted);
@@ -165,6 +190,11 @@ a:hover { text-decoration: underline; }
   max-width: 1280px;
   margin: 0 auto;
   padding: 20px 24px 64px;
+  animation: pageIn 0.3s ease;
+}
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .card {
