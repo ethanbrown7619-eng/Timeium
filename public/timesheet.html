@@ -12,6 +12,42 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
+      <!-- ==================== Overhead (leave-only) view ==================== -->
+      <div id="overhead-view" style="display:none">
+        <div class="card" style="max-width:720px">
+          <h2 style="margin-top:0">My Leave</h2>
+          <p class="muted">You are an overhead staff member. Use this page to manage your leave.</p>
+        </div>
+
+        <div class="card" id="oh-leave-balance-card" style="display:none;max-width:720px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">My Leave Balances</h2>
+            <div class="grow"></div>
+            <button id="oh-request-leave-btn">+ Request leave</button>
+          </div>
+          <div id="oh-leave-balance-body" class="leave-balance-grid"></div>
+        </div>
+
+        <div class="card" id="oh-leave-requests-card" style="display:none;max-width:720px">
+          <h2 style="margin-top:0">My Leave Requests</h2>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="oh-leave-requests-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ==================== Hub view ==================== -->
       <div id="hub-view">
         <div id="current-week-card" class="card ts-current-card">

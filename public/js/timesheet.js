@@ -20,7 +20,7 @@ try {
   adminRow = r.data;
 } catch {}
 try {
-  const r = await sb.from("users").select("id, organisation_id, name, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
+  const r = await sb.from("users").select("id, organisation_id, name, is_manager, department_id, departments(is_overhead)").eq("auth_user_id", session.user.id).maybeSingle();
   employee = r.data;
   isManager = !!r.data?.is_manager;
 } catch {}
@@ -31,6 +31,7 @@ if (!employee) {
 }
 
 const currentOrgId = employee.organisation_id;
+const isOverhead = !!employee.departments?.is_overhead;
 
 renderTopbar({
   session,
@@ -251,7 +252,11 @@ document.getElementById("leave-request-form")?.addEventListener("submit", async 
 
   document.getElementById("leave-request-dialog").close();
   notice("Leave request submitted", "success");
-  await loadMyLeaveRequests();
+  if (isOverhead) {
+    await loadOverheadLeaveRequests();
+  } else {
+    await loadMyLeaveRequests();
+  }
 });
 
 function showEditor(ws) {
@@ -1173,19 +1178,130 @@ async function loadOrgDeadline() {
   } catch {}
 }
 
+/* ---------------------------------------------------------------- overhead (leave-only) view */
+
+async function showOverheadView() {
+  document.getElementById("hub-view").style.display = "none";
+  document.getElementById("editor-view").style.display = "none";
+  document.getElementById("overhead-view").style.display = "";
+
+  await loadOverheadLeaveBalances();
+  await loadOverheadLeaveRequests();
+}
+
+async function loadOverheadLeaveBalances() {
+  const card = document.getElementById("oh-leave-balance-card");
+  const body = document.getElementById("oh-leave-balance-body");
+
+  const { data: types } = await sb
+    .from("leave_types")
+    .select("id, name, code, unit, sort_order, active")
+    .eq("organisation_id", currentOrgId)
+    .eq("active", true)
+    .order("sort_order");
+  leaveTypes = types || [];
+
+  const { data } = await sb
+    .from("leave_balances")
+    .select("balance, used_total, leave_types(name, unit, sort_order)")
+    .eq("user_id", employee.id);
+
+  card.style.display = "";
+
+  if (!data?.length) {
+    body.innerHTML = `<div class="muted small" style="padding:8px">No balances yet. Contact admin to set up entitlements.</div>`;
+    return;
+  }
+
+  const rows = data
+    .filter((r) => r.leave_types)
+    .sort((a, b) => (a.leave_types.sort_order || 0) - (b.leave_types.sort_order || 0));
+
+  body.innerHTML = rows.map((r) => `
+    <div class="leave-balance-tile">
+      <div class="lb-name">${escapeHtml(r.leave_types.name)}</div>
+      <div class="lb-value">${Number(r.balance).toFixed(r.leave_types.unit === "days" ? 1 : 2)}<span class="lb-unit">${r.leave_types.unit === "days" ? "days" : "hrs"}</span></div>
+      <div class="lb-used">${Number(r.used_total).toFixed(1)} used</div>
+    </div>
+  `).join("");
+}
+
+async function loadOverheadLeaveRequests() {
+  const card = document.getElementById("oh-leave-requests-card");
+  const body = document.getElementById("oh-leave-requests-body");
+
+  const { data } = await sb
+    .from("leave_requests")
+    .select("id, start_date, end_date, hours_per_day, status, reason, leave_type_id, leave_types(name)")
+    .eq("user_id", employee.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (!data?.length) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "";
+  body.innerHTML = data.map((r) => {
+    const statusClass = r.status === "approved" ? "chip-submitted" :
+                        r.status === "rejected" ? "chip-pending" : "chip-pending";
+    const canCancel = r.status === "pending";
+    const dateRange = r.start_date === r.end_date
+      ? r.start_date
+      : `${r.start_date} → ${r.end_date}`;
+    return `<tr data-id="${r.id}">
+      <td>${escapeHtml(r.leave_types?.name || "")}</td>
+      <td class="small">${dateRange}</td>
+      <td class="num">${r.hours_per_day}</td>
+      <td><span class="chip-dash ${statusClass}">${r.status}</span></td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td>${canCancel ? `<button class="ghost small oh-cancel-lr-btn">Cancel</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".oh-cancel-lr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!confirm("Cancel this leave request?")) return;
+      const { error } = await sb.from("leave_requests")
+        .update({ status: "cancelled" }).eq("id", id);
+      if (error) return notice(error.message, "error");
+      notice("Request cancelled", "success");
+      await loadOverheadLeaveRequests();
+    });
+  });
+}
+
+document.getElementById("oh-request-leave-btn")?.addEventListener("click", () => {
+  const dialog = document.getElementById("leave-request-dialog");
+  const sel = document.getElementById("lr-type");
+  sel.innerHTML = leaveTypes.map((t) =>
+    `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+  document.getElementById("lr-start").value = "";
+  document.getElementById("lr-end").value = "";
+  document.getElementById("lr-hours").value = "8";
+  document.getElementById("lr-reason").value = "";
+  document.getElementById("lr-skip-weekends").checked = true;
+  dialog.showModal();
+});
+
 /* ---------------------------------------------------------------- boot */
 
-await Promise.all([loadLookups(), loadOrgDeadline()]);
+if (isOverhead) {
+  await showOverheadView();
+} else {
+  await Promise.all([loadLookups(), loadOrgDeadline()]);
 
-// If ?week= param, go straight to editor
-const urlWeek = new URLSearchParams(location.search).get("week");
-if (urlWeek) {
-  const parsed = new Date(urlWeek + "T00:00:00");
-  if (!isNaN(parsed)) {
-    showEditor(getMonday(parsed));
+  const urlWeek = new URLSearchParams(location.search).get("week");
+  if (urlWeek) {
+    const parsed = new Date(urlWeek + "T00:00:00");
+    if (!isNaN(parsed)) {
+      showEditor(getMonday(parsed));
+    } else {
+      showHub();
+    }
   } else {
     showHub();
   }
-} else {
-  showHub();
 }
