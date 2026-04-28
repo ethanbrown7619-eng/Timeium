@@ -138,15 +138,18 @@ async function loadDashboard() {
   // Load all active departments with manager info
   const { data: allDepts } = await sb
     .from("departments")
-    .select("id, name, manager_id")
+    .select("id, name, manager_id, is_overhead")
     .eq("organisation_id", currentOrgId)
     .eq("active", true)
     .order("name");
 
-  // Admins/devs see all departments; managers see only their own
+  // Exclude overhead departments — they don't submit timesheets
+  const nonOverheadDepts = (allDepts || []).filter((d) => !d.is_overhead);
+
+  // Admins/devs see all non-overhead departments; managers see only their own
   const managedDepts = isAdminOrDev
-    ? (allDepts || [])
-    : (allDepts || []).filter((d) => d.manager_id === employee?.id);
+    ? nonOverheadDepts
+    : nonOverheadDepts.filter((d) => d.manager_id === employee?.id);
 
   if (!managedDepts.length) {
     document.getElementById("page-title").textContent = "My Departments";

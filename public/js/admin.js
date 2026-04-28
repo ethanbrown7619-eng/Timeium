@@ -129,12 +129,14 @@ async function loadDashboard() {
 
   const [empRes, deptRes, tsRes] = await Promise.all([
     sb.from("users").select("id, name, department_id, active").eq("organisation_id", currentOrgId).eq("active", true).order("name"),
-    sb.from("departments").select("id, name, active").eq("organisation_id", currentOrgId).eq("active", true).order("name"),
+    sb.from("departments").select("id, name, active, is_overhead").eq("organisation_id", currentOrgId).eq("active", true).order("name"),
     sb.from("timesheets").select("id, user_id, status").eq("organisation_id", currentOrgId).eq("week_start", ws),
   ]);
 
-  const employees = empRes.data || [];
-  const departments = deptRes.data || [];
+  const allDepartments = deptRes.data || [];
+  const overheadDeptIds = new Set(allDepartments.filter((d) => d.is_overhead).map((d) => d.id));
+  const departments = allDepartments.filter((d) => !d.is_overhead);
+  const employees = (empRes.data || []).filter((e) => !overheadDeptIds.has(e.department_id));
   const timesheets = tsRes.data || [];
 
   const tsMap = {};
@@ -251,20 +253,23 @@ async function loadClockComparison() {
   const ws = fmtDate(cvtWeek);
 
   // Load timesheet logged hours
-  const { data: employees } = await sb
+  const { data: allCvtDepts } = await sb
+    .from("departments")
+    .select("id, name, is_overhead")
+    .eq("organisation_id", currentOrgId);
+
+  const cvtOverheadIds = new Set((allCvtDepts || []).filter((d) => d.is_overhead).map((d) => d.id));
+  const deptMap = {};
+  for (const d of allCvtDepts || []) if (!d.is_overhead) deptMap[d.id] = d.name;
+
+  const { data: allCvtEmps } = await sb
     .from("users")
     .select("id, name, department_id, active")
     .eq("organisation_id", currentOrgId)
     .eq("active", true)
     .order("name");
 
-  const { data: departments } = await sb
-    .from("departments")
-    .select("id, name")
-    .eq("organisation_id", currentOrgId);
-
-  const deptMap = {};
-  for (const d of departments || []) deptMap[d.id] = d.name;
+  const employees = (allCvtEmps || []).filter((e) => !cvtOverheadIds.has(e.department_id));
 
   // Get timesheet entries for logged hours
   const { data: timesheets } = await sb
@@ -459,12 +464,14 @@ async function loadInfusionStatus() {
 
   const [empRes, deptRes, tsRes] = await Promise.all([
     sb.from("users").select("id, department_id, active").eq("organisation_id", currentOrgId).eq("active", true),
-    sb.from("departments").select("id, name, active").eq("organisation_id", currentOrgId).eq("active", true),
+    sb.from("departments").select("id, name, active, is_overhead").eq("organisation_id", currentOrgId).eq("active", true),
     sb.from("timesheets").select("id, user_id, status").eq("organisation_id", currentOrgId).eq("week_start", ws),
   ]);
 
-  const employees = empRes.data || [];
-  const departments = deptRes.data || [];
+  const allInfDepts = deptRes.data || [];
+  const infOverheadIds = new Set(allInfDepts.filter((d) => d.is_overhead).map((d) => d.id));
+  const employees = (empRes.data || []).filter((e) => !infOverheadIds.has(e.department_id));
+  const departments = allInfDepts.filter((d) => !d.is_overhead);
   const timesheets = tsRes.data || [];
 
   const tsMap = {};
