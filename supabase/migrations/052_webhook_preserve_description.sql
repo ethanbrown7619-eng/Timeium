@@ -38,15 +38,17 @@ begin
     insert into public.jobs (
         organisation_id, job_code, description, status, source, last_synced_at
     )
-    select
+    select distinct on (code)
         v_org,
-        trim(r->>v_code_col),
+        code,
         nullif(trim(coalesce(r->>v_desc_col, '')), ''),
         public._canonical_job_status(r->>v_stat_col, v_stat_map),
         'webhook',
         now()
-    from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r
-    where length(trim(coalesce(r->>v_code_col, ''))) > 0
+    from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) with ordinality as t(r, rn)
+    cross join lateral (select trim(r->>v_code_col) as code) c
+    where length(coalesce(code, '')) > 0
+    order by code, rn desc
     on conflict (organisation_id, job_code) do update
         set description    = coalesce(excluded.description, jobs.description),
             status         = excluded.status,
@@ -96,15 +98,17 @@ begin
     insert into public.tasks (
         organisation_id, task_code, description, status, source, last_synced_at
     )
-    select
+    select distinct on (code)
         v_org,
-        trim(r->>v_code_col),
+        code,
         nullif(trim(coalesce(r->>v_desc_col, '')), ''),
         public._canonical_task_status(r->>v_stat_col, v_stat_map),
         'webhook',
         now()
-    from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as r
-    where length(trim(coalesce(r->>v_code_col, ''))) > 0
+    from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) with ordinality as t(r, rn)
+    cross join lateral (select trim(r->>v_code_col) as code) c
+    where length(coalesce(code, '')) > 0
+    order by code, rn desc
     on conflict (organisation_id, task_code) do update
         set description    = coalesce(excluded.description, tasks.description),
             status         = excluded.status,
