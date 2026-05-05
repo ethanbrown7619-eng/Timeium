@@ -375,7 +375,7 @@ document.getElementById("dept-cancel").addEventListener("click", () =>
 
 document.getElementById("dept-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!ctx.isAdminOrHigher) return;
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return notice("No organisation selected", "error");
 
   const name = document.getElementById("fd-name").value.trim();
@@ -576,7 +576,7 @@ function friendlyConstraintMsg(error, payload) {
 
 document.getElementById("employee-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!ctx.isAdminOrHigher) return;
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
 
   const form = e.currentTarget;
   const payload = {

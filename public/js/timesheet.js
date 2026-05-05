@@ -1088,7 +1088,7 @@ async function saveEntry(entry) {
 /* ---------------------------------------------------------------- add row */
 
 document.getElementById("add-row-btn").addEventListener("click", async () => {
-  if (!timesheetId) return;
+  if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
   const sortOrder = entries.length ? Math.max(...entries.map((e) => e.sort_order)) + 1 : 0;
   try {
     const { data, error } = await sb
@@ -1129,8 +1129,8 @@ document.getElementById("import-last-week").addEventListener("click", async () =
 /* ---------------------------------------------------------------- submit timesheet */
 
 document.getElementById("submit-ts-btn").addEventListener("click", () => {
-  if (!timesheetId) return;
-  if (tsStatus === "submitted" || tsStatus === "approved") return;
+  if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
+  if (tsStatus === "submitted" || tsStatus === "approved") return notice("This timesheet has already been submitted", "info");
 
   if (!entries.length) {
     notice("Add at least one task before submitting", "warn");

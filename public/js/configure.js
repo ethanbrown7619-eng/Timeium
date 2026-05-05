@@ -285,7 +285,7 @@ function makeController(kind) {
     const code = codeInput.value.trim();
     const desc = descInput.value.trim() || null;
     const status = statusInput ? statusInput.value : "ACTIVE";
-    if (!code) return;
+    if (!code) return notice("Code is required", "warn");
     try {
       const row = { organisation_id: currentOrgId, [codeField]: code, description: desc, status, source: "manual" };
       if (kind === "jobs") {
