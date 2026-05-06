@@ -23,6 +23,17 @@
   --success: #2e7d3a;
   --overtime: #fef4e5;
   --flag: #fde8e8;
+
+  /* Status / chip colours — used across notices, status pills, table chips. */
+  --info-blue: #1a56c7;
+  --info-blue-bg: #e6f0ff;
+  --info-blue-bg-alt: #e8f0fe;
+  --success-bg: #e6f4ea;
+  --success-bg-alt: #e3f2e7;
+  --warn-bg: #fef4e5;
+  --warn-text-dark: #b45309;
+  --danger-bg: #fde8e8;
+
   --radius: 999px;
   --radius-box: 10px;
 }
@@ -73,14 +84,13 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: 24px;
   padding: 12px 24px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 10;
   min-height: 48px;
-  backdrop-filter: blur(12px);
-  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
   animation: topbarIn 0.35s cubic-bezier(0, 0, 0.2, 1);
 }
 @keyframes topbarIn {
@@ -257,10 +267,12 @@ input, select, textarea {
 button {
   font: inherit;
   padding: 6px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ptl-black);
   border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
+  background: var(--ptl-black);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 input:focus, select:focus, textarea:focus {
@@ -272,13 +284,6 @@ button:active:not(:disabled) { transform: scale(0.96); }
 
 input[type="number"] { width: 70px; text-align: right; }
 
-button {
-  cursor: pointer;
-  background: var(--ptl-black);
-  color: #fff;
-  border-color: var(--ptl-black);
-  font-weight: 600;
-}
 button:hover { background: #2a2a2a; border-color: #2a2a2a; box-shadow: 0 2px 8px rgba(0,0,0,0.15); transform: translateY(-1px); }
 button.accent {
   background: var(--ptl-lime);
@@ -345,9 +350,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   color: var(--text-muted);
 }
 .chip.draft           { background: #eceff3; color: #5a6270; }
-.chip.submitted       { background: #e6f0ff; color: #1c4da0; }
-.chip.manager_approved{ background: #e3f2e7; color: #2e7d3a; }
-.chip.rejected        { background: #fde8e8; color: #c1392b; }
+.chip.submitted       { background: var(--info-blue-bg); color: #1c4da0; }
+.chip.manager_approved{ background: var(--success-bg-alt); color: #2e7d3a; }
+.chip.rejected        { background: var(--danger-bg); color: var(--danger); }
 .chip.paid            { background: #f3e8fc; color: #6b2fb7; }
 .chip.missing         { background: #fdecd3; color: #a56a10; }
 
@@ -380,10 +385,10 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.notice.info    { background: #e6f0ff; color: #1c4da0; border: 1px solid #b8cfef; }
+.notice.info    { background: var(--info-blue-bg); color: #1c4da0; border: 1px solid #b8cfef; }
 .notice.warn    { background: #fdecd3; color: #a56a10; border: 1px solid #f5d89a; }
-.notice.error   { background: #fde8e8; color: #c1392b; border: 1px solid #f5b8b8; }
-.notice.success { background: #e3f2e7; color: #2e7d3a; border: 1px solid #b6dcbf; }
+.notice.error   { background: var(--danger-bg); color: var(--danger); border: 1px solid #f5b8b8; }
+.notice.success { background: var(--success-bg-alt); color: #2e7d3a; border: 1px solid #b6dcbf; }
 
 /* -------- utility -------- */
 .muted { color: var(--text-muted); }
@@ -796,16 +801,16 @@ dialog::backdrop {
   letter-spacing: 0.03em;
 }
 .status-draft { background: var(--surface-alt); color: var(--text-muted); }
-.status-submitted { background: #e8f0fe; color: #1a56c7; }
-.status-approved { background: #e6f4ea; color: var(--success); }
+.status-submitted { background: var(--info-blue-bg-alt); color: var(--info-blue); }
+.status-approved { background: var(--success-bg); color: var(--success); }
 .status-rejected { background: var(--flag); color: var(--danger); }
-.status-active { background: #e6f4ea; color: var(--success); }
+.status-active { background: var(--success-bg); color: var(--success); }
 .status-completed,
 .status-dispatched,
 .status-invoiced,
 .status-partial,
 .status-dep,
-.status-inactive { background: #fef4e5; color: #b45309; }
+.status-inactive { background: var(--warn-bg); color: var(--warn-text-dark); }
 
 /* -------- timesheet status badge (editor top-right) -------- */
 .ts-status-badge {
@@ -819,15 +824,15 @@ dialog::backdrop {
   white-space: nowrap;
 }
 .ts-status-draft { background: var(--surface-alt); color: var(--text-muted); }
-.ts-status-submitted { background: #e8f0fe; color: #1a56c7; }
-.ts-status-approved { background: #e6f4ea; color: var(--success); }
+.ts-status-submitted { background: var(--info-blue-bg-alt); color: var(--info-blue); }
+.ts-status-approved { background: var(--success-bg); color: var(--success); }
 .ts-status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 .ts-status-dot.draft { background: var(--text-muted); }
-.ts-status-dot.submitted { background: #1a56c7; }
+.ts-status-dot.submitted { background: var(--info-blue); }
 .ts-status-dot.approved { background: var(--success); }
 .ts-status-time {
   font-weight: 400;
@@ -910,8 +915,8 @@ details.card[open] > summary::before { content: "▾ "; }
 .cvt-sticky-dept { position: sticky; left: 0; background: var(--surface); z-index: 1; font-size: 12px; }
 
 .cvt-ok { }
-.cvt-warn { background: #fef4e5; color: #b45309; }
-.cvt-danger { background: #fde8e8; color: #c1392b; font-weight: 600; }
+.cvt-warn { background: var(--warn-bg); color: var(--warn-text-dark); }
+.cvt-danger { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
 .cvt-row-flag td.cvt-sticky,
 .cvt-row-flag td.cvt-sticky-dept { border-left: 3px solid var(--danger); }
 
@@ -980,12 +985,12 @@ details.card[open] > summary::before { content: "▾ "; }
   font-weight: 600;
 }
 .chip-submitted {
-  background: #e6f4ea;
+  background: var(--success-bg);
   color: #2e7d3a;
 }
 .chip-pending {
-  background: #fef4e5;
-  color: #b45309;
+  background: var(--warn-bg);
+  color: var(--warn-text-dark);
 }
 
 /* -------- department employee table badges & actions -------- */
@@ -1005,14 +1010,14 @@ details.card[open] > summary::before { content: "▾ "; }
   border-radius: 50%;
   flex-shrink: 0;
 }
-.dept-badge-approved { background: #e6f4ea; color: var(--success); }
+.dept-badge-approved { background: var(--success-bg); color: var(--success); }
 .dept-badge-approved::before { background: var(--success); }
-.dept-badge-submitted { background: #e8f0fe; color: #1a56c7; }
-.dept-badge-submitted::before { background: #1a56c7; }
+.dept-badge-submitted { background: var(--info-blue-bg-alt); color: var(--info-blue); }
+.dept-badge-submitted::before { background: var(--info-blue); }
 .dept-badge-draft { background: var(--surface-alt); color: var(--text-muted); }
 .dept-badge-draft::before { background: var(--text-muted); }
-.dept-badge-none { background: #fef4e5; color: #b45309; }
-.dept-badge-none::before { background: #b45309; }
+.dept-badge-none { background: var(--warn-bg); color: var(--warn-text-dark); }
+.dept-badge-none::before { background: var(--warn-text-dark); }
 
 .dept-view-btn {
   display: inline-block;
@@ -1034,7 +1039,7 @@ details.card[open] > summary::before { content: "▾ "; }
   font-size: 12px;
   font-weight: 600;
   color: var(--success);
-  background: #e6f4ea;
+  background: var(--success-bg);
   border: 1px solid #c3e6cb;
   cursor: pointer;
   margin-left: 6px;
