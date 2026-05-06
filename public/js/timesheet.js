@@ -399,6 +399,39 @@ async function loadCurrentWeekCard() {
 
 /* ---------------------------------------------------------------- week calendar */
 
+// Per-month cache for the calendar tile data. Invalidated on submit/edit.
+const calCache = new Map();
+const CAL_TTL_MS = 60_000;
+function invalidateCalCache() { calCache.clear(); }
+
+async function fetchCalendarMonth(start, end) {
+  const tsMap = {};
+  const { data } = await sb
+    .from("timesheets")
+    .select("week_start, status, id")
+    .eq("user_id", employee.id)
+    .gte("week_start", fmtDate(start))
+    .lte("week_start", fmtDate(end));
+
+  if (data?.length) {
+    const ids = data.map((t) => t.id);
+    const { data: entries } = await sb
+      .from("timesheet_entries")
+      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+      .in("timesheet_id", ids);
+
+    const totals = {};
+    for (const e of entries || []) {
+      const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+      totals[e.timesheet_id] = (totals[e.timesheet_id] || 0) + sum;
+    }
+    for (const t of data) {
+      tsMap[t.week_start] = { status: t.status, hours: totals[t.id] || 0 };
+    }
+  }
+  return tsMap;
+}
+
 async function renderCalendar() {
   const label = document.getElementById("cal-month-label");
   const body = document.getElementById("cal-body");
@@ -407,41 +440,23 @@ async function renderCalendar() {
   const month = calMonth.getMonth();
   label.textContent = calMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
-  // Get first Monday on or before the 1st of this month
   const first = new Date(year, month, 1);
   let start = getMonday(first);
-
-  // Load timesheets for this range
   const end = new Date(year, month + 1, 7);
-  let tsMap = {};
-  try {
-    const { data } = await sb
-      .from("timesheets")
-      .select("week_start, status, id")
-      .eq("user_id", employee.id)
-      .gte("week_start", fmtDate(start))
-      .lte("week_start", fmtDate(end));
 
-    // Load entry totals
-    if (data?.length) {
-      const ids = data.map((t) => t.id);
-      const { data: entries } = await sb
-        .from("timesheet_entries")
-        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-        .in("timesheet_id", ids);
-
-      const totals = {};
-      for (const e of entries || []) {
-        const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-        totals[e.timesheet_id] = (totals[e.timesheet_id] || 0) + sum;
-      }
-
-      for (const t of data || []) {
-        tsMap[t.week_start] = { status: t.status, hours: totals[t.id] || 0 };
-      }
+  const cacheKey = `${year}-${String(month).padStart(2, "0")}`;
+  let tsMap;
+  const cached = calCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CAL_TTL_MS) {
+    tsMap = cached.tsMap;
+  } else {
+    try {
+      tsMap = await fetchCalendarMonth(start, end);
+      calCache.set(cacheKey, { tsMap, ts: Date.now() });
+    } catch (err) {
+      console.warn("calendar load failed:", err);
+      tsMap = {};
     }
-  } catch (err) {
-    console.warn("calendar load failed:", err);
   }
 
   let rows = "";
@@ -531,38 +546,42 @@ document.getElementById("cal-next").addEventListener("click", () => {
 /* ---------------------------------------------------------------- load jobs + tasks */
 
 async function loadLookups() {
-  const PAGE = 1000;
-  let allJobs = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await sb
-      .from("jobs")
-      .select("id, job_code, description, status, is_leave")
-      .eq("organisation_id", currentOrgId)
-      .order("job_code")
-      .range(from, from + PAGE - 1);
-    if (error) break;
-    allJobs = allJobs.concat(data || []);
-    if (!data || data.length < PAGE) break;
-    from += PAGE;
+  async function fetchAllJobs() {
+    const PAGE = 1000;
+    let all = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await sb
+        .from("jobs")
+        .select("id, job_code, description, status, is_leave")
+        .eq("organisation_id", currentOrgId)
+        .order("job_code")
+        .range(from, from + PAGE - 1);
+      if (error) break;
+      all = all.concat(data || []);
+      if (!data || data.length < PAGE) break;
+      from += PAGE;
+    }
+    return all;
   }
-  jobs = allJobs;
 
-  const { data: taskData } = await sb
-    .from("tasks")
-    .select("id, task_code, description, status")
-    .eq("organisation_id", currentOrgId)
-    .eq("status", "ACTIVE")
-    .order("task_code");
-  tasks = taskData || [];
+  const [jobsResult, tasksResult, deptResult] = await Promise.all([
+    fetchAllJobs(),
+    sb.from("tasks")
+      .select("id, task_code, description, status")
+      .eq("organisation_id", currentOrgId)
+      .eq("status", "ACTIVE")
+      .order("task_code"),
+    sb.from("department_codes")
+      .select("id, code, description, status")
+      .eq("organisation_id", currentOrgId)
+      .eq("status", "ACTIVE")
+      .order("code"),
+  ]);
 
-  const { data: deptData } = await sb
-    .from("department_codes")
-    .select("id, code, description, status")
-    .eq("organisation_id", currentOrgId)
-    .eq("status", "ACTIVE")
-    .order("code");
-  deptCodes = deptData || [];
+  jobs = jobsResult;
+  tasks = tasksResult.data || [];
+  deptCodes = deptResult.data || [];
 }
 
 /* ---------------------------------------------------------------- load timesheet (editor) */
@@ -598,27 +617,34 @@ async function loadWeek() {
     return;
   }
 
-  try {
-    const { data } = await sb.from("timesheets").select("status, submitted_at").eq("id", timesheetId).maybeSingle();
-    tsStatus = data?.status || "draft";
-    tsSubmittedAt = data?.submitted_at || null;
-    renderStatusBadge();
-  } catch (err) {
-    console.warn("status badge refresh failed:", err);
-  }
-
-  try {
-    const { data, error } = await sb
-      .from("timesheet_entries")
+  // Status and entries don't depend on each other — fetch in parallel.
+  const [statusRes, entriesRes] = await Promise.allSettled([
+    sb.from("timesheets")
+      .select("status, submitted_at")
+      .eq("id", timesheetId)
+      .maybeSingle(),
+    sb.from("timesheet_entries")
       .select("id, job_id, task_id, dept_code_id, description, sort_order, job_status_snapshot, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
       .eq("timesheet_id", timesheetId)
       .order("sort_order")
-      .order("id");
-    if (error) throw error;
-    entries = data || [];
-  } catch (err) {
+      .order("id"),
+  ]);
+
+  if (statusRes.status === "fulfilled") {
+    const data = statusRes.value?.data;
+    tsStatus = data?.status || "draft";
+    tsSubmittedAt = data?.submitted_at || null;
+    renderStatusBadge();
+  } else {
+    console.warn("status badge refresh failed:", statusRes.reason);
+  }
+
+  if (entriesRes.status === "fulfilled" && !entriesRes.value?.error) {
+    entries = entriesRes.value?.data || [];
+  } else {
+    const err = entriesRes.status === "fulfilled" ? entriesRes.value?.error : entriesRes.reason;
     console.error(err);
-    notice(err.message || "Failed to load entries", "error");
+    notice(err?.message || "Failed to load entries", "error");
     entries = [];
   }
 
@@ -964,6 +990,7 @@ async function saveEntry(entry) {
   try {
     const { error } = await sb.from("timesheet_entries").update(update).eq("id", entry.id);
     if (error) throw error;
+    invalidateCalCache();
   } catch (err) {
     console.error("Save failed", err);
     notice(err.message || "Failed to save", "error");
@@ -1090,6 +1117,7 @@ document.getElementById("submit-confirm-btn").addEventListener("click", async ()
     tsStatus = "submitted";
     tsSubmittedAt = new Date().toISOString();
     renderStatusBadge();
+    invalidateCalCache();
     notice("Timesheet submitted", "success");
     renderGrid();
   } catch (err) {

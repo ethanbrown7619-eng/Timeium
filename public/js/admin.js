@@ -236,31 +236,31 @@ async function loadClockComparison() {
 
   const ws = fmtDate(cvtWeek);
 
-  // Load timesheet logged hours
-  const { data: allCvtDepts } = await sb
-    .from("departments")
-    .select("id, name, is_overhead")
-    .eq("organisation_id", currentOrgId);
+  // Departments, employees, timesheets — fire all three in parallel.
+  const [deptsRes, empsRes, tsRes] = await Promise.all([
+    sb.from("departments")
+      .select("id, name, is_overhead")
+      .eq("organisation_id", currentOrgId),
+    sb.from("users")
+      .select("id, name, department_id, active")
+      .eq("organisation_id", currentOrgId)
+      .eq("active", true)
+      .order("name"),
+    sb.from("timesheets")
+      .select("id, user_id")
+      .eq("organisation_id", currentOrgId)
+      .eq("week_start", ws),
+  ]);
 
+  const allCvtDepts = deptsRes.data;
   const cvtOverheadIds = new Set((allCvtDepts || []).filter((d) => d.is_overhead).map((d) => d.id));
   const deptMap = {};
   for (const d of allCvtDepts || []) if (!d.is_overhead) deptMap[d.id] = d.name;
 
-  const { data: allCvtEmps } = await sb
-    .from("users")
-    .select("id, name, department_id, active")
-    .eq("organisation_id", currentOrgId)
-    .eq("active", true)
-    .order("name");
-
+  const allCvtEmps = empsRes.data;
   const employees = (allCvtEmps || []).filter((e) => !cvtOverheadIds.has(e.department_id));
 
-  // Get timesheet entries for logged hours
-  const { data: timesheets } = await sb
-    .from("timesheets")
-    .select("id, user_id")
-    .eq("organisation_id", currentOrgId)
-    .eq("week_start", ws);
+  const timesheets = tsRes.data;
 
   const tsUserMap = {};
   const tsIds = [];
