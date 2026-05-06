@@ -27,15 +27,24 @@ const currentOrgId = employee.organisation_id;
 
 let isOverhead = false;
 let requireTask = false;
-if (employee.department_id) {
+
+// Fire org-scoped fetches in parallel; render the topbar immediately so the
+// page is visible while they resolve. Consumers below await each promise
+// just before they read its data.
+const deptInfoPromise = (async () => {
+  if (!employee.department_id) return { isOverhead: false, requireTask: false };
   try {
-    const { data: dept } = await sb.from("departments").select("is_overhead, require_task").eq("id", employee.department_id).maybeSingle();
-    isOverhead = !!dept?.is_overhead;
-    requireTask = !!dept?.require_task;
+    const { data } = await sb
+      .from("departments")
+      .select("is_overhead, require_task")
+      .eq("id", employee.department_id)
+      .maybeSingle();
+    return { isOverhead: !!data?.is_overhead, requireTask: !!data?.require_task };
   } catch (err) {
     console.warn("department lookup failed:", err);
+    return { isOverhead: false, requireTask: false };
   }
-}
+})();
 
 renderTopbar({
   sb,
@@ -83,7 +92,10 @@ async function loadHolidays() {
   holidays = {};
   for (const h of data || []) holidays[h.holiday_date] = h.name;
 }
-loadHolidays();
+const holidaysPromise = loadHolidays();
+const orgDeadlinePromise = loadOrgDeadline();
+let lookupsPromise = null;
+function ensureLookups() { return (lookupsPromise ||= loadLookups()); }
 
 /* ---------------------------------------------------------------- views */
 
@@ -323,12 +335,16 @@ async function loadCurrentWeekCard() {
   if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
 
   try {
-    const { data: ts } = await sb
-      .from("timesheets")
-      .select("id, status")
-      .eq("user_id", employee.id)
-      .eq("week_start", ws)
-      .maybeSingle();
+    // Run the timesheet lookup in parallel with the org-deadline fetch; both
+    // are needed before rendering the countdown.
+    const [{ data: ts }] = await Promise.all([
+      sb.from("timesheets")
+        .select("id, status")
+        .eq("user_id", employee.id)
+        .eq("week_start", ws)
+        .maybeSingle(),
+      orgDeadlinePromise,
+    ]);
 
     let totalHours = 0;
     let taskCount = 0;
@@ -456,9 +472,12 @@ async function renderCalendar() {
   const cached = calCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CAL_TTL_MS) {
     tsMap = cached.tsMap;
+    await holidaysPromise;
   } else {
     try {
-      tsMap = await fetchCalendarMonth(start, end);
+      // Fetch the month's timesheet data in parallel with the holidays load.
+      const [data] = await Promise.all([fetchCalendarMonth(start, end), holidaysPromise]);
+      tsMap = data;
       calCache.set(cacheKey, { tsMap, ts: Date.now() });
     } catch (err) {
       console.warn("calendar load failed:", err);
@@ -601,6 +620,11 @@ async function loadLookups() {
 /* ---------------------------------------------------------------- load timesheet (editor) */
 
 async function loadWeek() {
+  // The editor depends on jobs/tasks/dept codes (lookups), holidays, and the
+  // org deadline settings. Hub navigation pre-warms these promises, so this
+  // is usually a no-op by the time the user opens the editor.
+  await Promise.all([ensureLookups(), holidaysPromise, orgDeadlinePromise]);
+
   document.getElementById("week-label").textContent = weekLabel();
 
   const dateRow = document.getElementById("date-row");
@@ -1277,10 +1301,19 @@ document.getElementById("oh-request-leave-btn")?.addEventListener("click", async
 
 /* ---------------------------------------------------------------- boot */
 
+// Wait for the department flags before deciding which view to show. The
+// promise was fired in parallel with renderTopbar so this is usually already
+// resolved by the time we get here.
+const deptInfo = await deptInfoPromise;
+isOverhead = deptInfo.isOverhead;
+requireTask = deptInfo.requireTask;
+
 if (isOverhead) {
   await showOverheadView();
 } else {
-  await Promise.all([loadLookups(), loadOrgDeadline()]);
+  // Pre-warm lookups in the background so the editor opens fast, but don't
+  // block the hub on them — only the editor needs jobs/tasks/dept-codes.
+  ensureLookups();
 
   const urlWeek = new URLSearchParams(location.search).get("week");
   if (urlWeek) {
