@@ -8,6 +8,7 @@ import {
   donutSvg, makeLatestOnly,
   isTsSubmittedOrApproved,
   confirmDialog, promptDialog,
+  fetchWeekDashboardData, invalidateWeekDashboard,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -68,7 +69,7 @@ function updateDeptWeekLabel() {
 }
 updateDeptWeekLabel();
 
-const navLoadDashboard = makeLatestOnly(() => loadDashboard());
+const navLoadDashboard = makeLatestOnly((signal) => loadDashboard(signal));
 document.getElementById("dept-prev").addEventListener("click", () => {
   deptWeek = addDays(deptWeek, -7);
   updateDeptWeekLabel();
@@ -91,20 +92,15 @@ async function loadOrgSettings() {
   forceViewBeforeApproval = !!data?.force_view_before_approval;
 }
 
-async function loadDashboard() {
+async function loadDashboard(signal) {
 
   const ws = fmtDate(deptWeek);
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  if (!dash) return;
 
-  // Load all active departments with manager info
-  const { data: allDepts } = await sb
-    .from("departments")
-    .select("id, name, manager_id, is_overhead")
-    .eq("organisation_id", currentOrgId)
-    .eq("active", true)
-    .order("name");
-
+  const allDepts = dash.departments.filter((d) => d.active);
   // Exclude overhead departments — they don't submit timesheets
-  const nonOverheadDepts = (allDepts || []).filter((d) => !d.is_overhead);
+  const nonOverheadDepts = allDepts.filter((d) => !d.is_overhead);
 
   // Admins/devs see all non-overhead departments; managers see only their own
   const managedDepts = isAdminOrDev
@@ -128,43 +124,16 @@ async function loadDashboard() {
   document.getElementById("emp-table-title").textContent =
     managedDepts.length === 1 ? "My Employees" : "Employees";
 
-  // Load all active employees in those departments
-  const { data: allEmps } = await sb
-    .from("users")
-    .select("id, name, department_id, active")
-    .eq("organisation_id", currentOrgId)
-    .eq("active", true)
-    .order("name");
+  const myTeam = dash.employees.filter((e) => managedDeptIds.has(e.department_id));
 
-  const myTeam = (allEmps || []).filter((e) => managedDeptIds.has(e.department_id));
-
-  // Load timesheets for current week
-  const userIds = myTeam.map((e) => e.id);
+  // tsMap keyed by user_id; restrict to my team since the helper returns
+  // org-wide timesheets.
+  const teamIds = new Set(myTeam.map((e) => e.id));
   const tsMap = {};
-  const hoursMap = {};
-
-  if (userIds.length) {
-    const { data: tsList } = await sb
-      .from("timesheets")
-      .select("id, user_id, status")
-      .eq("organisation_id", currentOrgId)
-      .eq("week_start", ws)
-      .in("user_id", userIds);
-
-    for (const ts of tsList || []) tsMap[ts.user_id] = ts;
-
-    const tsIds = (tsList || []).map((t) => t.id);
-    if (tsIds.length) {
-      const { data: entries } = await sb
-        .from("timesheet_entries")
-        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-        .in("timesheet_id", tsIds);
-      for (const e of entries || []) {
-        const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-        hoursMap[e.timesheet_id] = (hoursMap[e.timesheet_id] || 0) + sum;
-      }
-    }
+  for (const [uid, ts] of Object.entries(dash.timesheetsByUserId)) {
+    if (teamIds.has(Number(uid))) tsMap[uid] = ts;
   }
+  const hoursMap = dash.hoursByTsId;
 
   function isSubmitted(empId) {
     const ts = tsMap[empId];
@@ -259,6 +228,7 @@ async function loadDashboard() {
       } else {
         notice("Timesheet approved", "success");
       }
+      invalidateWeekDashboard(currentOrgId, fmtDate(deptWeek));
       await loadDashboard();
     });
   });

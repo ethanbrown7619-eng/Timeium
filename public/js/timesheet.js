@@ -6,6 +6,7 @@ import {
   DAYS, getMonday, fmtDate, fmtShortDate, addDays,
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
+  invalidateWeekDashboard,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -69,6 +70,9 @@ let entries = [];
 let jobs = [];
 let tasks = [];
 let deptCodes = [];
+let jobsById = new Map();
+let tasksById = new Map();
+let deptCodesById = new Map();
 let holidays = {};
 let calMonth = new Date();
 let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
@@ -84,15 +88,38 @@ function weekLabel() {
 
 const thisMonday = getMonday(new Date());
 
-async function loadHolidays() {
-  const { data } = await sb
-    .from("public_holidays")
-    .select("holiday_date, name")
-    .eq("organisation_id", currentOrgId);
-  holidays = {};
-  for (const h of data || []) holidays[h.holiday_date] = h.name;
+const loadedHolidayYears = new Set();
+const holidayYearLoads = new Map();
+
+async function loadHolidaysForYear(year) {
+  if (loadedHolidayYears.has(year)) return;
+  if (holidayYearLoads.has(year)) return holidayYearLoads.get(year);
+  const p = (async () => {
+    const { data, error } = await sb
+      .from("public_holidays")
+      .select("holiday_date, name")
+      .eq("organisation_id", currentOrgId)
+      .gte("holiday_date", `${year - 1}-01-01`)
+      .lte("holiday_date", `${year + 1}-12-31`);
+    if (error) {
+      console.warn("holidays load failed:", error);
+      notice("Couldn't load public holidays — calendar marks may be missing", "warn");
+      return;
+    }
+    for (const h of data || []) holidays[h.holiday_date] = h.name;
+    loadedHolidayYears.add(year - 1);
+    loadedHolidayYears.add(year);
+    loadedHolidayYears.add(year + 1);
+  })();
+  holidayYearLoads.set(year, p);
+  try { await p; } finally { holidayYearLoads.delete(year); }
 }
-const holidaysPromise = loadHolidays();
+
+function ensureHolidaysForCalMonth() {
+  return loadHolidaysForYear(calMonth.getFullYear());
+}
+
+const holidaysPromise = loadHolidaysForYear(new Date().getFullYear());
 const orgDeadlinePromise = loadOrgDeadline();
 let lookupsPromise = null;
 function ensureLookups() { return (lookupsPromise ||= loadLookups()); }
@@ -473,11 +500,11 @@ async function renderCalendar() {
   const cached = calCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CAL_TTL_MS) {
     tsMap = cached.tsMap;
-    await holidaysPromise;
+    await ensureHolidaysForCalMonth();
   } else {
     try {
       // Fetch the month's timesheet data in parallel with the holidays load.
-      const [data] = await Promise.all([fetchCalendarMonth(start, end), holidaysPromise]);
+      const [data] = await Promise.all([fetchCalendarMonth(start, end), ensureHolidaysForCalMonth()]);
       tsMap = data;
       calCache.set(cacheKey, { tsMap, ts: Date.now() });
     } catch (err) {
@@ -492,24 +519,27 @@ async function renderCalendar() {
   // Render up to 6 weekly rows (a month spans at most 6 calendar weeks). Using
   // a bounded counter avoids the December wrap bug where getMonth() <= month
   // (11) stays true after rolling into January (0).
+  const todayWs = fmtDate(thisMonday);
   for (let wk = 0; wk < 6; wk++) {
     const mon = new Date(weekDate);
     const ws = fmtDate(mon);
-    const isCurrent = fmtDate(mon) === fmtDate(thisMonday);
+    const isCurrent = ws === todayWs;
     const ts = tsMap[ws];
 
     const dayCells = [];
     for (let i = 0; i < 7; i++) {
       const d = addDays(mon, i);
+      const dKey = fmtDate(d);
       const inMonth = d.getMonth() === month;
       const isWeekend = i >= 5;
-      const isHoliday = !!holidays[fmtDate(d)];
+      const holidayName = holidays[dKey];
+      const isHoliday = !!holidayName;
       const cls = [
         inMonth ? "" : "muted",
         isWeekend ? "cal-weekend" : "",
         isHoliday ? "cal-holiday" : "",
       ].filter(Boolean).join(" ");
-      const title = isHoliday ? ` title="${escapeHtml(holidays[fmtDate(d)])}"` : "";
+      const title = isHoliday ? ` title="${escapeHtml(holidayName)}"` : "";
       dayCells.push(`<td class="${cls}" style="${inMonth ? "" : "opacity:0.4"}"${title}>${d.getDate()}</td>`);
     }
 
@@ -570,52 +600,52 @@ async function renderCalendar() {
 
 document.getElementById("cal-prev").addEventListener("click", () => {
   calMonth.setMonth(calMonth.getMonth() - 1);
+  ensureHolidaysForCalMonth();
   renderCalendar();
 });
 document.getElementById("cal-next").addEventListener("click", () => {
   calMonth.setMonth(calMonth.getMonth() + 1);
+  ensureHolidaysForCalMonth();
   renderCalendar();
 });
 
 /* ---------------------------------------------------------------- load jobs + tasks */
 
-async function loadLookups() {
-  async function fetchAllJobs() {
-    const PAGE = 1000;
-    let all = [];
-    let from = 0;
-    while (true) {
-      const { data, error } = await sb
-        .from("jobs")
-        .select("id, job_code, description, status, is_leave")
-        .eq("organisation_id", currentOrgId)
-        .order("job_code")
-        .range(from, from + PAGE - 1);
-      if (error) break;
-      all = all.concat(data || []);
-      if (!data || data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all;
+async function fetchAllPaged(table, selectCols, orderCol, extraFilter) {
+  const PAGE = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    let q = sb.from(table)
+      .select(selectCols)
+      .eq("organisation_id", currentOrgId)
+      .order(orderCol)
+      .range(from, from + PAGE - 1);
+    if (extraFilter) q = extraFilter(q);
+    const { data, error } = await q;
+    if (error) break;
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
   }
+  return all;
+}
 
+async function loadLookups() {
   const [jobsResult, tasksResult, deptResult] = await Promise.all([
-    fetchAllJobs(),
-    sb.from("tasks")
-      .select("id, task_code, description, status")
-      .eq("organisation_id", currentOrgId)
-      .eq("status", "ACTIVE")
-      .order("task_code"),
-    sb.from("department_codes")
-      .select("id, code, description, status")
-      .eq("organisation_id", currentOrgId)
-      .eq("status", "ACTIVE")
-      .order("code"),
+    fetchAllPaged("jobs", "id, job_code, description, status, is_leave", "job_code"),
+    fetchAllPaged("tasks", "id, task_code, description, status", "task_code",
+      (q) => q.eq("status", "ACTIVE")),
+    fetchAllPaged("department_codes", "id, code, description, status", "code",
+      (q) => q.eq("status", "ACTIVE")),
   ]);
 
   jobs = jobsResult;
-  tasks = tasksResult.data || [];
-  deptCodes = deptResult.data || [];
+  tasks = tasksResult;
+  deptCodes = deptResult;
+  jobsById = new Map(jobs.map((j) => [j.id, j]));
+  tasksById = new Map(tasks.map((t) => [t.id, t]));
+  deptCodesById = new Map(deptCodes.map((d) => [d.id, d]));
 }
 
 /* ---------------------------------------------------------------- load timesheet (editor) */
@@ -770,7 +800,7 @@ function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
 async function autofillPublicHolidays() {
   if (!timesheetId || !weekStart || !orgPHJobId) return;
 
-  const phJob = jobs.find((j) => j.id === orgPHJobId);
+  const phJob = jobsById.get(orgPHJobId);
   if (!phJob) return;
 
   // Check which weekdays this week are holidays
@@ -868,10 +898,10 @@ function renderGrid() {
   }
 
   body.innerHTML = entries.map((e, idx) => {
-    const job = jobs.find((j) => j.id === e.job_id);
+    const job = jobsById.get(e.job_id);
     const jobStatus = isSubmitted ? (e.job_status_snapshot || job?.status || "") : (job?.status || "");
-    const dept = deptCodes.find((dc) => dc.id === e.dept_code_id);
-    const task = tasks.find((t) => t.id === e.task_id);
+    const dept = deptCodesById.get(e.dept_code_id);
+    const task = tasksById.get(e.task_id);
     const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
 
     const ro = isSubmitted ? "readonly" : "";
@@ -939,7 +969,7 @@ function renderGrid() {
         onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); renderGrid(); },
       });
 
-      const entryJob = jobs.find((j) => j.id === entries[idx]?.job_id);
+      const entryJob = jobsById.get(entries[idx]?.job_id);
       if (!entryJob?.is_leave) {
         setupAC(row.querySelector(".ac-dept"), deptItems, {
           onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
@@ -1093,7 +1123,7 @@ document.getElementById("submit-ts-btn").addEventListener("click", () => {
   entries.forEach((e, i) => {
     const hasHours = DAYS.some((d) => Number(e[`${d}_hours`]) > 0);
     if (!hasHours) return;
-    const job = jobs.find((j) => j.id === e.job_id);
+    const job = jobsById.get(e.job_id);
     if (job?.is_leave) return;
     const missing = [];
     if (!e.job_id) missing.push("Job");
@@ -1157,6 +1187,7 @@ document.getElementById("submit-confirm-btn").addEventListener("click", async ()
     tsSubmittedAt = new Date().toISOString();
     renderStatusBadge();
     invalidateCalCache();
+    invalidateWeekDashboard(currentOrgId, fmtDate(weekStart));
     notice("Timesheet submitted", "success");
     renderGrid();
   } catch (err) {

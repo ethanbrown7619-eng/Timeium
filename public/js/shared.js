@@ -85,15 +85,107 @@ export function donutSvg({ submitted, total, fillColor = "#c2ff00", emptyColor =
 /**
  * Wraps an async loader so only the most recent call renders. Older
  * in-flight calls resolve to undefined. Use to dedupe rapid prev/next clicks.
+ *
+ * If `fn` accepts an AbortSignal, the wrapper passes a fresh controller to
+ * each call and aborts it when a newer call supersedes it, so the underlying
+ * HTTP requests are cancelled rather than just discarded on the client side.
  */
 export function makeLatestOnly(fn) {
   let token = 0;
+  let activeController = null;
   return async (...args) => {
+    if (activeController) activeController.abort();
+    const controller = new AbortController();
+    activeController = controller;
     const myToken = ++token;
-    const result = await fn(...args);
+    let result;
+    try {
+      result = await fn(controller.signal, ...args);
+    } catch (err) {
+      if (myToken !== token || controller.signal.aborted) return undefined;
+      throw err;
+    }
     if (myToken !== token) return undefined;
     return result;
   };
+}
+
+const dashboardCache = new Map();
+const DASHBOARD_TTL_MS = 30 * 1000;
+
+export function invalidateWeekDashboard(orgId, weekStart) {
+  if (orgId == null && weekStart == null) {
+    dashboardCache.clear();
+    return;
+  }
+  if (weekStart == null) {
+    for (const k of [...dashboardCache.keys()]) {
+      if (k.startsWith(`${orgId}:`)) dashboardCache.delete(k);
+    }
+    return;
+  }
+  dashboardCache.delete(`${orgId}:${weekStart}`);
+}
+
+/**
+ * Fetches the data the admin and department dashboards both need for a given
+ * week. Returns active employees + departments (manager-aware), all
+ * timesheets in that week, a userId→ts map, an entries list, and a
+ * tsId→totalHours map. Cached for 30s by `${orgId}:${weekStart}`.
+ *
+ * Callers do their own scoping (e.g. department.js filters to managed
+ * departments). Cache invalidation lives at submit/approve/reject sites
+ * via invalidateWeekDashboard.
+ */
+export async function fetchWeekDashboardData(sb, orgId, weekStart, { signal } = {}) {
+  if (!orgId || !weekStart) return null;
+  const key = `${orgId}:${weekStart}`;
+  const cached = dashboardCache.get(key);
+  if (cached && Date.now() - cached.ts < DASHBOARD_TTL_MS) return cached.data;
+
+  const withSignal = (q) => signal ? q.abortSignal(signal) : q;
+  const [empRes, deptRes, tsRes] = await Promise.all([
+    withSignal(sb.from("users")
+      .select("id, name, department_id, active")
+      .eq("organisation_id", orgId)
+      .eq("active", true)
+      .order("name")),
+    withSignal(sb.from("departments")
+      .select("id, name, manager_id, is_overhead, active")
+      .eq("organisation_id", orgId)
+      .order("name")),
+    withSignal(sb.from("timesheets")
+      .select("id, user_id, status")
+      .eq("organisation_id", orgId)
+      .eq("week_start", weekStart)),
+  ]);
+
+  const employees = empRes.data || [];
+  const departments = deptRes.data || [];
+  const timesheets = tsRes.data || [];
+
+  const timesheetsByUserId = {};
+  for (const ts of timesheets) timesheetsByUserId[ts.user_id] = ts;
+
+  const tsIds = timesheets.map((t) => t.id);
+  const hoursByTsId = {};
+  let entries = [];
+  if (tsIds.length) {
+    const entryQuery = sb
+      .from("timesheet_entries")
+      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+      .in("timesheet_id", tsIds);
+    const { data } = await (signal ? entryQuery.abortSignal(signal) : entryQuery);
+    entries = data || [];
+    for (const e of entries) {
+      const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+      hoursByTsId[e.timesheet_id] = (hoursByTsId[e.timesheet_id] || 0) + sum;
+    }
+  }
+
+  const data = { employees, departments, timesheets, timesheetsByUserId, entries, hoursByTsId };
+  dashboardCache.set(key, { data, ts: Date.now() });
+  return data;
 }
 
 export function debounce(fn, ms = 150) {

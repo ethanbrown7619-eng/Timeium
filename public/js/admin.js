@@ -8,6 +8,7 @@ import {
   donutSvg, makeLatestOnly,
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
+  fetchWeekDashboardData, invalidateWeekDashboard,
 } from "/js/shared.js";
 
 // XLSX is ~600KB. Load only when an Export button is actually clicked.
@@ -88,7 +89,7 @@ function updateDashWeekLabel() {
 }
 updateDashWeekLabel();
 
-const navLoadDashboard = makeLatestOnly(() => loadDashboard());
+const navLoadDashboard = makeLatestOnly((signal) => loadDashboard(signal));
 document.getElementById("dash-prev").addEventListener("click", () => {
   dashWeek = addDays(dashWeek, -7);
   updateDashWeekLabel();
@@ -105,38 +106,19 @@ function renderDonut(containerId, submitted, total, fillColor, emptyColor) {
   el.innerHTML = donutSvg({ submitted, total, fillColor, emptyColor });
 }
 
-async function loadDashboard() {
+async function loadDashboard(signal) {
   if (!currentOrgId) return;
 
   const ws = fmtDate(dashWeek);
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  if (!dash) return;
 
-  const [empRes, deptRes, tsRes] = await Promise.all([
-    sb.from("users").select("id, name, department_id, active").eq("organisation_id", currentOrgId).eq("active", true).order("name"),
-    sb.from("departments").select("id, name, active, is_overhead").eq("organisation_id", currentOrgId).eq("active", true).order("name"),
-    sb.from("timesheets").select("id, user_id, status").eq("organisation_id", currentOrgId).eq("week_start", ws),
-  ]);
-
-  const allDepartments = deptRes.data || [];
+  const allDepartments = (dash.departments || []).filter((d) => d.active);
   const overheadDeptIds = new Set(allDepartments.filter((d) => d.is_overhead).map((d) => d.id));
   const departments = allDepartments.filter((d) => !d.is_overhead);
-  const employees = (empRes.data || []).filter((e) => !overheadDeptIds.has(e.department_id));
-  const timesheets = tsRes.data || [];
-
-  const tsMap = {};
-  for (const ts of timesheets) tsMap[ts.user_id] = ts;
-
-  const tsIds = timesheets.map((t) => t.id);
-  let hoursMap = {};
-  if (tsIds.length) {
-    const { data: entries } = await sb
-      .from("timesheet_entries")
-      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-      .in("timesheet_id", tsIds);
-    for (const e of entries || []) {
-      const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-      hoursMap[e.timesheet_id] = (hoursMap[e.timesheet_id] || 0) + sum;
-    }
-  }
+  const employees = dash.employees.filter((e) => !overheadDeptIds.has(e.department_id));
+  const tsMap = dash.timesheetsByUserId;
+  const hoursMap = dash.hoursByTsId;
 
   const submittedEmps = employees.filter((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
   renderDonut("emp-donut", submittedEmps.length, employees.length, "#c2ff00", "#e8e8e8");
@@ -214,7 +196,7 @@ function updateCvtWeekLabel() {
 
 updateCvtWeekLabel();
 
-const navLoadClockComparison = makeLatestOnly(() => loadClockComparison());
+const navLoadClockComparison = makeLatestOnly((signal) => loadClockComparison(signal));
 document.getElementById("cvt-prev").addEventListener("click", () => {
   cvtWeek = addDays(cvtWeek, -7);
   updateCvtWeekLabel();
@@ -228,7 +210,7 @@ document.getElementById("cvt-next").addEventListener("click", () => {
 
 let lastCvtData = null;
 
-async function loadClockComparison() {
+async function loadClockComparison(signal) {
   if (!currentOrgId) return;
   const tableEl = document.getElementById("cvt-table");
   const summaryEl = document.getElementById("cvt-summary");
@@ -240,54 +222,27 @@ async function loadClockComparison() {
   await loadOrgSettings();
 
   const ws = fmtDate(cvtWeek);
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  if (!dash) return;
 
-  // Departments, employees, timesheets — fire all three in parallel.
-  const [deptsRes, empsRes, tsRes] = await Promise.all([
-    sb.from("departments")
-      .select("id, name, is_overhead")
-      .eq("organisation_id", currentOrgId),
-    sb.from("users")
-      .select("id, name, department_id, active")
-      .eq("organisation_id", currentOrgId)
-      .eq("active", true)
-      .order("name"),
-    sb.from("timesheets")
-      .select("id, user_id")
-      .eq("organisation_id", currentOrgId)
-      .eq("week_start", ws),
-  ]);
-
-  const allCvtDepts = deptsRes.data;
-  const cvtOverheadIds = new Set((allCvtDepts || []).filter((d) => d.is_overhead).map((d) => d.id));
+  const allCvtDepts = dash.departments;
+  const cvtOverheadIds = new Set(allCvtDepts.filter((d) => d.is_overhead).map((d) => d.id));
   const deptMap = {};
-  for (const d of allCvtDepts || []) if (!d.is_overhead) deptMap[d.id] = d.name;
+  for (const d of allCvtDepts) if (!d.is_overhead) deptMap[d.id] = d.name;
 
-  const allCvtEmps = empsRes.data;
-  const employees = (allCvtEmps || []).filter((e) => !cvtOverheadIds.has(e.department_id));
-
-  const timesheets = tsRes.data;
+  const employees = dash.employees.filter((e) => !cvtOverheadIds.has(e.department_id));
 
   const tsUserMap = {};
-  const tsIds = [];
-  for (const ts of timesheets || []) {
-    tsUserMap[ts.id] = ts.user_id;
-    tsIds.push(ts.id);
-  }
+  for (const ts of dash.timesheets) tsUserMap[ts.id] = ts.user_id;
 
-  // Sum logged hours per user per day
+  // Sum logged hours per user per day from the shared entries fetch.
   const loggedMap = {};
-  if (tsIds.length) {
-    const { data: entries } = await sb
-      .from("timesheet_entries")
-      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-      .in("timesheet_id", tsIds);
-    for (const e of entries || []) {
-      const uid = tsUserMap[e.timesheet_id];
-      if (!uid) continue;
-      if (!loggedMap[uid]) loggedMap[uid] = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
-      for (const d of DAYS) {
-        loggedMap[uid][d] += Number(e[`${d}_hours`]) || 0;
-      }
+  for (const e of dash.entries) {
+    const uid = tsUserMap[e.timesheet_id];
+    if (!uid) continue;
+    if (!loggedMap[uid]) loggedMap[uid] = { mon: 0, tue: 0, wed: 0, thu: 0, fri: 0, sat: 0, sun: 0 };
+    for (const d of DAYS) {
+      loggedMap[uid][d] += Number(e[`${d}_hours`]) || 0;
     }
   }
 
@@ -457,21 +412,14 @@ async function loadInfusionStatus() {
   if (!currentOrgId) { barsEl.innerHTML = ""; return; }
 
   const ws = fmtDate(infWeek);
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
+  if (!dash) { barsEl.innerHTML = ""; return; }
 
-  const [empRes, deptRes, tsRes] = await Promise.all([
-    sb.from("users").select("id, department_id, active").eq("organisation_id", currentOrgId).eq("active", true),
-    sb.from("departments").select("id, name, active, is_overhead").eq("organisation_id", currentOrgId).eq("active", true),
-    sb.from("timesheets").select("id, user_id, status").eq("organisation_id", currentOrgId).eq("week_start", ws),
-  ]);
-
-  const allInfDepts = deptRes.data || [];
+  const allInfDepts = dash.departments.filter((d) => d.active);
   const infOverheadIds = new Set(allInfDepts.filter((d) => d.is_overhead).map((d) => d.id));
-  const employees = (empRes.data || []).filter((e) => !infOverheadIds.has(e.department_id));
+  const employees = dash.employees.filter((e) => !infOverheadIds.has(e.department_id));
   const departments = allInfDepts.filter((d) => !d.is_overhead);
-  const timesheets = tsRes.data || [];
-
-  const tsMap = {};
-  for (const ts of timesheets) tsMap[ts.user_id] = ts;
+  const tsMap = dash.timesheetsByUserId;
 
   infTotalEmps = employees.length;
   infSubmittedCount = employees.filter((e) => {
@@ -580,34 +528,12 @@ async function buildInfusionRows() {
 
   const tsIds = timesheets.map((t) => t.id);
 
-  // Load entries with lookups
+  // Load entries with the related lookup codes inlined via PostgREST joins.
   const { data: entries } = await sb
     .from("timesheet_entries")
-    .select("id, timesheet_id, job_id, task_id, dept_code_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+    .select("id, timesheet_id, job_id, task_id, dept_code_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours, jobs(id, job_code), tasks(id, task_code), department_codes(id, code)")
     .in("timesheet_id", tsIds)
     .order("id");
-
-  // Load jobs, tasks, dept codes for lookup
-  const jobIds = [...new Set((entries || []).map((e) => e.job_id).filter(Boolean))];
-  const taskIds = [...new Set((entries || []).map((e) => e.task_id).filter(Boolean))];
-  const deptCodeIds = [...new Set((entries || []).map((e) => e.dept_code_id).filter(Boolean))];
-
-  let jobMap = {};
-  let taskMap = {};
-  let deptCodeMap = {};
-
-  if (jobIds.length) {
-    const { data } = await sb.from("jobs").select("id, job_code").in("id", jobIds);
-    for (const j of data || []) jobMap[j.id] = j.job_code;
-  }
-  if (taskIds.length) {
-    const { data } = await sb.from("tasks").select("id, task_code").in("id", taskIds);
-    for (const t of data || []) taskMap[t.id] = t.task_code;
-  }
-  if (deptCodeIds.length) {
-    const { data } = await sb.from("department_codes").select("id, code").in("id", deptCodeIds);
-    for (const dc of data || []) deptCodeMap[dc.id] = dc.code;
-  }
 
   const empMap = {};
   for (const e of employees || []) empMap[e.id] = e;
@@ -630,9 +556,9 @@ async function buildInfusionRows() {
     const emp = empMap[userId];
     if (!emp) continue;
 
-    const jobCode = entry.job_id ? (jobMap[entry.job_id] || "") : "";
-    const taskCode = entry.task_id ? (taskMap[entry.task_id] || "") : "";
-    const deptCode = entry.dept_code_id ? (deptCodeMap[entry.dept_code_id] || "") : "";
+    const jobCode = entry.jobs?.job_code || "";
+    const taskCode = entry.tasks?.task_code || "";
+    const deptCode = entry.department_codes?.code || "";
     const desc = taskCode
       ? (entry.description ? `${taskCode}-${entry.description}` : taskCode)
       : (entry.description || "");

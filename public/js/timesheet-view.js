@@ -6,6 +6,7 @@ import {
   notice, escapeHtml, renderTopbar, getUserContext,
   DAYS, addDays, fmtShortDate,
   confirmDialog, promptDialog,
+  invalidateWeekDashboard,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -146,6 +147,7 @@ async function load() {
         setTimeout(() => location.href = "/department.html", 600);
         return;
       }
+      invalidateWeekDashboard(currentOrgId, weekStart);
       notice("Timesheet approved", "success");
       setTimeout(() => location.href = "/department.html", 600);
     };
@@ -163,6 +165,7 @@ async function load() {
         setTimeout(() => location.href = "/department.html", 600);
         return;
       }
+      invalidateWeekDashboard(currentOrgId, weekStart);
       notice("Timesheet rejected", "success");
       setTimeout(() => location.href = "/department.html", 600);
     };

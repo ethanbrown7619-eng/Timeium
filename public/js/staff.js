@@ -171,7 +171,8 @@ async function loadEmployees() {
   const { data, error } = await sb
     .from("users")
     .select(
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, qr_token, organisation_id, is_manager, is_test, auth_user_id"
+      // auth_user_id is required by openDialog and syncAdminRole; keep it.
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, organisation_id, is_manager, is_test, auth_user_id"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
