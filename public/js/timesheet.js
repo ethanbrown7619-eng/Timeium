@@ -236,8 +236,10 @@ document.getElementById("leave-request-form")?.addEventListener("submit", async 
   const skipWeekends = document.getElementById("lr-skip-weekends").checked;
   const reason = document.getElementById("lr-reason").value.trim() || null;
 
+  if (!Number.isFinite(leaveTypeId) || leaveTypeId <= 0) return notice("Pick a leave type", "warn");
   if (!startDate || !endDate) return notice("Pick start and end dates", "warn");
   if (new Date(endDate) < new Date(startDate)) return notice("End date must be after start date", "warn");
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return notice("Hours per day must be between 0 and 24", "warn");
 
   const { error } = await sb.from("leave_requests").insert({
     organisation_id: currentOrgId,
@@ -274,8 +276,12 @@ document.getElementById("back-to-hub").addEventListener("click", () => showHub()
 /* ---------------------------------------------------------------- current week card */
 
 function getDeadline() {
-  const targetDayIdx = DAY_NAMES.indexOf(orgDeadline.day);
-  const [hh, mm] = (orgDeadline.time || "08:00").split(":").map(Number);
+  let targetDayIdx = DAY_NAMES.indexOf(orgDeadline.day);
+  if (targetDayIdx === -1) targetDayIdx = 1; // fall back to Monday on bad config
+
+  const [rawH, rawM] = (orgDeadline.time || "08:00").split(":").map(Number);
+  const hh = Number.isInteger(rawH) && rawH >= 0 && rawH <= 23 ? rawH : 8;
+  const mm = Number.isInteger(rawM) && rawM >= 0 && rawM <= 59 ? rawM : 0;
 
   let base;
   if (orgDeadline.week === "this_week") {
@@ -289,7 +295,7 @@ function getDeadline() {
   let dayOffset = targetDayIdx - monIdx;
   if (dayOffset < 0) dayOffset += 7;
   const deadline = addDays(base, dayOffset);
-  deadline.setHours(hh || 8, mm || 0, 0, 0);
+  deadline.setHours(hh, mm, 0, 0);
   return deadline;
 }
 
@@ -463,7 +469,10 @@ async function renderCalendar() {
   let rows = "";
   let weekDate = new Date(start);
 
-  while (weekDate.getMonth() <= month || weekDate < first) {
+  // Render up to 6 weekly rows (a month spans at most 6 calendar weeks). Using
+  // a bounded counter avoids the December wrap bug where getMonth() <= month
+  // (11) stays true after rolling into January (0).
+  for (let wk = 0; wk < 6; wk++) {
     const mon = new Date(weekDate);
     const ws = fmtDate(mon);
     const isCurrent = fmtDate(mon) === fmtDate(thisMonday);
@@ -504,7 +513,11 @@ async function renderCalendar() {
     </tr>`;
 
     weekDate.setDate(weekDate.getDate() + 7);
-    if (weekDate.getMonth() > month && weekDate.getFullYear() >= year && weekDate > addDays(first, 28)) break;
+    // Stop once the next week starts in a later month and we've already
+    // covered the whole month (at least 4 weeks past the 1st).
+    const pastMonth = weekDate.getFullYear() > year ||
+      (weekDate.getFullYear() === year && weekDate.getMonth() > month);
+    if (pastMonth && weekDate > addDays(first, 28)) break;
   }
 
   // Monthly total row
