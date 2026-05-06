@@ -2,10 +2,15 @@
   "name": "timeium",
   "version": "0.1.0",
   "private": true,
-  "description": "Temporium — timesheet, approval, and payroll-reporting app. Runs standalone or alongside Attendium on the same Supabase project.",
+  "description": "PTL Timesheet — timesheet, approval, and payroll-reporting app. Runs standalone or alongside the Attendium clock-in/out system on the same Supabase project.",
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging"
   },
   "devDependencies": {
     "wrangler": "^3.80.0"
