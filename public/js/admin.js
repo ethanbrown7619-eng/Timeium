@@ -179,7 +179,7 @@ async function loadDashboard() {
     if (ts?.status === "approved") {
       badge = "Approved";
       badgeClass = "dept-badge dept-badge-approved";
-    } else if (ts && (ts.status === "submitted" || ts.status === "approved")) {
+    } else if (ts?.status === "submitted") {
       badge = "Submitted";
       badgeClass = "dept-badge dept-badge-submitted";
     } else if (ts?.status === "draft") {
@@ -234,6 +234,10 @@ async function loadClockComparison() {
   const summaryEl = document.getElementById("cvt-summary");
   tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
   summaryEl.innerHTML = "";
+
+  // clockTolerance/approvalWorkflow may still be at their defaults if the
+  // user hits this tab before module init's loadOrgSettings() resolves.
+  await loadOrgSettings();
 
   const ws = fmtDate(cvtWeek);
 
@@ -422,19 +426,24 @@ let approvalWorkflow = "manager_then_admin";
 
 let clockTolerance = 0.5;
 
-async function loadOrgSettings() {
-  if (!currentOrgId) return;
-  try {
-    const { data } = await sb
-      .from("organisations")
-      .select("approval_workflow, clock_tolerance_hours")
-      .eq("id", currentOrgId)
-      .maybeSingle();
-    approvalWorkflow = data?.approval_workflow || "manager_then_admin";
-    if (data?.clock_tolerance_hours != null) clockTolerance = Number(data.clock_tolerance_hours);
-  } catch (err) {
-    console.warn("approval workflow settings load failed:", err);
-  }
+let orgSettingsPromise = null;
+function loadOrgSettings() {
+  if (orgSettingsPromise) return orgSettingsPromise;
+  orgSettingsPromise = (async () => {
+    if (!currentOrgId) return;
+    try {
+      const { data } = await sb
+        .from("organisations")
+        .select("approval_workflow, clock_tolerance_hours")
+        .eq("id", currentOrgId)
+        .maybeSingle();
+      approvalWorkflow = data?.approval_workflow || "manager_then_admin";
+      if (data?.clock_tolerance_hours != null) clockTolerance = Number(data.clock_tolerance_hours);
+    } catch (err) {
+      console.warn("approval workflow settings load failed:", err);
+    }
+  })();
+  return orgSettingsPromise;
 }
 
 function updateInfusionWeekLabel() {

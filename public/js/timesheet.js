@@ -276,6 +276,7 @@ document.getElementById("leave-request-form")?.addEventListener("submit", async 
 });
 
 function showEditor(ws) {
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   weekStart = ws;
   document.getElementById("hub-view").style.display = "none";
   document.getElementById("editor-view").style.display = "";
@@ -1039,7 +1040,7 @@ async function saveEntry(entry) {
 
 document.getElementById("add-row-btn").addEventListener("click", async () => {
   if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
-  const sortOrder = entries.length ? Math.max(...entries.map((e) => e.sort_order)) + 1 : 0;
+  const sortOrder = Math.max(-1, ...entries.map((e) => Number(e.sort_order) || 0)) + 1;
   try {
     const { data, error } = await sb
       .from("timesheet_entries")
@@ -1190,6 +1191,7 @@ async function loadOrgDeadline() {
 /* ---------------------------------------------------------------- overhead (leave-only) view */
 
 async function showOverheadView() {
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   document.getElementById("hub-view").style.display = "none";
   document.getElementById("editor-view").style.display = "none";
   document.getElementById("overhead-view").style.display = "";

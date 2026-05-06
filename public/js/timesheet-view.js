@@ -135,16 +135,34 @@ async function load() {
     bar.style.display = "";
     document.getElementById("approve-btn").onclick = async () => {
       if (!await confirmDialog({ title: "Approve timesheet", message: "Approve this timesheet?", confirmText: "Approve" })) return;
-      const { error } = await sb.from("timesheets").update({ status: "approved" }).eq("id", ts.id);
+      const { data: rows, error } = await sb.from("timesheets")
+        .update({ status: "approved" })
+        .eq("id", ts.id)
+        .eq("status", "submitted")
+        .select("id");
       if (error) return notice(error.message, "error");
+      if (!rows?.length) {
+        notice("Already actioned by another manager", "warn");
+        setTimeout(() => location.href = "/department.html", 600);
+        return;
+      }
       notice("Timesheet approved", "success");
       setTimeout(() => location.href = "/department.html", 600);
     };
     document.getElementById("reject-btn").onclick = async () => {
       const note = await promptDialog({ title: "Reject timesheet", message: "Reason for rejection (optional):", placeholder: "e.g. Missing job code on Wednesday" }) || null;
       if (!await confirmDialog({ title: "Reject timesheet", message: "Reject this timesheet? The employee will need to resubmit.", confirmText: "Reject", danger: true })) return;
-      const { error } = await sb.from("timesheets").update({ status: "rejected", notes: note }).eq("id", ts.id);
+      const { data: rows, error } = await sb.from("timesheets")
+        .update({ status: "rejected", notes: note })
+        .eq("id", ts.id)
+        .eq("status", "submitted")
+        .select("id");
       if (error) return notice(error.message, "error");
+      if (!rows?.length) {
+        notice("Already actioned by another manager", "warn");
+        setTimeout(() => location.href = "/department.html", 600);
+        return;
+      }
       notice("Timesheet rejected", "success");
       setTimeout(() => location.href = "/department.html", 600);
     };

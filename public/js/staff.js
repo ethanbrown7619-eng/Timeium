@@ -500,9 +500,9 @@ function openDialog(empId) {
     document.getElementById("rate-fields").style.display = e.target.checked ? "" : "none";
     updateRateRef(Number(document.getElementById("f-department").value) || null);
   };
-  document.getElementById("f-department").addEventListener("change", () => {
+  document.getElementById("f-department").onchange = () => {
     updateRateRef(Number(document.getElementById("f-department").value) || null);
-  });
+  };
 
   const deptSel = document.getElementById("f-department");
   deptSel.innerHTML =

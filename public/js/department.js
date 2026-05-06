@@ -247,12 +247,18 @@ async function loadDashboard() {
     btn.addEventListener("click", async () => {
       const tsId = Number(btn.dataset.tsId);
       if (!await confirmDialog({ title: "Approve timesheet", message: "Approve this timesheet?", confirmText: "Approve" })) return;
-      const { error } = await sb
+      const { data: rows, error } = await sb
         .from("timesheets")
         .update({ status: "approved" })
-        .eq("id", tsId);
+        .eq("id", tsId)
+        .eq("status", "submitted")
+        .select("id");
       if (error) return notice(error.message, "error");
-      notice("Timesheet approved", "success");
+      if (!rows?.length) {
+        notice("Already actioned by another manager", "warn");
+      } else {
+        notice("Timesheet approved", "success");
+      }
       await loadDashboard();
     });
   });

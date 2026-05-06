@@ -55,7 +55,7 @@
         btn.disabled = true;
         btn.textContent = "Signing in…";
 
-        const { error } = await sb.auth.signInWithPassword({ email, password });
+        const { data: signinData, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) {
           notice(error.message || "Sign in failed", "error");
           btn.disabled = false;
@@ -64,7 +64,7 @@
         }
 
         // Check if this user must change their default password
-        const { data: { session: sess } } = await sb.auth.getSession();
+        const sess = signinData?.session;
         if (sess) {
           const { data: me } = await sb
             .from("users")

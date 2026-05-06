@@ -34,7 +34,7 @@ export default {
         {
           headers: {
             "content-type": "application/json",
-            "cache-control": "public, max-age=300, must-revalidate",
+            "cache-control": "public, max-age=300",
           },
         }
       );

@@ -410,7 +410,7 @@ function makeController(kind) {
   document.getElementById(`${prefix}-rotate-key-btn`).addEventListener("click", async () => {
     if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
     const existing = document.getElementById(`${prefix}-api-key`).value;
-    if (existing && !confirm("Replace the existing key? Any flows using the old key will stop working until updated.")) return;
+    if (existing && !await confirmDialog({ title: "Replace API key", message: "Replace the existing key? Any flows using the old key will stop working until updated.", confirmText: "Replace", danger: true })) return;
     try {
       const { data, error } = await sb.rpc("rotate_import_key", { p_kind: c.webhookKind, p_org_id: currentOrgId });
       if (error) throw error;
