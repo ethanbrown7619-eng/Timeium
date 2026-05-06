@@ -115,7 +115,6 @@ function showHub() {
   document.getElementById("editor-view").style.display = "none";
   document.querySelector(".container").classList.remove("ts-container");
   loadCurrentWeekCard();
-  loadQuickStats();
   loadLeaveBalances();
   loadMyLeaveRequests();
   renderCalendar();
@@ -419,100 +418,6 @@ async function loadCurrentWeekCard() {
     });
   } catch (err) {
     body.innerHTML = `<p class="muted">Failed to load current week</p>`;
-  }
-}
-
-/* ---------------------------------------------------------------- quick stats */
-
-async function loadQuickStats() {
-  const el = document.getElementById("quick-stats");
-  if (!el) return;
-
-  try {
-    // Load all timesheets for stats
-    const { data: allTs } = await sb
-      .from("timesheets")
-      .select("id, week_start, status")
-      .eq("user_id", employee.id)
-      .order("week_start", { ascending: false })
-      .limit(52);
-
-    if (!allTs?.length) {
-      el.innerHTML = `<span class="muted small">No timesheet history yet</span>`;
-      return;
-    }
-
-    // Current month hours
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const monthTs = allTs.filter((t) => {
-      const d = new Date(t.week_start);
-      return d >= monthStart && d <= monthEnd;
-    });
-
-    let monthHours = 0;
-    if (monthTs.length) {
-      const ids = monthTs.map((t) => t.id);
-      const { data: ents } = await sb
-        .from("timesheet_entries")
-        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-        .in("timesheet_id", ids);
-      for (const e of ents || []) {
-        monthHours += DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-      }
-    }
-
-    // Annual leave balance (falls back to N/A if not set up)
-    let leaveLabel = "N/A";
-    let leaveValue = "—";
-    try {
-      const { data: lb } = await sb
-        .from("leave_balances")
-        .select("balance, leave_types(code, name, unit)")
-        .eq("user_id", employee.id);
-      const annual = (lb || []).find((r) => r.leave_types?.code === "ANNUAL")
-                  || (lb || [])[0];
-      if (annual?.leave_types) {
-        const unit = annual.leave_types.unit === "days" ? "days" : "h";
-        leaveValue = `${Number(annual.balance).toFixed(unit === "h" ? 0 : 1)}${unit}`;
-        leaveLabel = annual.leave_types.name.toLowerCase();
-      }
-    } catch {}
-
-    // Avg hours per week (last 12 weeks)
-    const recent = allTs.slice(0, 12);
-    let totalRecentHours = 0;
-    if (recent.length) {
-      const ids = recent.map((t) => t.id);
-      const { data: ents } = await sb
-        .from("timesheet_entries")
-        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-        .in("timesheet_id", ids);
-      for (const e of ents || []) {
-        totalRecentHours += DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-      }
-    }
-    const avgHours = recent.length ? Math.round(totalRecentHours / recent.length * 10) / 10 : 0;
-
-    const monthName = now.toLocaleDateString(undefined, { month: "long" });
-
-    el.innerHTML = `
-      <div class="stat-item">
-        <span class="stat-value">${Math.round(monthHours)}h</span>
-        <span class="stat-label">${monthName}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value">${leaveValue}</span>
-        <span class="stat-label">${leaveLabel}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value">${avgHours}h</span>
-        <span class="stat-label">avg / week</span>
-      </div>
-    `;
-  } catch {
-    el.innerHTML = "";
   }
 }
 
