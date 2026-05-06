@@ -7,6 +7,7 @@ import {
   DAYS, getMonday, fmtDate, addDays,
   donutSvg, makeLatestOnly,
   isTsSubmittedOrApproved,
+  confirmDialog, promptDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -245,7 +246,7 @@ async function loadDashboard() {
   body.querySelectorAll(".approve-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const tsId = Number(btn.dataset.tsId);
-      if (!confirm("Approve this timesheet?")) return;
+      if (!await confirmDialog({ title: "Approve timesheet", message: "Approve this timesheet?", confirmText: "Approve" })) return;
       const { error } = await sb
         .from("timesheets")
         .update({ status: "approved" })
@@ -332,8 +333,8 @@ async function loadApprovedLeaveRequests(teamUserIds) {
   body.querySelectorAll(".revoke-lr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!confirm("Revoke this leave? The hours will be removed from the timesheet.")) return;
-      const note = prompt("Reason for revoking (optional):") || null;
+      if (!await confirmDialog({ title: "Revoke leave", message: "Revoke this leave? The hours will be removed from the timesheet.", confirmText: "Revoke", danger: true })) return;
+      const note = await promptDialog({ title: "Revoke leave", message: "Reason for revoking (optional):" }) || null;
       const { error } = await sb.rpc("revoke_leave_request", { p_request_id: id, p_note: note });
       if (error) return notice(error.message, "error");
       notice("Leave revoked", "success");
@@ -427,7 +428,7 @@ async function loadPendingLeaveRequests(teamUserIds) {
   body.querySelectorAll(".approve-lr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!confirm("Approve this leave request? The timesheet will be populated automatically.")) return;
+      if (!await confirmDialog({ title: "Approve leave", message: "Approve this leave request? The timesheet will be populated automatically.", confirmText: "Approve" })) return;
       const { error } = await sb.rpc("approve_leave_request", { p_request_id: id, p_note: null });
       if (error) return notice(error.message, "error");
       notice("Leave approved and timesheet populated", "success");
@@ -438,7 +439,7 @@ async function loadPendingLeaveRequests(teamUserIds) {
   body.querySelectorAll(".reject-lr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      const note = prompt("Reason for rejection (optional):") || null;
+      const note = await promptDialog({ title: "Reject leave", message: "Reason for rejection (optional):" }) || null;
       const { error } = await sb.rpc("reject_leave_request", { p_request_id: id, p_note: note });
       if (error) return notice(error.message, "error");
       notice("Leave rejected", "success");

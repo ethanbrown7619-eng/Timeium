@@ -5,6 +5,7 @@ import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
   DAYS, addDays, fmtShortDate,
+  confirmDialog, promptDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -133,15 +134,15 @@ async function load() {
   if (ts.status === "submitted") {
     bar.style.display = "";
     document.getElementById("approve-btn").onclick = async () => {
-      if (!confirm("Approve this timesheet?")) return;
+      if (!await confirmDialog({ title: "Approve timesheet", message: "Approve this timesheet?", confirmText: "Approve" })) return;
       const { error } = await sb.from("timesheets").update({ status: "approved" }).eq("id", ts.id);
       if (error) return notice(error.message, "error");
       notice("Timesheet approved", "success");
       setTimeout(() => location.href = "/department.html", 600);
     };
     document.getElementById("reject-btn").onclick = async () => {
-      const note = prompt("Reason for rejection (optional):") || null;
-      if (!confirm("Reject this timesheet? The employee will need to resubmit.")) return;
+      const note = await promptDialog({ title: "Reject timesheet", message: "Reason for rejection (optional):", placeholder: "e.g. Missing job code on Wednesday" }) || null;
+      if (!await confirmDialog({ title: "Reject timesheet", message: "Reject this timesheet? The employee will need to resubmit.", confirmText: "Reject", danger: true })) return;
       const { error } = await sb.from("timesheets").update({ status: "rejected", notes: note }).eq("id", ts.id);
       if (error) return notice(error.message, "error");
       notice("Timesheet rejected", "success");

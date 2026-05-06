@@ -7,6 +7,7 @@ import {
   DAYS, DAY_LABELS, getMonday, fmtDate, addDays, fmtDMY,
   donutSvg, makeLatestOnly,
   TS_STATUS, isTsSubmittedOrApproved,
+  confirmDialog,
 } from "/js/shared.js";
 
 // XLSX is ~600KB. Load only when an Export button is actually clicked.
@@ -714,7 +715,11 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
 
   if (infTotalEmps > 0 && infSubmittedCount < infTotalEmps) {
     const missing = infTotalEmps - infSubmittedCount;
-    if (!confirm(`${missing} employee${missing === 1 ? " has" : "s have"} not submitted yet (${infSubmittedCount}/${infTotalEmps}). Export anyway?`)) return;
+    if (!await confirmDialog({
+      title: "Export incomplete week",
+      message: `${missing} employee${missing === 1 ? " has" : "s have"} not submitted yet (${infSubmittedCount}/${infTotalEmps}). Export anyway?`,
+      confirmText: "Export",
+    })) return;
   }
 
   statusEl.textContent = "Generating…";

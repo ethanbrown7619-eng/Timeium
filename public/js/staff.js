@@ -17,6 +17,7 @@ import {
   renderTopbar,
   requireAdmin,
   debounce,
+  confirmDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -140,7 +141,12 @@ if (ctx.isDeveloper) {
   delTestBtn.addEventListener("click", async () => {
     const testEmps = employees.filter((e) => e.is_test);
     if (!testEmps.length) return notice("No test staff to delete", "info");
-    if (!confirm(`Permanently delete ${testEmps.length} test employee${testEmps.length === 1 ? "" : "s"}?`)) return;
+    if (!await confirmDialog({
+      title: "Delete test employees",
+      message: `Permanently delete ${testEmps.length} test employee${testEmps.length === 1 ? "" : "s"}?`,
+      confirmText: "Delete",
+      danger: true,
+    })) return;
     const { error } = await sb
       .from("users")
       .delete()
@@ -433,7 +439,7 @@ async function deleteDept(id) {
   const msg = inUse
     ? `Delete "${d?.name}"? ${inUse} employee(s) will be left unassigned.`
     : `Delete "${d?.name}"?`;
-  if (!confirm(msg)) return;
+  if (!await confirmDialog({ title: "Delete department", message: msg, confirmText: "Delete", danger: true })) return;
   const { error } = await sb
     .from("departments")
     .delete()
@@ -566,7 +572,7 @@ async function syncAdminRole(userId, wantAdmin) {
 
   const isAdmin = adminUserIds.has(emp.auth_user_id);
   if (wantAdmin && !isAdmin) {
-    if (!confirm("Are you sure you want to make this employee an admin?")) return;
+    if (!await confirmDialog({ title: "Promote to admin", message: "Are you sure you want to make this employee an admin?", confirmText: "Promote" })) return;
     await sb.from("admins").upsert(
       { user_id: emp.auth_user_id, organisation_id: currentOrgId, role: "admin" },
       { onConflict: "user_id" }
@@ -677,7 +683,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
 });
 
 async function deactivateEmployee(id) {
-  if (!confirm("Deactivate this employee? Their history will be kept.")) return;
+  if (!await confirmDialog({ title: "Deactivate employee", message: "Deactivate this employee? Their history will be kept.", confirmText: "Deactivate" })) return;
   const { error } = await sb
     .from("users")
     .update({ active: false })
@@ -700,7 +706,7 @@ async function reactivateEmployee(id) {
   await reloadAll();
 }
 async function deleteEmployee(id, name) {
-  if (!confirm(`Permanently delete ${name}? This cannot be undone.`)) return;
+  if (!await confirmDialog({ title: "Delete employee", message: `Permanently delete ${name}? This cannot be undone.`, confirmText: "Delete", danger: true })) return;
   const { error } = await sb
     .from("users")
     .delete()

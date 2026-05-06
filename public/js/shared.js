@@ -133,6 +133,68 @@ export function notice(message, level = "info", { sticky = false } = {}) {
   }
 }
 
+/* ---------------------------------------------------------------- dialogs */
+
+export function confirmDialog({ title, message, confirmText = "Confirm", cancelText = "Cancel", danger = false }) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "shared-dialog";
+    dlg.innerHTML = `
+      <div style="padding:24px;width:min(95vw,420px)">
+        <h2 style="margin:0 0 12px">${escapeHtml(title)}</h2>
+        <p style="margin:0 0 20px">${escapeHtml(message)}</p>
+        <div class="row-flex" style="gap:8px;justify-content:flex-end">
+          <button class="ghost" data-action="cancel">${escapeHtml(cancelText)}</button>
+          <button class="${danger ? "danger" : "primary"}" data-action="confirm">${escapeHtml(confirmText)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(dlg);
+    const finish = (value) => {
+      dlg.close();
+      dlg.remove();
+      resolve(value);
+    };
+    dlg.addEventListener("click", (e) => {
+      const action = e.target?.dataset?.action;
+      if (action) finish(action === "confirm");
+    });
+    dlg.addEventListener("cancel", () => finish(false));
+    dlg.showModal();
+  });
+}
+
+export function promptDialog({ title, message = "", defaultValue = "", placeholder = "", confirmText = "OK", cancelText = "Cancel" }) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "shared-dialog";
+    dlg.innerHTML = `
+      <form method="dialog" style="padding:24px;width:min(95vw,420px)">
+        <h2 style="margin:0 0 12px">${escapeHtml(title)}</h2>
+        ${message ? `<p style="margin:0 0 12px">${escapeHtml(message)}</p>` : ""}
+        <input type="text" name="value" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}"
+          style="width:100%;margin:0 0 20px" autofocus />
+        <div class="row-flex" style="gap:8px;justify-content:flex-end">
+          <button class="ghost" type="button" data-action="cancel">${escapeHtml(cancelText)}</button>
+          <button class="primary" type="submit" data-action="confirm">${escapeHtml(confirmText)}</button>
+        </div>
+      </form>`;
+    document.body.appendChild(dlg);
+    const finish = (value) => {
+      dlg.close();
+      dlg.remove();
+      resolve(value);
+    };
+    dlg.querySelector("[data-action=cancel]").addEventListener("click", () => finish(null));
+    dlg.querySelector("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const value = dlg.querySelector("input[name=value]").value;
+      finish(value);
+    });
+    dlg.addEventListener("cancel", () => finish(null));
+    dlg.showModal();
+  });
+}
+
 /* ---------------------------------------------------------------- escape */
 
 export function escapeHtml(s) {
@@ -192,34 +254,29 @@ export function renderTopbar(opts) {
           </select>`
       : "";
 
-  // Populate nav links (element already exists in static HTML — brand stays untouched)
-  const nav = el.querySelector("nav");
-  if (nav) {
-    nav.innerHTML = links
-      .filter((l) => l.show)
-      .map(
-        (l) =>
-          `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
-      )
-      .join("");
-    nav.classList.add("ready");
-  }
-
-  // Remove any prior user section (if renderTopbar called twice)
-  const prev = el.querySelector(".row-flex");
-  if (prev) prev.remove();
-
-  // Build and insert user section after the grow div
-  const userDiv = document.createElement("div");
-  userDiv.className = "row-flex ready";
-  userDiv.innerHTML = `
-    ${orgSwitcher}
-    <span class="who">${escapeHtml(opts.session?.user?.email || "")}</span>
-    <a href="#" id="signout-link" class="muted">Sign out</a>
+  // Render the entire topbar in one place. Pages can leave the element empty
+  // and we'll fill it; pages that pre-populated it (legacy) are overwritten.
+  el.innerHTML = `
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">ptl</span>
+      <span class="brand-name">Timesheet</span>
+    </div>
+    <nav class="ready">
+      ${links
+        .filter((l) => l.show)
+        .map(
+          (l) =>
+            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
+        )
+        .join("")}
+    </nav>
+    <div class="grow"></div>
+    <div class="topbar-user ready">
+      ${orgSwitcher}
+      <span class="who">${escapeHtml(opts.session?.user?.email || "")}</span>
+      <a href="#" id="signout-link" class="muted">Sign out</a>
+    </div>
   `;
-  const grow = el.querySelector(".grow");
-  if (grow) grow.after(userDiv);
-  else el.appendChild(userDiv);
 
   if (orgSwitcher && typeof opts.onOrgChange === "function") {
     document

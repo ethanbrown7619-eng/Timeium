@@ -7,8 +7,15 @@ import {
   escapeHtml,
   renderTopbar,
   requireAdmin,
+  confirmDialog,
 } from "/js/shared.js";
-import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+
+// XLSX (~600KB) loaded only when the user actually triggers an import.
+let _xlsxPromise = null;
+function getXLSX() {
+  if (!_xlsxPromise) _xlsxPromise = import("https://esm.sh/xlsx@0.18.5");
+  return _xlsxPromise;
+}
 
 const sb  = await getSupabase();
 const cfg = await getConfig();
@@ -253,7 +260,7 @@ function makeController(kind) {
         const id = Number(tr.dataset.id);
         const r = state.rows.find((x) => x.id === id);
         if (!r) return;
-        if (!confirm(`Delete ${kind.slice(0, -1)} ${r[codeField]}?`)) return;
+        if (!await confirmDialog({ title: `Delete ${kind.slice(0, -1)}`, message: `Delete ${kind.slice(0, -1)} ${r[codeField]}?`, confirmText: "Delete", danger: true })) return;
         try {
           const { error } = await sb.from(table).delete().eq("id", id);
           if (error) throw error;
@@ -436,6 +443,7 @@ function makeController(kind) {
   async function handleFile(file) {
     try {
       const buf = await file.arrayBuffer();
+      const XLSX = await getXLSX();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(ws, { defval: "" });
@@ -667,7 +675,7 @@ function renderHolidays() {
   body.querySelectorAll(".hol-delete").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!confirm("Delete this holiday?")) return;
+      if (!await confirmDialog({ title: "Delete holiday", message: "Delete this holiday?", confirmText: "Delete", danger: true })) return;
       const { error } = await sb.from("public_holidays").delete().eq("id", id);
       if (error) return notice(error.message, "error");
       notice("Deleted", "success");
@@ -1029,6 +1037,7 @@ const deptCodesCtl = makeController("deptcodes");
     let rows;
     try {
       const buf = await file.arrayBuffer();
+      const XLSX = await getXLSX();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       rows = XLSX.utils.sheet_to_json(ws, { defval: "" });

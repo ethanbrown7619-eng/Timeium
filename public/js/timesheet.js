@@ -5,6 +5,7 @@ import {
   notice, escapeHtml, renderTopbar, getUserContext,
   DAYS, getMonday, fmtDate, fmtShortDate, addDays,
   TS_STATUS, isTsSubmittedOrApproved,
+  confirmDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -195,7 +196,7 @@ async function loadMyLeaveRequests() {
   body.querySelectorAll(".cancel-lr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!confirm("Cancel this leave request?")) return;
+      if (!await confirmDialog({ title: "Cancel leave request", message: "Cancel this leave request?", confirmText: "Cancel request", danger: true })) return;
       const { error } = await sb.from("leave_requests")
         .update({ status: "cancelled" }).eq("id", id);
       if (error) return notice(error.message, "error");
@@ -1020,7 +1021,7 @@ document.getElementById("add-row-btn").addEventListener("click", async () => {
 
 document.getElementById("import-last-week").addEventListener("click", async () => {
   if (entries.length > 0) {
-    if (!confirm("This will only work if the current week has no tasks yet. Current entries will be kept. Continue?")) return;
+    if (!await confirmDialog({ title: "Import last week's tasks", message: "This will only work if the current week has no tasks yet. Current entries will be kept. Continue?", confirmText: "Import" })) return;
   }
   try {
     const { data, error } = await sb.rpc("import_last_week_tasks", {
@@ -1234,7 +1235,7 @@ async function loadOverheadLeaveRequests() {
   body.querySelectorAll(".oh-cancel-lr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!confirm("Cancel this leave request?")) return;
+      if (!await confirmDialog({ title: "Cancel leave request", message: "Cancel this leave request?", confirmText: "Cancel request", danger: true })) return;
       const { error } = await sb.from("leave_requests")
         .update({ status: "cancelled" }).eq("id", id);
       if (error) return notice(error.message, "error");
