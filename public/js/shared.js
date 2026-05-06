@@ -539,7 +539,12 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
       .order("id");
     if (error) console.warn("organisations lookup failed:", error);
     orgs = allOrgs || [];
-    const saved = Number(localStorage.getItem("temporium-dev-org-id"));
+    // Renamed from temporium-dev-org-id; fall back for one release so
+    // existing dev sessions keep their selection.
+    const saved = Number(
+      localStorage.getItem("ptl-dev-org-id") ||
+      localStorage.getItem("temporium-dev-org-id")
+    );
     currentOrgId = orgs.find((o) => o.id === saved)?.id || orgs[0]?.id || null;
   } else {
     currentOrgId = ctx.adminRow?.organisation_id || null;

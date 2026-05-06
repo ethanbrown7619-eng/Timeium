@@ -1216,6 +1216,7 @@ async function loadOrgDeadline() {
     }
   } catch (err) {
     console.warn("org deadline settings load failed:", err);
+    notice("Couldn't load deadline settings — countdown may be inaccurate", "warn");
   }
 }
 

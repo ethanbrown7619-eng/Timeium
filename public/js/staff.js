@@ -33,7 +33,7 @@ renderTopbar({
   currentOrgId,
   onOrgChange: (id) => {
     currentOrgId = id;
-    localStorage.setItem("temporium-dev-org-id", String(id));
+    localStorage.setItem("ptl-dev-org-id", String(id));
     reloadAll();
   },
   active: "staff",

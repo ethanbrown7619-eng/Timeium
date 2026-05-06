@@ -31,7 +31,7 @@ renderTopbar({
   currentOrgId,
   onOrgChange: (id) => {
     currentOrgId = id;
-    localStorage.setItem("temporium-dev-org-id", String(id));
+    localStorage.setItem("ptl-dev-org-id", String(id));
     if (activeTab === "dashboard") loadDashboard();
     if (activeTab === "clockvts") loadClockComparison();
   },
@@ -396,6 +396,7 @@ function loadOrgSettings() {
       if (data?.clock_tolerance_hours != null) clockTolerance = Number(data.clock_tolerance_hours);
     } catch (err) {
       console.warn("approval workflow settings load failed:", err);
+      notice("Couldn't load org settings — approval workflow + clock tolerance may be wrong", "warn");
     }
   })();
   return orgSettingsPromise;
