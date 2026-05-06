@@ -2,7 +2,12 @@
 // Managers see departments they manage; admins/developers see all departments.
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar, getUserContext } from "/js/shared.js";
+import {
+  notice, escapeHtml, renderTopbar, getUserContext,
+  DAYS, getMonday, fmtDate, addDays,
+  donutSvg, makeLatestOnly,
+  isTsSubmittedOrApproved,
+} from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -37,47 +42,12 @@ renderTopbar({
 
 /* ---------------------------------------------------------------- helpers */
 
-const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
-
-function getMonday(d) {
-  const dt = new Date(d);
-  const day = dt.getDay();
-  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
-  dt.setDate(diff);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-}
-function fmtDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
-
 function renderDonut(container, submitted, total, label) {
-  const pct = total === 0 ? 0 : submitted / total;
-  const radius = 70;
-  const circumference = 2 * Math.PI * radius;
-  const filled = circumference * pct;
-  const empty = circumference - filled;
-
   const card = document.createElement("div");
   card.className = "card dash-chart-card";
   card.innerHTML = `
     <h3 style="margin:0 0 12px;text-align:center">${escapeHtml(label)}</h3>
-    <div class="donut-wrap">
-      <svg viewBox="0 0 200 200" class="donut-svg">
-        <circle cx="100" cy="100" r="${radius}" fill="none" stroke="#e8e8e8" stroke-width="18" />
-        <circle cx="100" cy="100" r="${radius}" fill="none" stroke="#c2ff00" stroke-width="18"
-          stroke-dasharray="${filled} ${empty}"
-          stroke-dashoffset="${circumference * 0.25}"
-          stroke-linecap="round"
-          style="transition: stroke-dasharray 0.6s ease" />
-        <text x="100" y="92" text-anchor="middle" class="donut-num">${submitted}/${total}</text>
-        <text x="100" y="116" text-anchor="middle" class="donut-pct">${Math.round(pct * 100)}%</text>
-      </svg>
-    </div>
+    <div class="donut-wrap">${donutSvg({ submitted, total })}</div>
     <div class="dash-legend">
       <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submitted})</span>
       <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Pending (${total - submitted})</span>
@@ -97,15 +67,16 @@ function updateDeptWeekLabel() {
 }
 updateDeptWeekLabel();
 
+const navLoadDashboard = makeLatestOnly(() => loadDashboard());
 document.getElementById("dept-prev").addEventListener("click", () => {
   deptWeek = addDays(deptWeek, -7);
   updateDeptWeekLabel();
-  loadDashboard();
+  navLoadDashboard();
 });
 document.getElementById("dept-next").addEventListener("click", () => {
   deptWeek = addDays(deptWeek, 7);
   updateDeptWeekLabel();
-  loadDashboard();
+  navLoadDashboard();
 });
 
 /* ---------------------------------------------------------------- load */
@@ -196,7 +167,7 @@ async function loadDashboard() {
 
   function isSubmitted(empId) {
     const ts = tsMap[empId];
-    return ts && (ts.status === "submitted" || ts.status === "approved");
+    return isTsSubmittedOrApproved(ts?.status);
   }
 
   // Render donut charts

@@ -1,7 +1,11 @@
 // PTL Timesheet — My Timesheets hub + weekly grid editor.
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar, getUserContext } from "/js/shared.js";
+import {
+  notice, escapeHtml, renderTopbar, getUserContext,
+  DAYS, getMonday, fmtDate, fmtShortDate, addDays,
+  TS_STATUS, isTsSubmittedOrApproved,
+} from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -46,7 +50,6 @@ renderTopbar({
 
 /* ---------------------------------------------------------------- state */
 
-const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
 const DAY_NAMES = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
 let weekStart = null;
 let timesheetId = null;
@@ -62,24 +65,6 @@ let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
 let orgAutofillPH = false;
 let orgPHHours = 8;
 let orgPHJobId = null;
-
-function getMonday(d) {
-  const dt = new Date(d);
-  const day = dt.getDay();
-  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
-  dt.setDate(diff);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-}
-
-function fmtDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-function fmtShortDate(d) { return `${d.getDate()}/${d.getMonth() + 1}`; }
-function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
 function weekLabel() {
   const end = addDays(weekStart, 6);
@@ -356,7 +341,7 @@ async function loadCurrentWeekCard() {
 
     card.classList.remove("submitted", "draft");
 
-    if (ts?.status === "submitted" || ts?.status === "approved") {
+    if (isTsSubmittedOrApproved(ts?.status)) {
       card.classList.add("submitted");
       body.innerHTML = `
         <p style="margin:0"><strong>${weekStr}</strong></p>
@@ -492,8 +477,8 @@ async function renderCalendar() {
       : `<a href="#" class="week-action" data-week="${ws}">Create</a>`;
 
     const rowClass = isCurrent ? "current-week" :
-      ts?.status === "submitted" || ts?.status === "approved" ? "week-submitted" :
-      ts?.status === "draft" ? "week-draft" : "";
+      isTsSubmittedOrApproved(ts?.status) ? "week-submitted" :
+      ts?.status === TS_STATUS.DRAFT ? "week-draft" : "";
 
     rows += `<tr class="week-row ${rowClass}" data-week="${ws}">
       ${dayCells.join("")}
@@ -785,7 +770,7 @@ function renderStatusBadge() {
 
 function renderGrid() {
   const body = document.getElementById("ts-body");
-  const isSubmitted = tsStatus === "submitted" || tsStatus === "approved";
+  const isSubmitted = isTsSubmittedOrApproved(tsStatus);
 
   const jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
   const deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
@@ -1030,7 +1015,7 @@ document.getElementById("import-last-week").addEventListener("click", async () =
 
 document.getElementById("submit-ts-btn").addEventListener("click", () => {
   if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
-  if (tsStatus === "submitted" || tsStatus === "approved") return notice("This timesheet has already been submitted", "info");
+  if (isTsSubmittedOrApproved(tsStatus)) return notice("This timesheet has already been submitted", "info");
 
   if (!entries.length) {
     notice("Add at least one task before submitting", "warn");

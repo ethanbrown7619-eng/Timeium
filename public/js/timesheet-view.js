@@ -2,7 +2,10 @@
 // URL params: ?user=<user_id>&week=<YYYY-MM-DD>
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar, getUserContext } from "/js/shared.js";
+import {
+  notice, escapeHtml, renderTopbar, getUserContext,
+  DAYS, addDays, fmtShortDate,
+} from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -38,12 +41,6 @@ if (!viewUserId || !weekStart) {
   notice("Missing user or week parameter", "error", { sticky: true });
   throw new Error("missing params");
 }
-
-/* ---------------------------------------------------------------- helpers */
-
-const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
-function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
-function fmtShortDate(d) { return `${d.getDate()}/${d.getMonth() + 1}`; }
 
 /* ---------------------------------------------------------------- load */
 

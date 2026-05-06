@@ -16,6 +16,7 @@ import {
   escapeHtml,
   renderTopbar,
   requireAdmin,
+  debounce,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -47,6 +48,10 @@ if (!currentOrgId) {
 
 let employees = [];    // rows loaded from public.users
 let departments = [];  // { id, name, active, manager_id }
+let deptById = new Map();
+function rebuildDeptById() {
+  deptById = new Map(departments.map((d) => [d.id, d]));
+}
 let adminUserIds = new Set();
 let filter = {
   search: "",
@@ -91,9 +96,12 @@ document.querySelectorAll("[data-org-view]").forEach((btn) => {
 
 /* ---------------------------------------------------------------- filters */
 
-document.getElementById("search-input").addEventListener("input", (e) => {
-  filter.search = e.target.value.trim().toLowerCase();
+const handleSearchInput = debounce((value) => {
+  filter.search = value.trim().toLowerCase();
   renderEmployees();
+}, 150);
+document.getElementById("search-input").addEventListener("input", (e) => {
+  handleSearchInput(e.target.value);
 });
 document.getElementById("show-inactive").addEventListener("change", (e) => {
   filter.showInactive = e.target.checked;
@@ -178,9 +186,11 @@ async function loadDepartments() {
   if (error) {
     notice(`Couldn't load departments: ${error.message}`, "error", { sticky: true });
     departments = [];
+    rebuildDeptById();
     return;
   }
   departments = data || [];
+  rebuildDeptById();
 }
 
 async function loadAdmins() {
@@ -198,7 +208,7 @@ async function loadAdmins() {
 function missingFields(emp) {
   const missing = [];
   if (!emp.department_id) missing.push("department");
-  const dept = emp.department_id ? departments.find((d) => d.id === emp.department_id) : null;
+  const dept = emp.department_id ? deptById.get(emp.department_id) : null;
   const isOverhead = dept?.is_overhead || false;
   if (!isOverhead) {
     const effectiveCost = emp.cost_rate ?? dept?.cost_rate ?? null;
@@ -211,7 +221,7 @@ function missingFields(emp) {
 }
 
 function effectiveRate(emp, field) {
-  const dept = emp.department_id ? departments.find((d) => d.id === emp.department_id) : null;
+  const dept = emp.department_id ? deptById.get(emp.department_id) : null;
   if (dept?.is_overhead) return { value: null, source: "overhead" };
   if (emp[field] != null) return { value: Number(emp[field]), source: "employee" };
   if (dept && dept[field] != null) return { value: Number(dept[field]), source: "dept" };
@@ -227,7 +237,7 @@ function fmtRate(r) {
 }
 
 function deptName(id) {
-  const d = departments.find((x) => x.id === id);
+  const d = deptById.get(id);
   return d ? d.name : "";
 }
 

@@ -1,6 +1,109 @@
 // Shared utilities for the Temporium timesheet module.
 // Narrow by design — more helpers land here as later units ship.
 
+/* ---------------------------------------------------------------- dates */
+
+export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+export const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export function getMonday(d) {
+  const dt = new Date(d);
+  const day = dt.getDay();
+  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+  dt.setDate(diff);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+export function fmtDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function fmtShortDate(d) {
+  return `${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+export function fmtDMY(d) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
+export function addDays(d, n) {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+/* ---------------------------------------------------------------- status constants */
+
+export const TS_STATUS = Object.freeze({
+  DRAFT: "draft",
+  SUBMITTED: "submitted",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+});
+
+export const LEAVE_STATUS = Object.freeze({
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+  CANCELLED: "cancelled",
+});
+
+export function isTsSubmittedOrApproved(status) {
+  return status === TS_STATUS.SUBMITTED || status === TS_STATUS.APPROVED;
+}
+
+/* ---------------------------------------------------------------- donut */
+
+export function donutSvg({ submitted, total, fillColor = "#c2ff00", emptyColor = "#e8e8e8" }) {
+  const pct = total === 0 ? 0 : submitted / total;
+  const radius = 70;
+  const circumference = 2 * Math.PI * radius;
+  const filled = circumference * pct;
+  const empty = circumference - filled;
+  return `
+    <svg viewBox="0 0 200 200" class="donut-svg">
+      <circle cx="100" cy="100" r="${radius}" fill="none" stroke="${emptyColor}" stroke-width="18" />
+      <circle cx="100" cy="100" r="${radius}" fill="none" stroke="${fillColor}" stroke-width="18"
+        stroke-dasharray="${filled} ${empty}"
+        stroke-dashoffset="${circumference * 0.25}"
+        stroke-linecap="round"
+        style="transition: stroke-dasharray 0.6s ease" />
+      <text x="100" y="92" text-anchor="middle" class="donut-num">${submitted}/${total}</text>
+      <text x="100" y="116" text-anchor="middle" class="donut-pct">${Math.round(pct * 100)}%</text>
+    </svg>
+  `;
+}
+
+/* ---------------------------------------------------------------- async utils */
+
+/**
+ * Wraps an async loader so only the most recent call renders. Older
+ * in-flight calls resolve to undefined. Use to dedupe rapid prev/next clicks.
+ */
+export function makeLatestOnly(fn) {
+  let token = 0;
+  return async (...args) => {
+    const myToken = ++token;
+    const result = await fn(...args);
+    if (myToken !== token) return undefined;
+    return result;
+  };
+}
+
+export function debounce(fn, ms = 150) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 /* ---------------------------------------------------------------- password */
 
 export const MIN_PASSWORD_LENGTH = 12;

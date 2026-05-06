@@ -2,8 +2,19 @@
 // Tabs: Dashboard (donut charts) | Infusion Export (xlsx generation).
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar, requireAdmin } from "/js/shared.js";
-import * as XLSX from "https://esm.sh/xlsx@0.18.5";
+import {
+  notice, escapeHtml, renderTopbar, requireAdmin,
+  DAYS, DAY_LABELS, getMonday, fmtDate, addDays, fmtDMY,
+  donutSvg, makeLatestOnly,
+  TS_STATUS, isTsSubmittedOrApproved,
+} from "/js/shared.js";
+
+// XLSX is ~600KB. Load only when an Export button is actually clicked.
+let _xlsxPromise = null;
+function getXLSX() {
+  if (!_xlsxPromise) _xlsxPromise = import("https://esm.sh/xlsx@0.18.5");
+  return _xlsxPromise;
+}
 
 const sb = await getSupabase();
 const ctx = await requireAdmin(sb);
@@ -30,30 +41,6 @@ if (!currentOrgId) {
 }
 
 /* ---------------------------------------------------------------- helpers */
-
-const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
-const DAY_LABELS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
-function getMonday(d) {
-  const dt = new Date(d);
-  const day = dt.getDay();
-  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
-  dt.setDate(diff);
-  dt.setHours(0, 0, 0, 0);
-  return dt;
-}
-function fmtDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
-function fmtDMY(d) {
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}/${d.getFullYear()}`;
-}
 
 const thisMonday = getMonday(new Date());
 
@@ -100,37 +87,21 @@ function updateDashWeekLabel() {
 }
 updateDashWeekLabel();
 
+const navLoadDashboard = makeLatestOnly(() => loadDashboard());
 document.getElementById("dash-prev").addEventListener("click", () => {
   dashWeek = addDays(dashWeek, -7);
   updateDashWeekLabel();
-  loadDashboard();
+  navLoadDashboard();
 });
 document.getElementById("dash-next").addEventListener("click", () => {
   dashWeek = addDays(dashWeek, 7);
   updateDashWeekLabel();
-  loadDashboard();
+  navLoadDashboard();
 });
 
-function renderDonut(containerId, submitted, total, colorFill, colorEmpty) {
+function renderDonut(containerId, submitted, total, fillColor, emptyColor) {
   const el = document.getElementById(containerId);
-  const pct = total === 0 ? 0 : submitted / total;
-  const radius = 70;
-  const circumference = 2 * Math.PI * radius;
-  const filled = circumference * pct;
-  const empty = circumference - filled;
-
-  el.innerHTML = `
-    <svg viewBox="0 0 200 200" class="donut-svg">
-      <circle cx="100" cy="100" r="${radius}" fill="none" stroke="${colorEmpty}" stroke-width="18" />
-      <circle cx="100" cy="100" r="${radius}" fill="none" stroke="${colorFill}" stroke-width="18"
-        stroke-dasharray="${filled} ${empty}"
-        stroke-dashoffset="${circumference * 0.25}"
-        stroke-linecap="round"
-        style="transition: stroke-dasharray 0.6s ease" />
-      <text x="100" y="92" text-anchor="middle" class="donut-num">${submitted}/${total}</text>
-      <text x="100" y="116" text-anchor="middle" class="donut-pct">${Math.round(pct * 100)}%</text>
-    </svg>
-  `;
+  el.innerHTML = donutSvg({ submitted, total, fillColor, emptyColor });
 }
 
 async function loadDashboard() {
@@ -166,23 +137,23 @@ async function loadDashboard() {
     }
   }
 
-  const submittedEmps = employees.filter((e) => {
-    const ts = tsMap[e.id];
-    return ts && (ts.status === "submitted" || ts.status === "approved");
-  });
+  const submittedEmps = employees.filter((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
   renderDonut("emp-donut", submittedEmps.length, employees.length, "#c2ff00", "#e8e8e8");
   document.getElementById("emp-legend").innerHTML = `
     <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submittedEmps.length})</span>
     <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Not submitted (${employees.length - submittedEmps.length})</span>
   `;
 
+  const empsByDept = new Map();
+  for (const e of employees) {
+    const list = empsByDept.get(e.department_id);
+    if (list) list.push(e);
+    else empsByDept.set(e.department_id, [e]);
+  }
   const deptSubmitted = departments.filter((d) => {
-    const members = employees.filter((e) => e.department_id === d.id);
-    if (members.length === 0) return false;
-    return members.every((e) => {
-      const ts = tsMap[e.id];
-      return ts && (ts.status === "submitted" || ts.status === "approved");
-    });
+    const members = empsByDept.get(d.id);
+    if (!members || !members.length) return false;
+    return members.every((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
   });
   renderDonut("dept-donut", deptSubmitted.length, departments.length, "#1a56c7", "#e8e8e8");
   document.getElementById("dept-legend").innerHTML = `
@@ -196,7 +167,8 @@ async function loadDashboard() {
     return;
   }
 
-  const deptName = (id) => departments.find((d) => d.id === id)?.name || "";
+  const deptNameById = new Map(departments.map((d) => [d.id, d.name]));
+  const deptName = (id) => deptNameById.get(id) || "";
 
   body.innerHTML = employees.map((e) => {
     const ts = tsMap[e.id];
@@ -241,15 +213,16 @@ function updateCvtWeekLabel() {
 
 updateCvtWeekLabel();
 
+const navLoadClockComparison = makeLatestOnly(() => loadClockComparison());
 document.getElementById("cvt-prev").addEventListener("click", () => {
   cvtWeek = addDays(cvtWeek, -7);
   updateCvtWeekLabel();
-  loadClockComparison();
+  navLoadClockComparison();
 });
 document.getElementById("cvt-next").addEventListener("click", () => {
   cvtWeek = addDays(cvtWeek, 7);
   updateCvtWeekLabel();
-  loadClockComparison();
+  navLoadClockComparison();
 });
 
 let lastCvtData = null;
@@ -513,13 +486,16 @@ async function loadInfusionStatus() {
   `;
 
   if (approvalWorkflow === "manager_then_admin") {
+    const empsByDept = new Map();
+    for (const e of employees) {
+      const list = empsByDept.get(e.department_id);
+      if (list) list.push(e);
+      else empsByDept.set(e.department_id, [e]);
+    }
     const deptSubmitted = departments.filter((d) => {
-      const members = employees.filter((e) => e.department_id === d.id);
-      if (members.length === 0) return false;
-      return members.every((e) => {
-        const ts = tsMap[e.id];
-        return ts && (ts.status === "submitted" || ts.status === "approved");
-      });
+      const members = empsByDept.get(d.id);
+      if (!members || !members.length) return false;
+      return members.every((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
     });
 
     const deptTotal = departments.length;
@@ -771,6 +747,7 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
       ]);
     }
 
+    const XLSX = await getXLSX();
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Infusion");
@@ -1020,13 +997,14 @@ function renderLvRows(previewId, rows) {
   });
 }
 
-function lvExportToExcel(rows, filename) {
+async function lvExportToExcel(rows, filename) {
   const sorted = sortLvRows(rows);
   const headers = ["Employee", "Employee Code", "Department", "Date", "Event", "Detail", "Description", "Note", "Hours"];
   const wsData = [headers];
   for (const r of sorted) {
     wsData.push([r.employee, r.employee_code, r.department, r.date, r.event, r.event_detail, r.event_description, r.note, r.hours]);
   }
+  const XLSX = await getXLSX();
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Leave Overtime");
@@ -1083,7 +1061,7 @@ document.getElementById("lv-export-btn").addEventListener("click", async () => {
   try {
     if (!lvWagedRows.length) lvWagedRows = await buildLeaveRowsForWeeks([fmtDate(lvWeek)], "waged", document.getElementById("lv-include-drafts").checked);
     if (!lvWagedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
-    lvExportToExcel(lvWagedRows, `leave-overtime-waged-${fmtDate(lvWeek)}.xlsx`);
+    await lvExportToExcel(lvWagedRows, `leave-overtime-waged-${fmtDate(lvWeek)}.xlsx`);
     statusEl.textContent = "Done";
     notice(`Exported ${lvWagedRows.length} entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
@@ -1147,7 +1125,7 @@ document.getElementById("lv-sal-export-btn").addEventListener("click", async () 
     }
     if (!lvSalariedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
     const monthStr = `${lvMonth.getFullYear()}-${String(lvMonth.getMonth() + 1).padStart(2, "0")}`;
-    lvExportToExcel(lvSalariedRows, `leave-overtime-salaried-${monthStr}.xlsx`);
+    await lvExportToExcel(lvSalariedRows, `leave-overtime-salaried-${monthStr}.xlsx`);
     statusEl.textContent = "Done";
     notice(`Exported ${lvSalariedRows.length} entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
