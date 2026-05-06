@@ -28,8 +28,8 @@
             <input id="email" type="email" required autocomplete="email" style="width:100%" />
           </div>
           <div class="mb-md">
-            <label for="password">Password (at least 6 characters)</label>
-            <input id="password" type="password" required minlength="6"
+            <label for="password">Password (at least 12 characters)</label>
+            <input id="password" type="password" required minlength="12"
               autocomplete="new-password" style="width:100%" />
           </div>
           <button type="submit" style="width:100%" id="submit-btn">Sign up</button>
@@ -43,7 +43,7 @@
 
     <script type="module">
       import { getSupabase } from "/js/supabase-client.js";
-      import { notice, routeAfterAuth } from "/js/shared.js";
+      import { notice, routeAfterAuth, validatePassword } from "/js/shared.js";
 
       const sb = await getSupabase();
 
@@ -58,6 +58,8 @@
         const email = document.getElementById("email").value.trim();
         const password = document.getElementById("password").value;
         const btn = document.getElementById("submit-btn");
+        const pwCheck = validatePassword(password);
+        if (!pwCheck.ok) return notice(pwCheck.reason, "error");
         btn.disabled = true;
         btn.textContent = "Creating account…";
 

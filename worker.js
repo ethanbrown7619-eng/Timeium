@@ -11,27 +11,51 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/config.json") {
+      if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "Server configuration missing — SUPABASE_URL and SUPABASE_ANON_KEY must be set in wrangler.toml or as worker secrets.",
+          }),
+          {
+            status: 500,
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+            },
+          }
+        );
+      }
       return new Response(
         JSON.stringify({
-          supabaseUrl: env.SUPABASE_URL || "",
-          supabaseAnonKey: env.SUPABASE_ANON_KEY || "",
+          supabaseUrl: env.SUPABASE_URL,
+          supabaseAnonKey: env.SUPABASE_ANON_KEY,
         }),
         {
           headers: {
             "content-type": "application/json",
-            "cache-control": "no-store",
+            "cache-control": "public, max-age=300, must-revalidate",
           },
         }
       );
     }
 
-    // No favicon shipped yet — quiet the browser's automatic request so it
-    // doesn't 500 through the SPA fallback.
+    // Redirect favicon.ico to the SVG so browser/OS shortcut flows that
+    // hard-request /favicon.ico still get a real icon instead of nothing.
     if (url.pathname === "/favicon.ico") {
-      return new Response(null, { status: 204 });
+      return Response.redirect(new URL("/favicon.svg", url), 301);
     }
 
     // Everything else falls through to the static assets binding.
-    return env.ASSETS.fetch(request);
+    try {
+      return await env.ASSETS.fetch(request);
+    } catch (err) {
+      console.error("Asset fetch failed:", err);
+      return new Response(
+        "<!doctype html><html><body><h1>Service temporarily unavailable</h1>" +
+          "<p>Please refresh the page in a moment.</p></body></html>",
+        { status: 503, headers: { "content-type": "text/html" } }
+      );
+    }
   },
 };

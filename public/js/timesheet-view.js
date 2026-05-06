@@ -2,7 +2,7 @@
 // URL params: ?user=<user_id>&week=<YYYY-MM-DD>
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar } from "/js/shared.js";
+import { notice, escapeHtml, renderTopbar, getUserContext } from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -11,20 +11,8 @@ const sb = await getSupabase();
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
-let isDeveloper = false;
-let adminRow = null;
-let isManager = false;
-let me = null;
-try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
-try {
-  const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
-  adminRow = r.data;
-} catch {}
-try {
-  const r = await sb.from("users").select("id, organisation_id, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
-  me = r.data;
-  isManager = !!me?.is_manager;
-} catch {}
+const ctx = await getUserContext(sb, session);
+const { isDeveloper, adminRow, isManager, employee: me } = ctx;
 
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
 if (!isManager && !isAdminOrDev) {
@@ -35,7 +23,7 @@ if (!isManager && !isAdminOrDev) {
 const currentOrgId = me?.organisation_id || adminRow?.organisation_id || null;
 
 renderTopbar({
-  session, isDeveloper, isManager, adminRow,
+  sb, session, isDeveloper, isManager, adminRow,
   orgs: null, currentOrgId, onOrgChange: () => {},
   active: "department",
 });

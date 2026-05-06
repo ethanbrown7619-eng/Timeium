@@ -133,9 +133,12 @@ if (ctx.isDeveloper) {
     const testEmps = employees.filter((e) => e.is_test);
     if (!testEmps.length) return notice("No test staff to delete", "info");
     if (!confirm(`Permanently delete ${testEmps.length} test employee${testEmps.length === 1 ? "" : "s"}?`)) return;
-    for (const emp of testEmps) {
-      await sb.from("users").delete().eq("id", emp.id).eq("organisation_id", currentOrgId);
-    }
+    const { error } = await sb
+      .from("users")
+      .delete()
+      .in("id", testEmps.map((e) => e.id))
+      .eq("organisation_id", currentOrgId);
+    if (error) return notice(error.message, "error");
     notice(`Deleted ${testEmps.length} test employee${testEmps.length === 1 ? "" : "s"}`, "success");
     await reloadAll();
   });

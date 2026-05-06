@@ -9,8 +9,17 @@ let _config = null;
 
 export async function getConfig() {
   if (_config) return _config;
-  const res = await fetch("/config.json", { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to load /config.json");
+  const res = await fetch("/config.json");
+  if (!res.ok) {
+    let msg = "Failed to load /config.json";
+    try {
+      const body = await res.json();
+      if (body?.error) msg = body.error;
+    } catch (err) {
+      console.warn("config.json error parse failed:", err);
+    }
+    throw new Error(msg);
+  }
   _config = await res.json();
   if (!_config.supabaseUrl || !_config.supabaseAnonKey) {
     throw new Error(

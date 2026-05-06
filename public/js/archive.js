@@ -1,25 +1,15 @@
 // PTL Timesheet — archive page (list of past timesheets).
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, renderTopbar } from "/js/shared.js";
+import { notice, renderTopbar, getUserContext } from "/js/shared.js";
 
 const sb = await getSupabase();
 
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
-let employee = null;
-let isDeveloper = false;
-let adminRow = null;
-try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
-try {
-  const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
-  adminRow = r.data;
-} catch {}
-try {
-  const r = await sb.from("users").select("id, organisation_id").eq("auth_user_id", session.user.id).maybeSingle();
-  employee = r.data;
-} catch {}
+const ctx = await getUserContext(sb, session);
+const { isDeveloper, adminRow, employee } = ctx;
 
 if (!employee) {
   location.replace("/welcome.html");
@@ -27,6 +17,7 @@ if (!employee) {
 }
 
 renderTopbar({
+  sb,
   session,
   isDeveloper,
   adminRow,

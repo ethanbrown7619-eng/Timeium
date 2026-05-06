@@ -458,7 +458,9 @@ async function loadOrgSettings() {
       .maybeSingle();
     approvalWorkflow = data?.approval_workflow || "manager_then_admin";
     if (data?.clock_tolerance_hours != null) clockTolerance = Number(data.clock_tolerance_hours);
-  } catch {}
+  } catch (err) {
+    console.warn("approval workflow settings load failed:", err);
+  }
 }
 
 function updateInfusionWeekLabel() {

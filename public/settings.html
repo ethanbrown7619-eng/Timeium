@@ -33,11 +33,11 @@
           </div>
           <div class="mb-sm">
             <label for="new-pw">New password</label>
-            <input id="new-pw" type="password" required minlength="6" autocomplete="new-password" style="width:100%" />
+            <input id="new-pw" type="password" required minlength="12" autocomplete="new-password" style="width:100%" />
           </div>
           <div class="mb-md">
             <label for="confirm-pw">Confirm new password</label>
-            <input id="confirm-pw" type="password" required minlength="6" autocomplete="new-password" style="width:100%" />
+            <input id="confirm-pw" type="password" required minlength="12" autocomplete="new-password" style="width:100%" />
           </div>
           <button type="submit" id="pw-btn">Update password</button>
           <span id="pw-status" class="muted small" style="margin-left:12px"></span>
@@ -50,7 +50,7 @@
 
     <script type="module">
       import { getSupabase } from "/js/supabase-client.js";
-      import { notice, renderTopbar, escapeHtml } from "/js/shared.js";
+      import { notice, renderTopbar, escapeHtml, getUserContext, validatePassword, MIN_PASSWORD_LENGTH } from "/js/shared.js";
 
       const sb = await getSupabase();
 
@@ -60,22 +60,11 @@
         throw new Error("not signed in");
       }
 
-      let isDeveloper = false;
-      let adminRow = null;
-      let isManager = false;
-      let me = null;
-      try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
-      try {
-        const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
-        adminRow = r.data;
-      } catch {}
-      try {
-        const r = await sb.from("users").select("id, name, email, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
-        me = r.data;
-        isManager = !!me?.is_manager;
-      } catch {}
+      const ctx = await getUserContext(sb, session);
+      const { isDeveloper, adminRow, isManager, employee: me } = ctx;
 
       renderTopbar({
+        sb,
         session,
         isDeveloper,
         isManager,
@@ -99,7 +88,8 @@
 
         if (!currentPw) return notice("Enter your current password", "error");
         if (pw !== confirm) return notice("New passwords do not match", "error");
-        if (pw.length < 6) return notice("New password must be at least 6 characters", "error");
+        const pwCheck = validatePassword(pw);
+        if (!pwCheck.ok) return notice(pwCheck.reason, "error");
         if (pw === currentPw) return notice("New password must be different from current", "error");
 
         btn.disabled = true;

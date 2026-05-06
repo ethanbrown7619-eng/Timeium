@@ -1,7 +1,7 @@
 // PTL Timesheet — My Timesheets hub + weekly grid editor.
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar } from "/js/shared.js";
+import { notice, escapeHtml, renderTopbar, getUserContext } from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -10,20 +10,8 @@ const sb = await getSupabase();
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
-let employee = null;
-let isDeveloper = false;
-let adminRow = null;
-let isManager = false;
-try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
-try {
-  const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
-  adminRow = r.data;
-} catch {}
-try {
-  const r = await sb.from("users").select("id, organisation_id, name, is_manager, department_id").eq("auth_user_id", session.user.id).maybeSingle();
-  employee = r.data;
-  isManager = !!r.data?.is_manager;
-} catch {}
+const ctx = await getUserContext(sb, session);
+const { isDeveloper, adminRow, isManager, employee } = ctx;
 
 if (!employee) {
   location.replace("/welcome.html");
@@ -39,10 +27,13 @@ if (employee.department_id) {
     const { data: dept } = await sb.from("departments").select("is_overhead, require_task").eq("id", employee.department_id).maybeSingle();
     isOverhead = !!dept?.is_overhead;
     requireTask = !!dept?.require_task;
-  } catch {}
+  } catch (err) {
+    console.warn("department lookup failed:", err);
+  }
 }
 
 renderTopbar({
+  sb,
   session,
   isDeveloper,
   isManager,
@@ -464,7 +455,9 @@ async function renderCalendar() {
         tsMap[t.week_start] = { status: t.status, hours: totals[t.id] || 0 };
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn("calendar load failed:", err);
+  }
 
   let rows = "";
   let weekDate = new Date(start);
@@ -625,7 +618,9 @@ async function loadWeek() {
     tsStatus = data?.status || "draft";
     tsSubmittedAt = data?.submitted_at || null;
     renderStatusBadge();
-  } catch {}
+  } catch (err) {
+    console.warn("status badge refresh failed:", err);
+  }
 
   try {
     const { data, error } = await sb
@@ -1097,7 +1092,9 @@ document.getElementById("submit-confirm-btn").addEventListener("click", async ()
   try {
     try {
       await sb.rpc("snapshot_timesheet_job_statuses", { p_timesheet_id: timesheetId });
-    } catch {}
+    } catch (err) {
+      console.warn("snapshot_timesheet_job_statuses failed:", err);
+    }
 
     const { error } = await sb
       .from("timesheets")
@@ -1134,7 +1131,9 @@ async function loadOrgDeadline() {
       orgPHHours = Number(data.public_holiday_hours) || 8;
       orgPHJobId = data.public_holiday_job_id || null;
     }
-  } catch {}
+  } catch (err) {
+    console.warn("org deadline settings load failed:", err);
+  }
 }
 
 /* ---------------------------------------------------------------- overhead (leave-only) view */

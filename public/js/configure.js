@@ -1017,7 +1017,9 @@ const deptCodesCtl = makeController("deptcodes");
       const { data } = await sb.from("organisations")
         .select("jobs_import_map").eq("id", currentOrgId).maybeSingle();
       mapping = data?.jobs_import_map || {};
-    } catch {}
+    } catch (err) {
+      console.warn("jobs_import_map load failed:", err);
+    }
 
     const codeCol = mapping.code_column || "jobid";
     const descCol = mapping.description_column || "title";

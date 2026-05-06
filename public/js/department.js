@@ -2,7 +2,7 @@
 // Managers see departments they manage; admins/developers see all departments.
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, escapeHtml, renderTopbar } from "/js/shared.js";
+import { notice, escapeHtml, renderTopbar, getUserContext } from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -11,20 +11,8 @@ const sb = await getSupabase();
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
-let employee = null;
-let isDeveloper = false;
-let adminRow = null;
-let isManager = false;
-try { const r = await sb.rpc("is_developer"); isDeveloper = !!r.data; } catch {}
-try {
-  const r = await sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle();
-  adminRow = r.data;
-} catch {}
-try {
-  const r = await sb.from("users").select("id, organisation_id, name, is_manager").eq("auth_user_id", session.user.id).maybeSingle();
-  employee = r.data;
-  isManager = !!employee?.is_manager;
-} catch {}
+const ctx = await getUserContext(sb, session);
+const { isDeveloper, adminRow, isManager, employee } = ctx;
 
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
 
@@ -36,6 +24,7 @@ if (!isManager && !isAdminOrDev) {
 const currentOrgId = employee?.organisation_id || adminRow?.organisation_id || null;
 
 renderTopbar({
+  sb,
   session,
   isDeveloper,
   isManager,
@@ -131,7 +120,6 @@ async function loadOrgSettings() {
 }
 
 async function loadDashboard() {
-  await loadOrgSettings();
 
   const ws = fmtDate(deptWeek);
 
@@ -488,4 +476,5 @@ async function loadPendingLeaveRequests(teamUserIds) {
   });
 }
 
+await loadOrgSettings();
 loadDashboard();

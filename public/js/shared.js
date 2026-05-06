@@ -1,6 +1,17 @@
 // Shared utilities for the Temporium timesheet module.
 // Narrow by design — more helpers land here as later units ship.
 
+/* ---------------------------------------------------------------- password */
+
+export const MIN_PASSWORD_LENGTH = 12;
+
+export function validatePassword(pw) {
+  if (!pw || pw.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, reason: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` };
+  }
+  return { ok: true };
+}
+
 /* ---------------------------------------------------------------- notices */
 
 /** Flash a notice into #notice. Level: info | warn | error | success. */
@@ -115,10 +126,15 @@ export function renderTopbar(opts) {
 
   document.getElementById("signout-link").addEventListener("click", async (e) => {
     e.preventDefault();
-    const { getSupabase } = await import("/js/supabase-client.js");
-    const sb = await getSupabase();
-    await sb.auth.signOut();
-    location.href = "/signin.html";
+    clearUserContextCache();
+    if (opts.sb) {
+      await opts.sb.auth.signOut();
+    } else {
+      const { getSupabase } = await import("/js/supabase-client.js");
+      const sb = await getSupabase();
+      await sb.auth.signOut();
+    }
+    location.replace("/signin.html");
   });
 }
 
@@ -129,28 +145,20 @@ export function renderTopbar(opts) {
 // to the right landing page for whatever role the session turned out to be.
 
 export async function routeAfterAuth(sb) {
-  let claim = null;
-  try {
-    const res = await sb.rpc("claim_employee_by_email");
-    claim = res.data;
-  } catch (err) {
-    console.warn("claim_employee_by_email failed, continuing", err);
-  }
+  // Run claim, dev check, and admins lookup in parallel — none depend on each other.
+  const [claimRes, devRes, adminRes] = await Promise.allSettled([
+    sb.rpc("claim_employee_by_email"),
+    sb.rpc("is_developer"),
+    sb.from("admins").select("role").maybeSingle(),
+  ]);
 
-  let isDeveloper = false;
-  let adminRow = null;
-  try {
-    const res = await sb.rpc("is_developer");
-    isDeveloper = !!res.data;
-  } catch (err) {
-    console.warn("is_developer failed, continuing", err);
-  }
-  try {
-    const res = await sb.from("admins").select("role").maybeSingle();
-    adminRow = res.data;
-  } catch (err) {
-    console.warn("admins lookup failed, continuing", err);
-  }
+  if (claimRes.status === "rejected") console.warn("claim_employee_by_email failed, continuing", claimRes.reason);
+  if (devRes.status === "rejected") console.warn("is_developer failed, continuing", devRes.reason);
+  if (adminRes.status === "rejected") console.warn("admins lookup failed, continuing", adminRes.reason);
+
+  const claim = claimRes.status === "fulfilled" ? claimRes.value?.data : null;
+  const isDeveloper = devRes.status === "fulfilled" && !!devRes.value?.data;
+  const adminRow = adminRes.status === "fulfilled" ? adminRes.value?.data : null;
 
   const isPrivileged = isDeveloper || !!adminRow;
   const isLinked = !!claim?.claimed || !!claim?.already_linked;
@@ -168,16 +176,89 @@ export async function routeAfterAuth(sb) {
       location.replace("/timesheet.html");
       return;
     }
-  } catch {}
+  } catch (err) {
+    console.warn("post-auth users self-lookup failed:", err);
+  }
 
   location.replace("/welcome.html?unlinked=1");
 }
 
 /* ---------------------------------------------------------------- auth */
 //
-// Common auth + role + org resolution used by /admin.html and /staff.html.
-// Returns the pieces every admin-side page needs, or redirects and throws if
-// the caller isn't allowed in.
+// Resolve the current user's role context. Three independent queries run in
+// parallel and are cached in sessionStorage for 5 minutes so navigating
+// between pages doesn't re-fetch them.
+//
+// Pages that just need the basic role context call getUserContext().
+// Admin/staff pages that also need org switching call requireAdmin().
+
+const USER_CONTEXT_TTL_MS = 5 * 60_000;
+
+function userContextKey(session) {
+  return `ptl-ctx:${session?.user?.id || "anon"}`;
+}
+
+export async function getUserContext(sb, session, { force = false } = {}) {
+  if (!session) return null;
+  const cacheKey = userContextKey(session);
+  if (!force) {
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const { data, ts } = JSON.parse(cached);
+        if (Date.now() - ts < USER_CONTEXT_TTL_MS) return data;
+      }
+    } catch (err) {
+      console.warn("getUserContext cache read failed:", err);
+    }
+  }
+
+  const [devRes, adminRes, meRes] = await Promise.allSettled([
+    sb.rpc("is_developer"),
+    sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
+    sb.from("users").select("id, organisation_id, name, is_manager, department_id").eq("auth_user_id", session.user.id).maybeSingle(),
+  ]);
+
+  if (devRes.status === "rejected") console.warn("is_developer failed:", devRes.reason);
+  if (adminRes.status === "rejected") console.warn("admins lookup failed:", adminRes.reason);
+  if (meRes.status === "rejected") console.warn("users self-lookup failed:", meRes.reason);
+
+  const isDeveloper = devRes.status === "fulfilled" && !!devRes.value?.data;
+  const adminRow = adminRes.status === "fulfilled" ? (adminRes.value?.data || null) : null;
+  const employee = meRes.status === "fulfilled" ? (meRes.value?.data || null) : null;
+  const role = adminRow?.role || (isDeveloper ? "developer" : null);
+
+  const data = {
+    isDeveloper,
+    adminRow,
+    employee,
+    isManager: !!employee?.is_manager,
+    role,
+    isAdminOrHigher: role === "admin" || role === "developer",
+  };
+
+  try {
+    sessionStorage.setItem(cacheKey, JSON.stringify({ data, ts: Date.now() }));
+  } catch (err) {
+    console.warn("getUserContext cache write failed:", err);
+  }
+  return data;
+}
+
+export function clearUserContextCache(session) {
+  try {
+    if (session) sessionStorage.removeItem(userContextKey(session));
+    else {
+      // Wipe every key with our prefix when no session is given (e.g., sign-out).
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith("ptl-ctx:")) sessionStorage.removeItem(k);
+      }
+    }
+  } catch (err) {
+    console.warn("clearUserContextCache failed:", err);
+  }
+}
 
 export async function requireAdmin(sb, { allowManager = true } = {}) {
   const { data: { session } } = await sb.auth.getSession();
@@ -186,31 +267,8 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
     throw new Error("not signed in");
   }
 
-  let isDeveloper = false;
-  let adminRow = null;
-  let isManager = false;
-  try {
-    const res = await sb.rpc("is_developer");
-    isDeveloper = !!res.data;
-  } catch {}
-  try {
-    const res = await sb
-      .from("admins")
-      .select("organisation_id, role")
-      .eq("user_id", session.user.id)
-      .maybeSingle();
-    adminRow = res.data;
-  } catch {}
-  try {
-    const res = await sb
-      .from("users")
-      .select("is_manager")
-      .eq("auth_user_id", session.user.id)
-      .maybeSingle();
-    isManager = !!res.data?.is_manager;
-  } catch {}
-
-  const role = adminRow?.role || (isDeveloper ? "developer" : null);
+  const ctx = await getUserContext(sb, session);
+  const role = ctx.role;
   const canView =
     role === "developer" || role === "admin" || (allowManager && role === "manager");
 
@@ -222,25 +280,27 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
   // Resolve the list of orgs the caller can act on, and the current selection.
   let orgs = null;
   let currentOrgId;
-  if (isDeveloper) {
-    const { data: allOrgs } = await sb
+  if (ctx.isDeveloper) {
+    const { data: allOrgs, error } = await sb
       .from("organisations")
       .select("id, name, slug, active")
       .order("id");
+    if (error) console.warn("organisations lookup failed:", error);
     orgs = allOrgs || [];
     const saved = Number(localStorage.getItem("temporium-dev-org-id"));
     currentOrgId = orgs.find((o) => o.id === saved)?.id || orgs[0]?.id || null;
   } else {
-    currentOrgId = adminRow?.organisation_id || null;
+    currentOrgId = ctx.adminRow?.organisation_id || null;
   }
 
   return {
     session,
-    isDeveloper,
-    isManager,
-    adminRow,
+    isDeveloper: ctx.isDeveloper,
+    isManager: ctx.isManager,
+    adminRow: ctx.adminRow,
+    employee: ctx.employee,
     role,
-    isAdminOrHigher: role === "admin" || role === "developer",
+    isAdminOrHigher: ctx.isAdminOrHigher,
     orgs,
     currentOrgId,
   };
