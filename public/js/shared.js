@@ -117,6 +117,20 @@ export function makeLatestOnly(fn) {
 const dashboardCache = new Map();
 const dashboardInFlight = new Map();
 const DASHBOARD_TTL_MS = 30 * 1000;
+const DASHBOARD_CACHE_MAX = 50;
+
+// LRU eviction: Map preserves insertion order, so the first key is the
+// least recently set. Re-insert (delete-then-set) on cache hits to
+// promote, then evict the oldest if we're over the bound. Stops a long
+// dev session that switches orgs from accumulating thousands of entries.
+function rememberDashboardEntry(key, entry) {
+  if (dashboardCache.has(key)) dashboardCache.delete(key);
+  dashboardCache.set(key, entry);
+  while (dashboardCache.size > DASHBOARD_CACHE_MAX) {
+    const oldestKey = dashboardCache.keys().next().value;
+    dashboardCache.delete(oldestKey);
+  }
+}
 
 export function invalidateWeekDashboard(orgId, weekStart) {
   if (orgId == null && weekStart == null) {
@@ -146,29 +160,38 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart, { signal } = 
   if (!orgId || !weekStart) return null;
   const key = `${orgId}:${weekStart}`;
   const cached = dashboardCache.get(key);
-  if (cached && Date.now() - cached.ts < DASHBOARD_TTL_MS) return cached.data;
+  if (cached && Date.now() - cached.ts < DASHBOARD_TTL_MS) {
+    // Promote to most-recently-used in the LRU.
+    rememberDashboardEntry(key, cached);
+    return cached.data;
+  }
 
   // Two concurrent callers (e.g. tab switch firing while a nav-click is still
   // in flight) should share a single fetch instead of doubling the load.
+  // The shared fetch deliberately does NOT bind to the first caller's
+  // AbortSignal: if it did and that caller was then superseded via
+  // makeLatestOnly, the second caller (still latest) would receive an
+  // aborted promise that they never consented to. makeLatestOnly cancels
+  // at the consumer level (token check); the underlying request runs to
+  // completion and serves both callers from the cache.
   const inFlight = dashboardInFlight.get(key);
   if (inFlight) return inFlight;
 
   const promise = (async () => {
-    const withSignal = (q) => signal ? q.abortSignal(signal) : q;
     const [empRes, deptRes, tsRes] = await Promise.all([
-      withSignal(sb.from("users")
+      sb.from("users")
         .select("id, name, department_id, active")
         .eq("organisation_id", orgId)
         .eq("active", true)
-        .order("name")),
-      withSignal(sb.from("departments")
+        .order("name"),
+      sb.from("departments")
         .select("id, name, manager_id, is_overhead, active")
         .eq("organisation_id", orgId)
-        .order("name")),
-      withSignal(sb.from("timesheets")
+        .order("name"),
+      sb.from("timesheets")
         .select("id, user_id, status")
         .eq("organisation_id", orgId)
-        .eq("week_start", weekStart)),
+        .eq("week_start", weekStart),
     ]);
 
     const employees = empRes.data || [];
@@ -182,11 +205,10 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart, { signal } = 
     const hoursByTsId = {};
     let entries = [];
     if (tsIds.length) {
-      const entryQuery = sb
+      const { data } = await sb
         .from("timesheet_entries")
         .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
         .in("timesheet_id", tsIds);
-      const { data } = await (signal ? entryQuery.abortSignal(signal) : entryQuery);
       entries = data || [];
       for (const e of entries) {
         const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
@@ -195,7 +217,7 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart, { signal } = 
     }
 
     const data = { employees, departments, timesheets, timesheetsByUserId, entries, hoursByTsId };
-    dashboardCache.set(key, { data, ts: Date.now() });
+    rememberDashboardEntry(key, { data, ts: Date.now() });
     return data;
   })();
 
@@ -400,6 +422,11 @@ export function renderTopbar(opts) {
   document.getElementById("signout-link").addEventListener("click", async (e) => {
     e.preventDefault();
     clearUserContextCache();
+    // Wipe the dashboard data cache too. If a different operator signs in
+    // on the same browser before the 30s TTL elapses, they'd otherwise see
+    // the previous user's cached dashboard rendered against their own
+    // (potentially different-scope) view.
+    invalidateWeekDashboard();
     if (opts.sb) {
       await opts.sb.auth.signOut();
     } else {

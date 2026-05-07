@@ -22,6 +22,13 @@ const ctx = await getUserContext(sb, session);
 const { isDeveloper, adminRow, isManager, employee } = ctx;
 
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
+// Leave RPCs (approve_leave_request, reject_leave_request,
+// update_approved_leave_request, revoke_leave_request) are gated on
+// is_manager_of() in SQL, which only matches admins.role in
+// ('admin','manager','developer'). A users.is_manager-only "department lead"
+// can see the dashboard but their RPC calls are rejected. Hide the action
+// buttons from them so they don't get the "Not authorised" error.
+const canActOnLeave = isAdminOrDev || adminRow?.role === "manager";
 
 if (!isManager && !isAdminOrDev) {
   location.replace("/timesheet.html");
@@ -297,8 +304,10 @@ async function loadApprovedLeaveRequests(teamUserIds) {
       <td class="num">${r.hours_per_day}</td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
       <td style="white-space:nowrap">
-        <button class="ghost small edit-lr-btn">Edit</button>
-        <button class="ghost small revoke-lr-btn">Revoke</button>
+        ${canActOnLeave ? `
+          <button class="ghost small edit-lr-btn">Edit</button>
+          <button class="ghost small revoke-lr-btn">Revoke</button>
+        ` : ""}
       </td>
     </tr>`;
   }).join("");
@@ -401,8 +410,10 @@ async function loadPendingLeaveRequests(teamUserIds) {
       <td class="num">${r.hours_per_day}</td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
       <td style="white-space:nowrap">
-        <button class="small approve-lr-btn">Approve</button>
-        <button class="ghost small reject-lr-btn">Reject</button>
+        ${canActOnLeave ? `
+          <button class="small approve-lr-btn">Approve</button>
+          <button class="ghost small reject-lr-btn">Reject</button>
+        ` : `<span class="small muted">Awaiting manager</span>`}
       </td>
     </tr>`;
   }).join("");

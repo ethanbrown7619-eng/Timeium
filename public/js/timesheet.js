@@ -88,7 +88,15 @@ let orgPHJobId = null;
 function weekLabel() {
   const end = addDays(weekStart, 6);
   const opts = { day: "numeric", month: "short" };
-  return `${weekStart.toLocaleDateString(undefined, opts)} — ${end.toLocaleDateString(undefined, opts)}, ${end.getFullYear()}`;
+  const startYear = weekStart.getFullYear();
+  const endYear = end.getFullYear();
+  if (startYear === endYear) {
+    return `${weekStart.toLocaleDateString(undefined, opts)} — ${end.toLocaleDateString(undefined, opts)}, ${endYear}`;
+  }
+  // Week straddles a year boundary (e.g. 30 Dec 2025 — 5 Jan 2026). Show
+  // both years so it isn't read as a single year.
+  const optsWithYear = { day: "numeric", month: "short", year: "numeric" };
+  return `${weekStart.toLocaleDateString(undefined, optsWithYear)} — ${end.toLocaleDateString(undefined, optsWithYear)}`;
 }
 
 const thisMonday = getMonday(new Date());
@@ -637,12 +645,14 @@ async function fetchAllPaged(table, selectCols, orderCol, extraFilter) {
 }
 
 async function loadLookups() {
+  // Load every status (not just ACTIVE) so historical timesheet entries
+  // referencing archived tasks / dept-codes still render their codes.
+  // Filter ACTIVE-only when building the autocomplete suggestion lists so
+  // users can't pick archived ones for new rows.
   const [jobsResult, tasksResult, deptResult] = await Promise.all([
     fetchAllPaged("jobs", "id, job_code, description, status, is_leave", "job_code"),
-    fetchAllPaged("tasks", "id, task_code, description, status", "task_code",
-      (q) => q.eq("status", "ACTIVE")),
-    fetchAllPaged("department_codes", "id, code, description, status", "code",
-      (q) => q.eq("status", "ACTIVE")),
+    fetchAllPaged("tasks", "id, task_code, description, status", "task_code"),
+    fetchAllPaged("department_codes", "id, code, description, status", "code"),
   ]);
 
   jobs = jobsResult;
@@ -651,9 +661,17 @@ async function loadLookups() {
   jobsById = new Map(jobs.map((j) => [j.id, j]));
   tasksById = new Map(tasks.map((t) => [t.id, t]));
   deptCodesById = new Map(deptCodes.map((d) => [d.id, d]));
+  // jobs already loaded all statuses; matching tasks/dept_codes lookup
+  // policy now too. Autocomplete still only suggests ACTIVE tasks/codes
+  // so archived ones can't be picked for new rows but still render their
+  // codes on read-only historical entries.
   jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
-  deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
-  taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
+  deptItems = deptCodes
+    .filter((dc) => dc.status === "ACTIVE")
+    .map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
+  taskItems = tasks
+    .filter((t) => t.status === "ACTIVE")
+    .map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
 }
 
 /* ---------------------------------------------------------------- load timesheet (editor) */
@@ -662,7 +680,16 @@ async function loadWeek() {
   // The editor depends on jobs/tasks/dept codes (lookups), holidays, and the
   // org deadline settings. Hub navigation pre-warms these promises, so this
   // is usually a no-op by the time the user opens the editor.
-  await Promise.all([ensureLookups(), holidaysPromise, orgDeadlinePromise]);
+  // Holidays are scoped to currentYear ± 1 at boot; if the user opens a
+  // week in a different year (URL deep-link to an old archive or future
+  // schedule), pull that year's holidays now so the date row marks them
+  // and autofillPublicHolidays sees them.
+  await Promise.all([
+    ensureLookups(),
+    holidaysPromise,
+    orgDeadlinePromise,
+    loadHolidaysForYear(weekStart.getFullYear()),
+  ]);
 
   document.getElementById("week-label").textContent = weekLabel();
 
@@ -1029,7 +1056,13 @@ function wireRow(row, idx) {
     let timer;
     inp.addEventListener("input", () => {
       const day = inp.dataset.day;
-      entries[idx][`${day}_hours`] = parseFloat(inp.value) || 0;
+      // Clamp to [0, 24] on every keystroke. The <input min/max> only
+      // validates on form submit, and parseFloat happily accepts negative
+      // values or scientific notation. The DB also has a CHECK constraint
+      // (migration 054); this is the user-friendly client-side guard.
+      const raw = parseFloat(inp.value);
+      const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(24, raw)) : 0;
+      entries[idx][`${day}_hours`] = clamped;
       const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
       row.querySelector(".row-total strong").textContent = rowTotal;
       updateTotals();
@@ -1222,11 +1255,23 @@ document.getElementById("submit-confirm-btn").addEventListener("click", async ()
       console.warn("snapshot_timesheet_job_statuses failed:", err);
     }
 
-    const { error } = await sb
+    const { data: rows, error } = await sb
       .from("timesheets")
       .update({ status: "submitted", submitted_at: new Date().toISOString() })
-      .eq("id", timesheetId);
+      .eq("id", timesheetId)
+      .in("status", ["draft", "rejected"])
+      .select("id");
     if (error) throw error;
+    if (!rows?.length) {
+      // Either a manager rejected/approved while the dialog was open, or
+      // the row no longer satisfies the RLS predicate. Reload so the user
+      // sees the current state instead of a phantom "submitted" UI.
+      notice("This timesheet is no longer in a draft state — reloading", "warn");
+      btn.disabled = false;
+      btn.textContent = "Submit Timesheet";
+      await loadWeek();
+      return;
+    }
 
     tsStatus = "submitted";
     tsSubmittedAt = new Date().toISOString();

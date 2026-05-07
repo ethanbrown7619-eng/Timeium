@@ -873,12 +873,24 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
 
 /* ---------- shared: sort + render ---------- */
 
-let lvSortCol = "employee";
-let lvSortAsc = true;
+// Per-view sort state. The waged and salaried tables render into different
+// preview containers; sharing one set of globals meant clicking a header
+// in one view rewrote the other view's sort and re-rendered it on the
+// next show. Keyed by the previewId so it's stable across re-renders.
+const lvSortStateByView = new Map();
 
-function sortLvRows(rows) {
-  const col = lvSortCol;
-  const dir = lvSortAsc ? 1 : -1;
+function getLvSortState(previewId) {
+  let s = lvSortStateByView.get(previewId);
+  if (!s) {
+    s = { col: "employee", asc: true };
+    lvSortStateByView.set(previewId, s);
+  }
+  return s;
+}
+
+function sortLvRows(rows, previewId) {
+  const { col, asc } = getLvSortState(previewId);
+  const dir = asc ? 1 : -1;
   return [...rows].sort((a, b) => {
     let cmp = 0;
     const av = a[col], bv = b[col];
@@ -896,9 +908,10 @@ function sortLvRows(rows) {
   });
 }
 
-function lvSortArrow(col) {
-  if (lvSortCol !== col) return "";
-  return lvSortAsc ? " &#9650;" : " &#9660;";
+function lvSortArrow(col, previewId) {
+  const s = getLvSortState(previewId);
+  if (s.col !== col) return "";
+  return s.asc ? " &#9650;" : " &#9660;";
 }
 
 const LV_COLS = [
@@ -914,13 +927,13 @@ const LV_COLS = [
 
 function renderLvRows(previewId, rows) {
   const preview = document.getElementById(previewId);
-  const sorted = sortLvRows(rows);
+  const sorted = sortLvRows(rows, previewId);
 
   preview.innerHTML = `
     <table class="small lv-sortable">
       <thead>
         <tr>
-          ${LV_COLS.map((c) => `<th class="${c.key === "hours" ? "num " : ""}lv-sort-hdr" data-col="${c.key}" style="cursor:pointer;user-select:none">${c.label}${lvSortArrow(c.key)}</th>`).join("")}
+          ${LV_COLS.map((c) => `<th class="${c.key === "hours" ? "num " : ""}lv-sort-hdr" data-col="${c.key}" style="cursor:pointer;user-select:none">${c.label}${lvSortArrow(c.key, previewId)}</th>`).join("")}
         </tr>
       </thead>
       <tbody>
@@ -943,8 +956,9 @@ function renderLvRows(previewId, rows) {
   preview.querySelectorAll(".lv-sort-hdr").forEach((th) => {
     th.addEventListener("click", () => {
       const col = th.dataset.col;
-      if (lvSortCol === col) lvSortAsc = !lvSortAsc;
-      else { lvSortCol = col; lvSortAsc = true; }
+      const s = getLvSortState(previewId);
+      if (s.col === col) s.asc = !s.asc;
+      else { s.col = col; s.asc = true; }
       renderLvRows(previewId, rows);
     });
   });
@@ -1308,6 +1322,11 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
       created++;
     }
 
+    // Test data generation creates timesheets in arbitrary states across
+    // arbitrary weeks; flush every cached week for the org so the
+    // dashboard reflects what was just generated instead of waiting on
+    // the 30s TTL.
+    invalidateWeekDashboard(currentOrgId);
     statusMsg.textContent = "";
     resultsEl.style.display = "";
     resultsEl.innerHTML = `
