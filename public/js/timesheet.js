@@ -73,6 +73,11 @@ let deptCodes = [];
 let jobsById = new Map();
 let tasksById = new Map();
 let deptCodesById = new Map();
+// Autocomplete-ready item lists derived from jobs/tasks/deptCodes; rebuilt
+// in loadLookups, not on every renderGrid pass.
+let jobItems = [];
+let deptItems = [];
+let taskItems = [];
 let holidays = {};
 let calMonth = new Date();
 let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
@@ -646,6 +651,9 @@ async function loadLookups() {
   jobsById = new Map(jobs.map((j) => [j.id, j]));
   tasksById = new Map(tasks.map((t) => [t.id, t]));
   deptCodesById = new Map(deptCodes.map((d) => [d.id, d]));
+  jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
+  deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
+  taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
 }
 
 /* ---------------------------------------------------------------- load timesheet (editor) */
@@ -867,10 +875,6 @@ function renderGrid() {
   const body = document.getElementById("ts-body");
   const isSubmitted = isTsSubmittedOrApproved(tsStatus);
 
-  const jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
-  const deptItems = deptCodes.map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
-  const taskItems = tasks.map((t) => ({ ...t, _label: t.task_code, _desc: t.description || "" }));
-
   // Show/hide submit bar based on status
   const submitBtn = document.getElementById("submit-ts-btn");
   const lockedMsg = document.getElementById("ts-locked-msg");
@@ -897,143 +901,179 @@ function renderGrid() {
     return;
   }
 
-  body.innerHTML = entries.map((e, idx) => {
-    const job = jobsById.get(e.job_id);
-    const jobStatus = isSubmitted ? (e.job_status_snapshot || job?.status || "") : (job?.status || "");
-    const dept = deptCodesById.get(e.dept_code_id);
-    const task = tasksById.get(e.task_id);
-    const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
-
-    const ro = isSubmitted ? "readonly" : "";
-    const dis = isSubmitted ? "disabled" : "";
-    const isLeaveRow = !!job?.is_leave;
-    const leaveRo = isLeaveRow ? "readonly" : "";
-    const deptRo = isSubmitted || isLeaveRow ? "readonly" : "";
-    const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
-
-    return `
-      <tr data-entry-id="${e.id}" data-idx="${idx}">
-        <td>
-          <div class="ac-wrap">
-            <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" ${ro} />
-            <div class="ac-list"></div>
-          </div>
-        </td>
-        <td><span class="small status-badge status-${jobStatus.toLowerCase()}">${escapeHtml(jobStatus)}</span></td>
-        <td>
-          <div class="ac-wrap">
-            <input class="ac-dept" value="${isLeaveRow ? "" : escapeHtml(dept?.code || "")}" data-selected-id="${isLeaveRow ? "" : (e.dept_code_id || "")}" placeholder="${isLeaveRow ? "—" : "Dept…"}" ${deptRo} style="${isLeaveRow ? "background:var(--surface-alt);color:var(--text-muted)" : ""}" />
-            <div class="ac-list"></div>
-          </div>
-        </td>
-        <td>
-          <div class="ac-wrap">
-            <input class="ac-task" value="${isLeaveRow ? "" : escapeHtml(task?.task_code || "")}" data-selected-id="${isLeaveRow ? "" : (e.task_id || "")}" placeholder="${isLeaveRow ? "—" : "Task…"}" ${taskRo} style="${isLeaveRow ? "background:var(--surface-alt);color:var(--text-muted)" : ""}" />
-            <div class="ac-list"></div>
-          </div>
-        </td>
-        <td>
-          <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" ${ro} />
-        </td>
-        ${DAYS.map((d, i) => `
-          <td class="day-col${i >= 5 ? " day-weekend" : ""}">
-            <input type="number" class="hours-input" data-day="${d}"
-              value="${Number(e[`${d}_hours`]) || ""}" min="0" max="24" step="0.25"
-              style="text-align:center" ${ro} />
-          </td>
-        `).join("")}
-        <td class="day-col row-total"><strong>${rowTotal}</strong></td>
-        <td>
-          ${isSubmitted ? "" : `<button class="ghost small delete-entry-btn" title="Remove row">✕</button>`}
-        </td>
-      </tr>
-    `;
-  }).join("");
+  body.innerHTML = entries.map((e, idx) => rowHtml(e, idx, isSubmitted)).join("");
 
   if (!isSubmitted) {
-    // Wire up autocomplete
     body.querySelectorAll("tr[data-idx]").forEach((row) => {
-      const idx = Number(row.dataset.idx);
-
-      setupAC(row.querySelector(".ac-job"), jobItems, {
-        requireQuery: true,
-        onSelect: (it) => {
-          entries[idx].job_id = it.id;
-          const fields = ["job_id"];
-          if (it.is_leave) {
-            entries[idx].dept_code_id = null;
-            entries[idx].task_id = null;
-            fields.push("dept_code_id", "task_id");
-          }
-          saveEntry(entries[idx], fields);
-          renderGrid();
-        },
-        onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx], ["job_id"]); renderGrid(); },
-      });
-
-      const entryJob = jobsById.get(entries[idx]?.job_id);
-      if (!entryJob?.is_leave) {
-        setupAC(row.querySelector(".ac-dept"), deptItems, {
-          onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx], ["dept_code_id"]); },
-          onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx], ["dept_code_id"]); },
-        });
-      }
-
-      if (!entryJob?.is_leave) {
-        setupAC(row.querySelector(".ac-task"), taskItems, {
-          onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx], ["task_id"]); },
-          onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx], ["task_id"]); },
-        });
-      }
-    });
-
-    // Description debounced save
-    body.querySelectorAll(".desc-input").forEach((inp) => {
-      let timer;
-      inp.addEventListener("input", (e) => {
-        const row = e.target.closest("tr");
-        const idx = Number(row.dataset.idx);
-        entries[idx].description = inp.value;
-        clearTimeout(timer);
-        timer = setTimeout(() => saveEntry(entries[idx], ["description"]), 600);
-      });
-    });
-
-    // Hours inputs
-    body.querySelectorAll(".hours-input").forEach((inp) => {
-      let timer;
-      inp.addEventListener("input", (e) => {
-        const row = e.target.closest("tr");
-        const idx = Number(row.dataset.idx);
-        const day = inp.dataset.day;
-        entries[idx][`${day}_hours`] = parseFloat(inp.value) || 0;
-        const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
-        row.querySelector(".row-total strong").textContent = rowTotal;
-        updateTotals();
-        clearTimeout(timer);
-        timer = setTimeout(() => saveEntry(entries[idx], [`${day}_hours`]), 400);
-      });
-    });
-
-    // Delete buttons
-    body.querySelectorAll(".delete-entry-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        const row = e.target.closest("tr");
-        const entryId = Number(row.dataset.entryId);
-        try {
-          const { error } = await sb.from("timesheet_entries").delete().eq("id", entryId);
-          if (error) throw error;
-          entries = entries.filter((x) => x.id !== entryId);
-          renderGrid();
-          notice("Row removed", "success");
-        } catch (err) {
-          notice(err.message || "Delete failed", "error");
-        }
-      });
+      wireRow(row, Number(row.dataset.idx));
     });
   }
 
   updateTotals();
+}
+
+// Pure row template — used by renderGrid and replaceRowInPlace.
+function rowHtml(e, idx, isSubmitted) {
+  const job = jobsById.get(e.job_id);
+  const jobStatus = isSubmitted ? (e.job_status_snapshot || job?.status || "") : (job?.status || "");
+  const dept = deptCodesById.get(e.dept_code_id);
+  const task = tasksById.get(e.task_id);
+  const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
+
+  const ro = isSubmitted ? "readonly" : "";
+  const isLeaveRow = !!job?.is_leave;
+  const deptRo = isSubmitted || isLeaveRow ? "readonly" : "";
+  const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
+
+  return `
+    <tr data-entry-id="${e.id}" data-idx="${idx}">
+      <td>
+        <div class="ac-wrap">
+          <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" ${ro} />
+          <div class="ac-list"></div>
+        </div>
+      </td>
+      <td><span class="small status-badge status-${jobStatus.toLowerCase()}">${escapeHtml(jobStatus)}</span></td>
+      <td>
+        <div class="ac-wrap">
+          <input class="ac-dept" value="${isLeaveRow ? "" : escapeHtml(dept?.code || "")}" data-selected-id="${isLeaveRow ? "" : (e.dept_code_id || "")}" placeholder="${isLeaveRow ? "—" : "Dept…"}" ${deptRo} style="${isLeaveRow ? "background:var(--surface-alt);color:var(--text-muted)" : ""}" />
+          <div class="ac-list"></div>
+        </div>
+      </td>
+      <td>
+        <div class="ac-wrap">
+          <input class="ac-task" value="${isLeaveRow ? "" : escapeHtml(task?.task_code || "")}" data-selected-id="${isLeaveRow ? "" : (e.task_id || "")}" placeholder="${isLeaveRow ? "—" : "Task…"}" ${taskRo} style="${isLeaveRow ? "background:var(--surface-alt);color:var(--text-muted)" : ""}" />
+          <div class="ac-list"></div>
+        </div>
+      </td>
+      <td>
+        <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" ${ro} />
+      </td>
+      ${DAYS.map((d, i) => `
+        <td class="day-col${i >= 5 ? " day-weekend" : ""}">
+          <input type="number" class="hours-input" data-day="${d}"
+            value="${Number(e[`${d}_hours`]) || ""}" min="0" max="24" step="0.25"
+            style="text-align:center" ${ro} />
+        </td>
+      `).join("")}
+      <td class="day-col row-total"><strong>${rowTotal}</strong></td>
+      <td>
+        ${isSubmitted ? "" : `<button class="ghost small delete-entry-btn" title="Remove row">✕</button>`}
+      </td>
+    </tr>
+  `;
+}
+
+// Wire all input handlers + autocompletes for a single row. Used by both
+// the full renderGrid pass and replaceRowInPlace.
+function wireRow(row, idx) {
+  setupAC(row.querySelector(".ac-job"), jobItems, {
+    requireQuery: true,
+    onSelect: (it) => {
+      const wasLeave = !!jobsById.get(entries[idx].job_id)?.is_leave;
+      entries[idx].job_id = it.id;
+      const fields = ["job_id"];
+      if (it.is_leave) {
+        entries[idx].dept_code_id = null;
+        entries[idx].task_id = null;
+        fields.push("dept_code_id", "task_id");
+      }
+      saveEntry(entries[idx], fields);
+      // Only the status badge cell needs refreshing when is_leave didn't
+      // flip; the autocomplete already wrote the input value. When it
+      // flips, the dept/task cells need new readonly state — replace the
+      // single row in place instead of redrawing the whole grid.
+      if (wasLeave === !!it.is_leave) {
+        updateRowStatusBadge(row, entries[idx]);
+      } else {
+        replaceRowInPlace(idx);
+      }
+    },
+    onClear: () => {
+      const wasLeave = !!jobsById.get(entries[idx].job_id)?.is_leave;
+      entries[idx].job_id = null;
+      saveEntry(entries[idx], ["job_id"]);
+      if (wasLeave) {
+        // Dept/task were forced read-only; need a re-render so they go
+        // back to editable.
+        replaceRowInPlace(idx);
+      } else {
+        updateRowStatusBadge(row, entries[idx]);
+      }
+    },
+  });
+
+  const entryJob = jobsById.get(entries[idx]?.job_id);
+  if (!entryJob?.is_leave) {
+    setupAC(row.querySelector(".ac-dept"), deptItems, {
+      onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx], ["dept_code_id"]); },
+      onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx], ["dept_code_id"]); },
+    });
+    setupAC(row.querySelector(".ac-task"), taskItems, {
+      onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx], ["task_id"]); },
+      onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx], ["task_id"]); },
+    });
+  }
+
+  const descInp = row.querySelector(".desc-input");
+  if (descInp) {
+    let descTimer;
+    descInp.addEventListener("input", () => {
+      entries[idx].description = descInp.value;
+      clearTimeout(descTimer);
+      descTimer = setTimeout(() => saveEntry(entries[idx], ["description"]), 600);
+    });
+  }
+
+  row.querySelectorAll(".hours-input").forEach((inp) => {
+    let timer;
+    inp.addEventListener("input", () => {
+      const day = inp.dataset.day;
+      entries[idx][`${day}_hours`] = parseFloat(inp.value) || 0;
+      const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
+      row.querySelector(".row-total strong").textContent = rowTotal;
+      updateTotals();
+      clearTimeout(timer);
+      timer = setTimeout(() => saveEntry(entries[idx], [`${day}_hours`]), 400);
+    });
+  });
+
+  const delBtn = row.querySelector(".delete-entry-btn");
+  if (delBtn) {
+    delBtn.addEventListener("click", async () => {
+      const entryId = Number(row.dataset.entryId);
+      try {
+        const { error } = await sb.from("timesheet_entries").delete().eq("id", entryId);
+        if (error) throw error;
+        entries = entries.filter((x) => x.id !== entryId);
+        renderGrid();
+        notice("Row removed", "success");
+      } catch (err) {
+        notice(err.message || "Delete failed", "error");
+      }
+    });
+  }
+}
+
+function updateRowStatusBadge(row, entry) {
+  const job = jobsById.get(entry.job_id);
+  const status = job?.status || "";
+  const cell = row.children[1];
+  if (cell) {
+    cell.innerHTML = `<span class="small status-badge status-${status.toLowerCase()}">${escapeHtml(status)}</span>`;
+  }
+}
+
+function replaceRowInPlace(idx) {
+  const body = document.getElementById("ts-body");
+  const oldRow = body.querySelector(`tr[data-idx="${idx}"]`);
+  if (!oldRow) { renderGrid(); return; }
+  const isSubmitted = isTsSubmittedOrApproved(tsStatus);
+  const tmp = document.createElement("tbody");
+  tmp.innerHTML = rowHtml(entries[idx], idx, isSubmitted).trim();
+  const newRow = tmp.firstElementChild;
+  oldRow.replaceWith(newRow);
+  if (!isSubmitted) wireRow(newRow, idx);
 }
 
 function updateTotals() {

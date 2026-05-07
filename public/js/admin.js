@@ -32,8 +32,9 @@ renderTopbar({
   onOrgChange: (id) => {
     currentOrgId = id;
     localStorage.setItem("ptl-dev-org-id", String(id));
-    if (activeTab === "dashboard") loadDashboard();
-    if (activeTab === "clockvts") loadClockComparison();
+    if (activeTab === "dashboard") navLoadDashboard();
+    if (activeTab === "clockvts") navLoadClockComparison();
+    if (activeTab === "infusion") navLoadInfusionStatus();
   },
   active: "admin",
 });
@@ -69,8 +70,8 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-infusion").style.display     = activeTab === "infusion"    ? "" : "none";
     document.getElementById("tab-leavereport").style.display  = activeTab === "leavereport" ? "" : "none";
     document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
-    if (activeTab === "clockvts") loadClockComparison();
-    if (activeTab === "infusion") loadInfusionStatus();
+    if (activeTab === "clockvts") navLoadClockComparison();
+    if (activeTab === "infusion") navLoadInfusionStatus();
     if (activeTab === "leavereport") { if (lvSubView === "waged") loadWagedReport(); else loadSalariedReport(); }
     if (activeTab === "devtools") loadDevToolsForm();
   });
@@ -483,17 +484,19 @@ async function loadInfusionStatus(signal) {
   barsEl.innerHTML = html;
 }
 
+const navLoadInfusionStatus = makeLatestOnly((signal) => loadInfusionStatus(signal));
+
 document.getElementById("inf-prev").addEventListener("click", () => {
   infWeek = addDays(infWeek, -7);
   updateInfusionWeekLabel();
   infRows = [];
-  loadInfusionStatus();
+  navLoadInfusionStatus();
 });
 document.getElementById("inf-next").addEventListener("click", () => {
   infWeek = addDays(infWeek, 7);
   updateInfusionWeekLabel();
   infRows = [];
-  loadInfusionStatus();
+  navLoadInfusionStatus();
 });
 
 updateInfusionWeekLabel();
@@ -504,32 +507,37 @@ async function buildInfusionRows() {
   const ws = fmtDate(infWeek);
   const includeDrafts = document.getElementById("inf-include-drafts").checked;
 
-  // Load employees with rates
-  const { data: employees } = await sb
-    .from("users")
-    .select("id, name, employee_code, cost_rate, sell_rate, department_id, active")
-    .eq("organisation_id", currentOrgId)
-    .eq("active", true)
-    .order("name");
+  // Reuse the cached dashboard data for users / departments / timesheets,
+  // then fetch only the extra columns (rate fields, employee_code) keyed
+  // by id and merge them in. Saves three full org-scoped fetches per
+  // export when the user is also viewing the dashboard or infusion-status
+  // panel.
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
+  if (!dash) return [];
 
-  // Load departments for fallback rates
-  const { data: departments } = await sb
-    .from("departments")
-    .select("id, name, cost_rate, sell_rate, is_overhead")
-    .eq("organisation_id", currentOrgId);
-
-  // Load timesheets for the week
-  let tsQuery = sb
-    .from("timesheets")
-    .select("id, user_id, status")
-    .eq("organisation_id", currentOrgId)
-    .eq("week_start", ws);
+  let timesheets = dash.timesheets;
   if (!includeDrafts) {
-    tsQuery = tsQuery.in("status", ["submitted", "approved"]);
+    timesheets = timesheets.filter((t) => t.status === "submitted" || t.status === "approved");
   }
-  const { data: timesheets } = await tsQuery;
+  if (!timesheets.length) return [];
 
-  if (!timesheets?.length) return [];
+  const empIds = dash.employees.map((e) => e.id);
+  const deptIds = dash.departments.map((d) => d.id);
+
+  const [empExtraRes, deptExtraRes] = await Promise.all([
+    empIds.length
+      ? sb.from("users").select("id, employee_code, cost_rate, sell_rate").in("id", empIds)
+      : Promise.resolve({ data: [] }),
+    deptIds.length
+      ? sb.from("departments").select("id, cost_rate, sell_rate").in("id", deptIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const empExtraById = new Map((empExtraRes.data || []).map((r) => [r.id, r]));
+  const deptExtraById = new Map((deptExtraRes.data || []).map((r) => [r.id, r]));
+
+  const employees = dash.employees.map((e) => ({ ...e, ...(empExtraById.get(e.id) || {}) }));
+  const departments = dash.departments.map((d) => ({ ...d, ...(deptExtraById.get(d.id) || {}) }));
 
   const tsIds = timesheets.map((t) => t.id);
 
@@ -1332,5 +1340,5 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
 
 /* ---------------------------------------------------------------- boot */
 
-loadOrgSettings().then(() => loadInfusionStatus());
-loadDashboard();
+loadOrgSettings().then(() => navLoadInfusionStatus());
+navLoadDashboard();

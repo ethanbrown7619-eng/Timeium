@@ -111,6 +111,7 @@ export function makeLatestOnly(fn) {
 }
 
 const dashboardCache = new Map();
+const dashboardInFlight = new Map();
 const DASHBOARD_TTL_MS = 30 * 1000;
 
 export function invalidateWeekDashboard(orgId, weekStart) {
@@ -143,49 +144,65 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart, { signal } = 
   const cached = dashboardCache.get(key);
   if (cached && Date.now() - cached.ts < DASHBOARD_TTL_MS) return cached.data;
 
-  const withSignal = (q) => signal ? q.abortSignal(signal) : q;
-  const [empRes, deptRes, tsRes] = await Promise.all([
-    withSignal(sb.from("users")
-      .select("id, name, department_id, active")
-      .eq("organisation_id", orgId)
-      .eq("active", true)
-      .order("name")),
-    withSignal(sb.from("departments")
-      .select("id, name, manager_id, is_overhead, active")
-      .eq("organisation_id", orgId)
-      .order("name")),
-    withSignal(sb.from("timesheets")
-      .select("id, user_id, status")
-      .eq("organisation_id", orgId)
-      .eq("week_start", weekStart)),
-  ]);
+  // Two concurrent callers (e.g. tab switch firing while a nav-click is still
+  // in flight) should share a single fetch instead of doubling the load.
+  const inFlight = dashboardInFlight.get(key);
+  if (inFlight) return inFlight;
 
-  const employees = empRes.data || [];
-  const departments = deptRes.data || [];
-  const timesheets = tsRes.data || [];
+  const promise = (async () => {
+    const withSignal = (q) => signal ? q.abortSignal(signal) : q;
+    const [empRes, deptRes, tsRes] = await Promise.all([
+      withSignal(sb.from("users")
+        .select("id, name, department_id, active")
+        .eq("organisation_id", orgId)
+        .eq("active", true)
+        .order("name")),
+      withSignal(sb.from("departments")
+        .select("id, name, manager_id, is_overhead, active")
+        .eq("organisation_id", orgId)
+        .order("name")),
+      withSignal(sb.from("timesheets")
+        .select("id, user_id, status")
+        .eq("organisation_id", orgId)
+        .eq("week_start", weekStart)),
+    ]);
 
-  const timesheetsByUserId = {};
-  for (const ts of timesheets) timesheetsByUserId[ts.user_id] = ts;
+    const employees = empRes.data || [];
+    const departments = deptRes.data || [];
+    const timesheets = tsRes.data || [];
 
-  const tsIds = timesheets.map((t) => t.id);
-  const hoursByTsId = {};
-  let entries = [];
-  if (tsIds.length) {
-    const entryQuery = sb
-      .from("timesheet_entries")
-      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-      .in("timesheet_id", tsIds);
-    const { data } = await (signal ? entryQuery.abortSignal(signal) : entryQuery);
-    entries = data || [];
-    for (const e of entries) {
-      const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
-      hoursByTsId[e.timesheet_id] = (hoursByTsId[e.timesheet_id] || 0) + sum;
+    const timesheetsByUserId = {};
+    for (const ts of timesheets) timesheetsByUserId[ts.user_id] = ts;
+
+    const tsIds = timesheets.map((t) => t.id);
+    const hoursByTsId = {};
+    let entries = [];
+    if (tsIds.length) {
+      const entryQuery = sb
+        .from("timesheet_entries")
+        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .in("timesheet_id", tsIds);
+      const { data } = await (signal ? entryQuery.abortSignal(signal) : entryQuery);
+      entries = data || [];
+      for (const e of entries) {
+        const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
+        hoursByTsId[e.timesheet_id] = (hoursByTsId[e.timesheet_id] || 0) + sum;
+      }
     }
-  }
 
-  const data = { employees, departments, timesheets, timesheetsByUserId, entries, hoursByTsId };
-  dashboardCache.set(key, { data, ts: Date.now() });
-  return data;
+    const data = { employees, departments, timesheets, timesheetsByUserId, entries, hoursByTsId };
+    dashboardCache.set(key, { data, ts: Date.now() });
+    return data;
+  })();
+
+  dashboardInFlight.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    // Always clear so a failed request doesn't poison the in-flight slot
+    // and prevent retries.
+    dashboardInFlight.delete(key);
+  }
 }
 
 export function debounce(fn, ms = 150) {
