@@ -18,6 +18,7 @@ import {
   requireAdmin,
   debounce,
   confirmDialog,
+  clearUserContextCache,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -572,16 +573,25 @@ async function syncAdminRole(userId, wantAdmin) {
   if (!emp?.auth_user_id) return;
 
   const isAdmin = adminUserIds.has(emp.auth_user_id);
+  let mutated = false;
   if (wantAdmin && !isAdmin) {
     if (!await confirmDialog({ title: "Promote to admin", message: "Are you sure you want to make this employee an admin?", confirmText: "Promote" })) return;
     await sb.from("admins").upsert(
       { user_id: emp.auth_user_id, organisation_id: currentOrgId, role: "admin" },
       { onConflict: "user_id" }
     );
+    mutated = true;
   } else if (!wantAdmin && isAdmin) {
     await sb.from("admins").delete()
       .eq("user_id", emp.auth_user_id)
       .eq("organisation_id", currentOrgId);
+    mutated = true;
+  }
+  // If the operator just changed their own admin row, the cached
+  // user-context (5-min TTL) is now stale on this tab. Clear it so the
+  // next page load re-resolves the role.
+  if (mutated && emp.auth_user_id === ctx.session?.user?.id) {
+    clearUserContextCache(ctx.session);
   }
 }
 
@@ -691,6 +701,7 @@ async function deactivateEmployee(id) {
     .eq("id", id)
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
+  maybeClearOwnContext(id);
   document.getElementById("employee-dialog").close();
   notice("Deactivated", "success");
   await reloadAll();
@@ -702,9 +713,16 @@ async function reactivateEmployee(id) {
     .eq("id", id)
     .eq("organisation_id", currentOrgId);
   if (error) return notice(error.message, "error");
+  maybeClearOwnContext(id);
   document.getElementById("employee-dialog").close();
   notice("Reactivated", "success");
   await reloadAll();
+}
+function maybeClearOwnContext(empId) {
+  const emp = employees.find((e) => e.id === empId);
+  if (emp?.auth_user_id && emp.auth_user_id === ctx.session?.user?.id) {
+    clearUserContextCache(ctx.session);
+  }
 }
 async function deleteEmployee(id, name) {
   if (!await confirmDialog({ title: "Delete employee", message: `Permanently delete ${name}? This cannot be undone.`, confirmText: "Delete", danger: true })) return;

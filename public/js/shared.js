@@ -102,6 +102,10 @@ export function makeLatestOnly(fn) {
     try {
       result = await fn(controller.signal, ...args);
     } catch (err) {
+      // Swallow errors that belong to a superseded call: either a newer
+      // invocation has bumped `token`, or this one was explicitly aborted.
+      // Both are expected control flow, not lost-error territory — the
+      // caller already moved on.
       if (myToken !== token || controller.signal.aborted) return undefined;
       throw err;
     }
