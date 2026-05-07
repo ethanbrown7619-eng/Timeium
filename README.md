@@ -156,6 +156,18 @@ scale or large mechanical refactor):
 - Test-data-generation server-side RPC (audit 1.6) — depends on DB work.
 - Combining-RPC functions for hot paths (audit 5.2) — depends on DB work.
 - RLS audit per audit 1.1 — must be done in the Supabase dashboard.
+- Validating the `timesheet_entries_hours_nonneg` CHECK constraint added
+  by migration 054 (audit pass #5, finding F4). The constraint is `NOT
+  VALID` so new writes are guarded but legacy rows aren't. Before running
+  `ALTER TABLE … VALIDATE CONSTRAINT`, run a one-off audit query to
+  confirm no historical row violates it:
+  ```sql
+  select count(*) from public.timesheet_entries
+   where mon_hours < 0 or tue_hours < 0 or wed_hours < 0
+      or thu_hours < 0 or fri_hours < 0 or sat_hours < 0
+      or sun_hours < 0;
+  ```
+  If the count is 0, run the validate. If non-zero, fix the rows first.
 
 ## Repository layout
 

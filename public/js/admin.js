@@ -111,7 +111,7 @@ async function loadDashboard(signal) {
   if (!currentOrgId) return;
 
   const ws = fmtDate(dashWeek);
-  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
   if (!dash) return;
 
   const allDepartments = (dash.departments || []).filter((d) => d.active);
@@ -223,7 +223,7 @@ async function loadClockComparison(signal) {
   await loadOrgSettings();
 
   const ws = fmtDate(cvtWeek);
-  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
   if (!dash) return;
 
   const allCvtDepts = dash.departments;
@@ -418,7 +418,7 @@ async function loadInfusionStatus(signal) {
   await loadOrgSettings();
 
   const ws = fmtDate(infWeek);
-  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
   if (!dash) { barsEl.innerHTML = ""; return; }
 
   const allInfDepts = dash.departments.filter((d) => d.active);

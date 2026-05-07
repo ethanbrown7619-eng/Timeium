@@ -155,8 +155,15 @@ export function invalidateWeekDashboard(orgId, weekStart) {
  * Callers do their own scoping (e.g. department.js filters to managed
  * departments). Cache invalidation lives at submit/approve/reject sites
  * via invalidateWeekDashboard.
+ *
+ * Cancellation note: this function deliberately does NOT accept an
+ * AbortSignal. Cancellation happens at the consumer level via
+ * makeLatestOnly's token check — superseded callers ignore the result.
+ * Binding the underlying request to the first caller's signal would
+ * cancel the shared in-flight promise out from under any second caller
+ * who joined it.
  */
-export async function fetchWeekDashboardData(sb, orgId, weekStart, { signal } = {}) {
+export async function fetchWeekDashboardData(sb, orgId, weekStart) {
   if (!orgId || !weekStart) return null;
   const key = `${orgId}:${weekStart}`;
   const cached = dashboardCache.get(key);

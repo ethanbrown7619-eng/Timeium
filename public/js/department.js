@@ -102,7 +102,7 @@ async function loadOrgSettings() {
 async function loadDashboard(signal) {
 
   const ws = fmtDate(deptWeek);
-  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
   if (!dash) return;
 
   const allDepts = dash.departments.filter((d) => d.active);
