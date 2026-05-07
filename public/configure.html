@@ -712,7 +712,7 @@
           </div>
 
           <div id="reminder-schedule" style="display:none">
-            <p class="muted small mt-sm">When should the reminder be sent?</p>
+            <p class="muted small mt-sm">First reminder</p>
             <div class="settings-row">
               <div class="settings-field">
                 <label for="reminder-day">Day</label>
@@ -729,6 +729,60 @@
               <div class="settings-field">
                 <label for="reminder-time">Time</label>
                 <input type="time" id="reminder-time" value="09:00" style="width:100%" />
+              </div>
+            </div>
+
+            <p class="muted small mt-sm">Second reminder (optional)</p>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="reminder-day-2">Day</label>
+                <select id="reminder-day-2" style="width:100%">
+                  <option value="">— off —</option>
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                  <option value="sunday">Sunday</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="reminder-time-2">Time</label>
+                <input type="time" id="reminder-time-2" value="" style="width:100%" />
+              </div>
+            </div>
+            <p class="muted small">Leave the second reminder day on "off" to send only one reminder per week.</p>
+          </div>
+
+          <div id="overdue-schedule" style="display:none">
+            <p class="muted small mt-sm">When should the overdue email be sent?</p>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="overdue-day">Day</label>
+                <select id="overdue-day" style="width:100%">
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                  <option value="sunday">Sunday</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="overdue-time">Time</label>
+                <input type="time" id="overdue-time" value="09:00" style="width:100%" />
+              </div>
+            </div>
+            <div class="settings-row mt-sm">
+              <div class="settings-field">
+                <label for="overdue-recipient">Send to</label>
+                <select id="overdue-recipient" style="width:100%">
+                  <option value="employee">Each overdue employee</option>
+                  <option value="admins">Admins only (digest)</option>
+                  <option value="both">Both (employee + admin digest)</option>
+                </select>
               </div>
             </div>
           </div>

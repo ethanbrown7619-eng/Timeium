@@ -98,6 +98,42 @@ supabase secrets set \
   --project-ref <ref>
 ```
 
+### 2b. Edge function (email notifications)
+
+`send-timesheet-notifications` is invoked every 15 minutes by `pg_cron`
+(set up by migration `057_email_notification_cron.sql`). For each org it
+checks whether the current local time matches the configured reminder /
+overdue / discrepancy slot, then emails recipients via SMTP2GO.
+
+```bash
+supabase functions deploy send-timesheet-notifications --project-ref <ref>
+
+supabase secrets set \
+  SMTP2GO_API_KEY=<your SMTP2GO API key> \
+  NOTIFY_FROM='PTL Timesheet <noreply@ptl.co.nz>' \
+  APP_BASE_URL=https://<your-worker-domain> \
+  --project-ref <ref>
+```
+
+The `SMTP2GO_API_KEY` is shared with Attendium's edge functions on the
+same project; if it's already set, you only need `NOTIFY_FROM` (which
+can use a different sender domain than Attendium's) and `APP_BASE_URL`
+(used in the "Open my timesheet" links inside the email body).
+
+After deploying, edit `supabase/migrations/057_email_notification_cron.sql`
+to substitute `<YOUR-PROJECT-REF>` and `<YOUR-SERVICE-ROLE-JWT>`, then
+apply it in the SQL editor. Smoke-test with:
+
+```bash
+curl -X POST https://<ref>.supabase.co/functions/v1/send-timesheet-notifications \
+     -H "Authorization: Bearer <service-role-jwt>" \
+     -H "Content-Type: application/json" \
+     -d '{"force_org_id": 1, "force_kind": "reminder"}'
+```
+
+`force_kind` ∈ `'reminder' | 'reminder_2' | 'overdue' | 'discrepancy'`
+bypasses the day/time check and dedup for that one org+kind.
+
 ### 3. Web app
 
 `wrangler.toml` already contains the Supabase URL and anon key as `[vars]`.
@@ -208,4 +244,5 @@ supabase/
   migrations/            022_… through 053_… (idempotent, in order)
   functions/
     sync-infusion-projects/
+    send-timesheet-notifications/
 ```

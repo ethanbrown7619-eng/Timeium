@@ -707,7 +707,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -758,7 +758,14 @@ async function loadSettings() {
     document.getElementById("notify-reminder").checked = !!data.notify_reminder;
     document.getElementById("reminder-day").value = data.reminder_day || "friday";
     document.getElementById("reminder-time").value = (data.reminder_time || "09:00").slice(0, 5);
+    document.getElementById("reminder-day-2").value = data.reminder_day_2 || "";
+    document.getElementById("reminder-time-2").value = data.reminder_time_2
+      ? data.reminder_time_2.slice(0, 5) : "";
     document.getElementById("reminder-schedule").style.display = data.notify_reminder ? "" : "none";
+    document.getElementById("overdue-day").value = data.overdue_day || "tuesday";
+    document.getElementById("overdue-time").value = (data.overdue_time || "09:00").slice(0, 5);
+    document.getElementById("overdue-recipient").value = data.notify_overdue_recipient || "employee";
+    document.getElementById("overdue-schedule").style.display = data.notify_overdue ? "" : "none";
 
     // Clock vs Timesheet
     document.getElementById("clock-tolerance").value = String(data.clock_tolerance_hours ?? 0.5);
@@ -866,9 +873,14 @@ document.getElementById("save-deadline-btn").addEventListener("click", async () 
   }
 });
 
-// Notification toggle
+// Notification toggles — show/hide the schedule rows in sync with the
+// checkboxes. Reminder schedule controls reveal both the first and the
+// optional second slot; overdue schedule reveals day/time/recipient.
 document.getElementById("notify-reminder").addEventListener("change", (e) => {
   document.getElementById("reminder-schedule").style.display = e.target.checked ? "" : "none";
+});
+document.getElementById("notify-overdue").addEventListener("change", (e) => {
+  document.getElementById("overdue-schedule").style.display = e.target.checked ? "" : "none";
 });
 
 // Notifications save
@@ -876,11 +888,20 @@ document.getElementById("save-notifications-btn").addEventListener("click", asyn
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
   if (!currentOrgId) return;
   try {
+    const reminderDay2 = document.getElementById("reminder-day-2").value;
+    const reminderTime2 = document.getElementById("reminder-time-2").value;
     await saveOrgSettings({
       notify_overdue: document.getElementById("notify-overdue").checked,
       notify_reminder: document.getElementById("notify-reminder").checked,
       reminder_day: document.getElementById("reminder-day").value,
       reminder_time: document.getElementById("reminder-time").value || "09:00",
+      // Second reminder slot is optional. Empty string on either field
+      // disables it (the save_org_settings RPC nullif's empty strings).
+      reminder_day_2: reminderDay2 || "",
+      reminder_time_2: reminderDay2 ? (reminderTime2 || "09:00") : "",
+      overdue_day: document.getElementById("overdue-day").value,
+      overdue_time: document.getElementById("overdue-time").value || "09:00",
+      notify_overdue_recipient: document.getElementById("overdue-recipient").value,
     });
     notice("Notification settings saved", "success");
     flashStatus("notifications-status");
