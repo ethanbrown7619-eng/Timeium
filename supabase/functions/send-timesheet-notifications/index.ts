@@ -25,9 +25,13 @@
 // Each notification has its own *_last_sent_at column on organisations for
 // dedup; same-local-day re-runs skip.
 //
-// Required Supabase secrets (shared with Attendium's functions):
-//   SMTP2GO_API_KEY              the SMTP2GO REST API key
-//   NOTIFY_FROM                  e.g. "PTL Timesheet <noreply@ptl.co.nz>"
+// Required Supabase edge function secrets:
+//   SMTP_HOST                    e.g. "mail-au.smtp2go.com"
+//   SMTP_PORT                    e.g. "2525"
+//   SMTP_USER                    SMTP relay username (often the sender email)
+//   SMTP_PASS                    SMTP relay password
+//   NOTIFY_FROM                  e.g. "PTL Time Sheet <clockapp@ptlmachinery.com>"
+//   APP_BASE_URL                 e.g. "https://ptl-timesheet.<...>.workers.dev"
 //   SUPABASE_URL                 auto-populated
 //   SUPABASE_SERVICE_ROLE_KEY    auto-populated
 //
@@ -42,12 +46,16 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SMTPClient }   from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
-const SMTP2GO_API_KEY = Deno.env.get("SMTP2GO_API_KEY");
-const NOTIFY_FROM     = Deno.env.get("NOTIFY_FROM") ?? "PTL Timesheet <noreply@ptl.co.nz>";
-const SUPABASE_URL    = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY     = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const APP_BASE_URL    = Deno.env.get("APP_BASE_URL") ?? "https://ptl-timesheet.workers.dev";
+const SMTP_HOST    = Deno.env.get("SMTP_HOST");
+const SMTP_PORT    = Number(Deno.env.get("SMTP_PORT") ?? "2525");
+const SMTP_USER    = Deno.env.get("SMTP_USER");
+const SMTP_PASS    = Deno.env.get("SMTP_PASS");
+const NOTIFY_FROM  = Deno.env.get("NOTIFY_FROM") ?? "PTL Time Sheet <clockapp@ptlmachinery.com>";
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://ptl-timesheet.workers.dev";
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
@@ -128,28 +136,46 @@ function escapeHtml(s: any): string {
 }
 
 // ---------------------------------------------------------------------------
-// SMTP2GO sender
+// SMTP sender (denomailer over SMTP relay)
 // ---------------------------------------------------------------------------
+// One client per HTTP invocation: we open at the start of the handler, send
+// every email through it (re-using the TCP/TLS connection), then close at
+// the end. Closing isn't optional - leaving the socket open will keep the
+// Deno process alive past the response and time out the function.
+
+let smtpClient: SMTPClient | null = null;
+
+function getSmtpClient(): SMTPClient {
+    if (smtpClient) return smtpClient;
+    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+        throw new Error("SMTP_HOST / SMTP_USER / SMTP_PASS not set");
+    }
+    smtpClient = new SMTPClient({
+        connection: {
+            hostname: SMTP_HOST,
+            port:     SMTP_PORT,
+            tls:      false,        // STARTTLS auto-negotiated on 2525/587
+            auth:     { username: SMTP_USER, password: SMTP_PASS },
+        },
+    });
+    return smtpClient;
+}
+
+async function closeSmtpClient(): Promise<void> {
+    if (!smtpClient) return;
+    try { await smtpClient.close(); } catch { /* swallow on shutdown */ }
+    smtpClient = null;
+}
 
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-    if (!SMTP2GO_API_KEY) throw new Error("SMTP2GO_API_KEY not set");
-    const res = await fetch("https://api.smtp2go.com/v3/email/send", {
-        method:  "POST",
-        headers: {
-            "Content-Type":  "application/json",
-            "X-Smtp2go-Api-Key": SMTP2GO_API_KEY,
-        },
-        body: JSON.stringify({
-            to:        [to],
-            sender:    NOTIFY_FROM,
-            subject,
-            html_body: html,
-        }),
+    const client = getSmtpClient();
+    await client.send({
+        from:    NOTIFY_FROM,
+        to,
+        subject,
+        content: "auto",
+        html,
     });
-    if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`SMTP2GO ${res.status}: ${body}`);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -604,14 +630,20 @@ Deno.serve(async (req) => {
     if (error) return new Response(error.message, { status: 500 });
 
     const results: Record<string, any> = {};
-    for (const org of orgs || []) {
-        try {
-            results[(org as any).id] = await processOrg(
-                org, force_org_id ? { kind: force_kind ?? undefined } : {});
-        } catch (err) {
-            console.error(`org ${(org as any).id} failed`, err);
-            results[(org as any).id] = { error: String(err) };
+    try {
+        for (const org of orgs || []) {
+            try {
+                results[(org as any).id] = await processOrg(
+                    org, force_org_id ? { kind: force_kind ?? undefined } : {});
+            } catch (err) {
+                console.error(`org ${(org as any).id} failed`, err);
+                results[(org as any).id] = { error: String(err) };
+            }
         }
+    } finally {
+        // Must close the SMTP connection or the Deno process stays alive
+        // and the function times out instead of returning.
+        await closeSmtpClient();
     }
 
     return new Response(JSON.stringify(results, null, 2),

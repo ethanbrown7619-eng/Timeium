@@ -103,22 +103,25 @@ supabase secrets set \
 `send-timesheet-notifications` is invoked every 15 minutes by `pg_cron`
 (set up by migration `057_email_notification_cron.sql`). For each org it
 checks whether the current local time matches the configured reminder /
-overdue / discrepancy slot, then emails recipients via SMTP2GO.
+overdue / discrepancy slot, then emails recipients over SMTP relay
+(currently SMTP2GO via mail-au.smtp2go.com:2525).
 
 ```bash
 supabase functions deploy send-timesheet-notifications --project-ref <ref>
 
 supabase secrets set \
-  SMTP2GO_API_KEY=<your SMTP2GO API key> \
-  NOTIFY_FROM='PTL Timesheet <noreply@ptl.co.nz>' \
+  SMTP_HOST=mail-au.smtp2go.com \
+  SMTP_PORT=2525 \
+  SMTP_USER=clockapp@ptlmachinery.com \
+  SMTP_PASS=<your SMTP relay password> \
+  NOTIFY_FROM='PTL Time Sheet <clockapp@ptlmachinery.com>' \
   APP_BASE_URL=https://<your-worker-domain> \
   --project-ref <ref>
 ```
 
-The `SMTP2GO_API_KEY` is shared with Attendium's edge functions on the
-same project; if it's already set, you only need `NOTIFY_FROM` (which
-can use a different sender domain than Attendium's) and `APP_BASE_URL`
-(used in the "Open my timesheet" links inside the email body).
+These are the same SMTP credentials configured under Project Settings >
+Authentication > SMTP Settings. Reuse them rather than generating new
+ones. STARTTLS is auto-negotiated on port 2525.
 
 After deploying, edit `supabase/migrations/057_email_notification_cron.sql`
 to substitute `<YOUR-PROJECT-REF>` and `<YOUR-SERVICE-ROLE-JWT>`, then
