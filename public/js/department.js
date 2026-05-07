@@ -126,17 +126,18 @@ async function loadDashboard(signal) {
 
   const myTeam = dash.employees.filter((e) => managedDeptIds.has(e.department_id));
 
-  // tsMap keyed by user_id; restrict to my team since the helper returns
-  // org-wide timesheets.
+  // tsMap is a real Map so number keys stay numbers (Object.entries
+  // stringifies, which silently mismatches when callers look up by e.id).
   const teamIds = new Set(myTeam.map((e) => e.id));
-  const tsMap = {};
+  const tsMap = new Map();
   for (const [uid, ts] of Object.entries(dash.timesheetsByUserId)) {
-    if (teamIds.has(Number(uid))) tsMap[uid] = ts;
+    const numId = Number(uid);
+    if (teamIds.has(numId)) tsMap.set(numId, ts);
   }
   const hoursMap = dash.hoursByTsId;
 
   function isSubmitted(empId) {
-    const ts = tsMap[empId];
+    const ts = tsMap.get(empId);
     return isTsSubmittedOrApproved(ts?.status);
   }
 
@@ -172,7 +173,7 @@ async function loadDashboard(signal) {
   const canApproveInline = isAdminOrDev || !forceViewBeforeApproval;
 
   body.innerHTML = myTeam.map((e) => {
-    const ts = tsMap[e.id];
+    const ts = tsMap.get(e.id);
     const sub = isSubmitted(e.id);
     const hours = ts ? (hoursMap[ts.id] || 0) : 0;
 
@@ -314,6 +315,10 @@ async function loadApprovedLeaveRequests(teamUserIds) {
       const { error } = await sb.rpc("revoke_leave_request", { p_request_id: id, p_note: note });
       if (error) return notice(error.message, "error");
       notice("Leave revoked", "success");
+      // Leave can span multiple weeks; wipe every week for the org so we
+      // don't render stale cached data on weeks the cursor isn't currently
+      // viewing.
+      invalidateWeekDashboard(currentOrgId);
       await loadDashboard();
     });
   });
@@ -357,6 +362,7 @@ document.getElementById("edit-leave-form")?.addEventListener("submit", async (e)
 
   document.getElementById("edit-leave-dialog").close();
   notice("Leave updated", "success");
+  invalidateWeekDashboard(currentOrgId);
   await loadDashboard();
 });
 
@@ -408,6 +414,7 @@ async function loadPendingLeaveRequests(teamUserIds) {
       const { error } = await sb.rpc("approve_leave_request", { p_request_id: id, p_note: null });
       if (error) return notice(error.message, "error");
       notice("Leave approved and timesheet populated", "success");
+      invalidateWeekDashboard(currentOrgId);
       await loadDashboard();
     });
   });
@@ -419,6 +426,7 @@ async function loadPendingLeaveRequests(teamUserIds) {
       const { error } = await sb.rpc("reject_leave_request", { p_request_id: id, p_note: note });
       if (error) return notice(error.message, "error");
       notice("Leave rejected", "success");
+      invalidateWeekDashboard(currentOrgId);
       await loadDashboard();
     });
   });

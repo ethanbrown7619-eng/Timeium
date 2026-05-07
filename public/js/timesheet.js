@@ -959,28 +959,30 @@ function renderGrid() {
         requireQuery: true,
         onSelect: (it) => {
           entries[idx].job_id = it.id;
+          const fields = ["job_id"];
           if (it.is_leave) {
             entries[idx].dept_code_id = null;
             entries[idx].task_id = null;
+            fields.push("dept_code_id", "task_id");
           }
-          saveEntry(entries[idx]);
+          saveEntry(entries[idx], fields);
           renderGrid();
         },
-        onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx]); renderGrid(); },
+        onClear: () => { entries[idx].job_id = null; saveEntry(entries[idx], ["job_id"]); renderGrid(); },
       });
 
       const entryJob = jobsById.get(entries[idx]?.job_id);
       if (!entryJob?.is_leave) {
         setupAC(row.querySelector(".ac-dept"), deptItems, {
-          onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx]); },
-          onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx]); },
+          onSelect: (it) => { entries[idx].dept_code_id = it.id; saveEntry(entries[idx], ["dept_code_id"]); },
+          onClear: () => { entries[idx].dept_code_id = null; saveEntry(entries[idx], ["dept_code_id"]); },
         });
       }
 
       if (!entryJob?.is_leave) {
         setupAC(row.querySelector(".ac-task"), taskItems, {
-          onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx]); },
-          onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx]); },
+          onSelect: (it) => { entries[idx].task_id = it.id; saveEntry(entries[idx], ["task_id"]); },
+          onClear: () => { entries[idx].task_id = null; saveEntry(entries[idx], ["task_id"]); },
         });
       }
     });
@@ -993,7 +995,7 @@ function renderGrid() {
         const idx = Number(row.dataset.idx);
         entries[idx].description = inp.value;
         clearTimeout(timer);
-        timer = setTimeout(() => saveEntry(entries[idx]), 600);
+        timer = setTimeout(() => saveEntry(entries[idx], ["description"]), 600);
       });
     });
 
@@ -1009,7 +1011,7 @@ function renderGrid() {
         row.querySelector(".row-total strong").textContent = rowTotal;
         updateTotals();
         clearTimeout(timer);
-        timer = setTimeout(() => saveEntry(entries[idx]), 400);
+        timer = setTimeout(() => saveEntry(entries[idx], [`${day}_hours`]), 400);
       });
     });
 
@@ -1046,15 +1048,18 @@ function updateTotals() {
 
 /* ---------------------------------------------------------------- save entry */
 
-async function saveEntry(entry) {
-  const update = {
-    job_id: entry.job_id,
-    task_id: entry.task_id,
-    dept_code_id: entry.dept_code_id,
-    description: entry.description || null,
-  };
-  for (const d of DAYS) {
-    update[`${d}_hours`] = Number(entry[`${d}_hours`]) || 0;
+async function saveEntry(entry, changedFields) {
+  if (!Array.isArray(changedFields) || !changedFields.length) return;
+  const update = {};
+  for (const f of changedFields) {
+    if (f === "description") {
+      update.description = entry.description || null;
+    } else if (f.endsWith("_hours")) {
+      update[f] = Number(entry[f]) || 0;
+    } else {
+      // job_id / task_id / dept_code_id
+      update[f] = entry[f];
+    }
   }
   try {
     const { error } = await sb.from("timesheet_entries").update(update).eq("id", entry.id);

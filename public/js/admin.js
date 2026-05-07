@@ -408,12 +408,16 @@ function updateInfusionWeekLabel() {
     `${infWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
-async function loadInfusionStatus() {
+async function loadInfusionStatus(signal) {
   const barsEl = document.getElementById("inf-status-bars");
   if (!currentOrgId) { barsEl.innerHTML = ""; return; }
 
+  // approvalWorkflow drives whether the dept-bar group renders below; awaiting
+  // here mirrors loadClockComparison and avoids reading a default mid-init.
+  await loadOrgSettings();
+
   const ws = fmtDate(infWeek);
-  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
+  const dash = await fetchWeekDashboardData(sb, currentOrgId, ws, { signal });
   if (!dash) { barsEl.innerHTML = ""; return; }
 
   const allInfDepts = dash.departments.filter((d) => d.active);

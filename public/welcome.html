@@ -42,6 +42,7 @@
       const { data: { session } } = await sb.auth.getSession();
       if (!session) {
         location.replace("/signin.html");
+        throw new Error("not signed in");
       }
 
       document.getElementById("whoami").textContent = session.user.email || "";
