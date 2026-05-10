@@ -123,6 +123,17 @@ These are the same SMTP credentials configured under Project Settings >
 Authentication > SMTP Settings. Reuse them rather than generating new
 ones. STARTTLS is auto-negotiated on port 2525.
 
+For testing without spamming real users, also set:
+
+```bash
+supabase secrets set DEBUG_REDIRECT_EMAIL=you@yourdomain.com --project-ref <ref>
+```
+
+When set, every email is redirected to that address regardless of who
+it was meant for. The original recipient is preserved in the subject
+prefix and at the top of the body. Delete the secret (or set it to
+empty) to switch back to real sends.
+
 After deploying, edit `supabase/migrations/057_email_notification_cron.sql`
 to substitute `<YOUR-PROJECT-REF>` and `<YOUR-SERVICE-ROLE-JWT>`, then
 apply it in the SQL editor. Smoke-test with:

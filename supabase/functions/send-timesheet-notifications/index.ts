@@ -57,6 +57,12 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://ptl-timesheet.workers.dev";
 
+// When set, every email is redirected to this address regardless of who
+// it was meant for. Original recipient is preserved in the subject prefix
+// and at the top of the HTML body so you can verify the routing logic
+// without spamming real users. Leave unset in production.
+const DEBUG_REDIRECT_EMAIL = Deno.env.get("DEBUG_REDIRECT_EMAIL");
+
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 // ---------------------------------------------------------------------------
@@ -169,12 +175,23 @@ async function closeSmtpClient(): Promise<void> {
 
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
     const client = getSmtpClient();
+    let actualTo      = to;
+    let actualSubject = subject;
+    let actualHtml    = html;
+    if (DEBUG_REDIRECT_EMAIL) {
+        actualTo      = DEBUG_REDIRECT_EMAIL;
+        actualSubject = `[DEBUG -> ${to}] ${subject}`;
+        actualHtml    = `<div style="background:#fef08a;padding:12px;` +
+            `font-family:sans-serif;border-bottom:2px solid #ca8a04">` +
+            `<b>[DEBUG]</b> redirected from <b>${to}</b>. Set ` +
+            `DEBUG_REDIRECT_EMAIL='' to send for real.</div>` + html;
+    }
     await client.send({
         from:    NOTIFY_FROM,
-        to,
-        subject,
+        to:      actualTo,
+        subject: actualSubject,
         content: "auto",
-        html,
+        html:    actualHtml,
     });
 }
 
