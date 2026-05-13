@@ -569,6 +569,13 @@ dialog::backdrop {
 }
 .ts-current-card.submitted h2 { color: #5a7a00; }
 
+.ts-current-card.rejected {
+  border-color: var(--danger);
+  background: linear-gradient(135deg, #ffe3e3 0%, #fff1f1 100%);
+  box-shadow: 0 0 20px rgba(193, 57, 43, 0.25);
+}
+.ts-current-card.rejected h2 { color: var(--danger); }
+
 .ts-current-card {
   padding: 32px 36px;
 }
@@ -592,6 +599,7 @@ dialog::backdrop {
   transition: width 0.4s ease;
 }
 .ts-progress-fill.submitted { background: var(--ptl-lime); }
+.ts-progress-fill.rejected  { background: var(--danger); }
 
 /* countdown */
 .ts-countdown {
@@ -621,6 +629,8 @@ dialog::backdrop {
 .week-calendar tr.week-row.week-submitted:hover { background: rgba(46, 125, 58, 0.12); }
 .week-calendar tr.week-row.week-draft { background: rgba(201, 144, 26, 0.06); }
 .week-calendar tr.week-row.week-draft:hover { background: rgba(201, 144, 26, 0.12); }
+.week-calendar tr.week-row.week-rejected { background: rgba(193, 57, 43, 0.07); }
+.week-calendar tr.week-row.week-rejected:hover { background: rgba(193, 57, 43, 0.14); }
 .week-calendar .cal-total-row { border-top: 2px solid var(--border); }
 .week-calendar .cal-total-row td { padding: 14px 8px; }
 .week-calendar .week-status { font-size: 12px; }
@@ -826,6 +836,7 @@ dialog::backdrop {
 .ts-status-draft { background: var(--surface-alt); color: var(--text-muted); }
 .ts-status-submitted { background: var(--info-blue-bg-alt); color: var(--info-blue); }
 .ts-status-approved { background: var(--success-bg); color: var(--success); }
+.ts-status-rejected { background: var(--danger-bg); color: var(--danger); }
 .ts-status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -834,6 +845,7 @@ dialog::backdrop {
 .ts-status-dot.draft { background: var(--text-muted); }
 .ts-status-dot.submitted { background: var(--info-blue); }
 .ts-status-dot.approved { background: var(--success); }
+.ts-status-dot.rejected { background: var(--danger); }
 .ts-status-time {
   font-weight: 400;
   opacity: 0.8;

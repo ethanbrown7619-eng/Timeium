@@ -403,7 +403,7 @@ async function loadCurrentWeekCard() {
     const TARGET = 40;
     const pct = Math.min(100, Math.round((totalHours / TARGET) * 100));
 
-    card.classList.remove("submitted", "draft");
+    card.classList.remove("submitted", "draft", "rejected");
 
     if (isTsSubmittedOrApproved(ts?.status)) {
       card.classList.add("submitted");
@@ -416,6 +416,29 @@ async function loadCurrentWeekCard() {
         <p class="muted small" style="margin:6px 0 0">
           ${totalHours}h logged across ${taskCount} task${taskCount !== 1 ? "s" : ""}
           · <a href="#" id="view-current">View timesheet →</a>
+        </p>
+      `;
+    } else if (ts?.status === TS_STATUS.REJECTED) {
+      // Same visual shape as submitted but red - tells the employee
+      // there's something they need to fix and resubmit.
+      card.classList.add("rejected");
+      body.innerHTML = `
+        <p style="margin:0"><strong>${weekStr}</strong></p>
+        <p style="font-size:18px;margin:8px 0 0;color:var(--danger);font-weight:600">
+          Timesheet rejected
+        </p>
+        <p class="muted small" style="margin:6px 0 0">
+          Your manager sent this timesheet back. Update the entries and resubmit.
+        </p>
+        <div class="ts-progress-bar mt-sm">
+          <div class="ts-progress-fill rejected" style="width:${pct}%"></div>
+        </div>
+        <div class="row-flex mt-sm" style="gap:16px">
+          <span>${totalHours} / ${TARGET}h</span>
+          <span class="muted small">${taskCount} task${taskCount !== 1 ? "s" : ""}</span>
+        </div>
+        <p style="margin:12px 0 0">
+          <button id="edit-current" class="primary">Edit and resubmit →</button>
         </p>
       `;
     } else {
@@ -566,6 +589,7 @@ async function renderCalendar() {
 
     const rowClass = isCurrent ? "current-week" :
       isTsSubmittedOrApproved(ts?.status) ? "week-submitted" :
+      ts?.status === TS_STATUS.REJECTED ? "week-rejected" :
       ts?.status === TS_STATUS.DRAFT ? "week-draft" : "";
 
     rows += `<tr class="week-row ${rowClass}" data-week="${ws}">
@@ -891,7 +915,9 @@ function renderStatusBadge() {
     const time = d.toLocaleString("en-NZ", { hour: "numeric", minute: "2-digit", hour12: true });
     timeStr = `<span class="ts-status-time">Submitted ${day} ${mon} ${yr} at ${time}</span>`;
   }
-  const dotClass = tsStatus === "approved" ? "approved" : "submitted";
+  const dotClass = tsStatus === "approved"  ? "approved" :
+                   tsStatus === "rejected"  ? "rejected" :
+                                              "submitted";
   el.className = `ts-status-badge ts-status-${dotClass}`;
   el.innerHTML = `<span class="ts-status-dot ${dotClass}"></span> ${label}${timeStr}`;
 }
@@ -911,7 +937,9 @@ function renderGrid() {
     lockedMsg.textContent = `This timesheet has been ${tsStatus} and cannot be edited.`;
   } else {
     submitBtn.style.display = "";
-    submitBtn.textContent = "Submit Timesheet";
+    submitBtn.textContent = tsStatus === TS_STATUS.REJECTED
+      ? "Resubmit Timesheet"
+      : "Submit Timesheet";
     submitBtn.disabled = false;
     lockedMsg.style.display = "none";
   }
