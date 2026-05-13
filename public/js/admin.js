@@ -378,7 +378,15 @@ let infWeek = new Date(thisMonday);
 let infRows = [];
 let infSubmittedCount = 0;
 let infDecidedCount = 0;
+// Pending = submitted but not yet approved or rejected. Hard-blocks export.
+let infPendingDecisionCount = 0;
+// Missing = no timesheet at all, or status === draft. Soft-warns on export.
+let infMissingCount = 0;
 let infTotalEmps = 0;
+// Cached employees + timesheets for the current week so the approval list
+// can render and act without re-fetching.
+let infEmployees = [];
+let infTsMap = {};
 let approvalWorkflow = "manager_then_admin";
 
 let clockTolerance = 0.5;
@@ -434,11 +442,23 @@ async function loadInfusionStatus(signal) {
     return ts && (ts.status === "submitted" || ts.status === "approved");
   }).length;
   // "Decided" = the admin has either approved or rejected the timesheet.
-  // Export is blocked until every active non-overhead employee is decided.
   infDecidedCount = employees.filter((e) => {
     const ts = tsMap[e.id];
     return ts && (ts.status === TS_STATUS.APPROVED || ts.status === TS_STATUS.REJECTED);
   }).length;
+  // Pending = submitted but no decision yet. Blocks export hard.
+  infPendingDecisionCount = employees.filter((e) => {
+    const ts = tsMap[e.id];
+    return ts && ts.status === TS_STATUS.SUBMITTED;
+  }).length;
+  // Missing = never submitted, or still draft. Soft-warn at export time.
+  infMissingCount = employees.filter((e) => {
+    const ts = tsMap[e.id];
+    return !ts || ts.status === TS_STATUS.DRAFT;
+  }).length;
+  // Stash for the approval list renderer.
+  infEmployees = employees;
+  infTsMap = tsMap;
 
   const empPct = infTotalEmps === 0 ? 0 : Math.round((infSubmittedCount / infTotalEmps) * 100);
   const allSubmitted = infSubmittedCount === infTotalEmps && infTotalEmps > 0;
@@ -489,7 +509,117 @@ async function loadInfusionStatus(signal) {
   }
 
   barsEl.innerHTML = html;
+  renderInfusionApprovalList();
 }
+
+// Renders the "Pending decisions" card on the Infusion tab. One row per
+// employee whose timesheet is still in 'submitted' status. Admins can
+// approve or reject each row individually, or hit "Approve all" to
+// approve everything at once. Reads from the cached infEmployees /
+// infTsMap populated by loadInfusionStatus.
+function renderInfusionApprovalList() {
+  const listEl = document.getElementById("inf-approval-list");
+  const countEl = document.getElementById("inf-approval-count");
+  const approveAllBtn = document.getElementById("inf-approve-all-btn");
+  if (!listEl || !countEl || !approveAllBtn) return;
+
+  const pending = infEmployees.filter((e) => {
+    const ts = infTsMap[e.id];
+    return ts && ts.status === TS_STATUS.SUBMITTED;
+  });
+
+  if (!pending.length) {
+    listEl.innerHTML = `<p class="muted small" style="text-align:center;margin:0">All submitted timesheets are decided.</p>`;
+    countEl.textContent = "";
+    approveAllBtn.disabled = true;
+    return;
+  }
+
+  countEl.textContent = `${pending.length} awaiting decision`;
+  approveAllBtn.disabled = false;
+
+  listEl.innerHTML = `
+    <table class="small" style="width:100%">
+      <thead>
+        <tr><th style="text-align:left">Employee</th><th style="text-align:left">Department</th><th></th></tr>
+      </thead>
+      <tbody>
+        ${pending.map((e) => {
+          const deptName = (infTsMap[e.id]?.department_name) || e.department || "";
+          const tsId = infTsMap[e.id].id;
+          return `
+            <tr>
+              <td>${escapeHtml(e.name || "")}</td>
+              <td class="muted">${escapeHtml(deptName)}</td>
+              <td style="white-space:nowrap;text-align:right">
+                <a href="/timesheet-view.html?user=${e.id}&week=${fmtDate(infWeek)}" class="dept-view-btn">View</a>
+                <button class="approve-btn" data-ts-id="${tsId}" data-user-id="${e.id}">Approve</button>
+                <button class="reject-btn ghost" data-ts-id="${tsId}" data-user-id="${e.id}">Reject</button>
+              </td>
+            </tr>`;
+        }).join("")}
+      </tbody>
+    </table>`;
+
+  listEl.querySelectorAll(".approve-btn").forEach((btn) => {
+    btn.addEventListener("click", () => decideInfusionTimesheet(Number(btn.dataset.tsId), "approved"));
+  });
+  listEl.querySelectorAll(".reject-btn").forEach((btn) => {
+    btn.addEventListener("click", () => decideInfusionTimesheet(Number(btn.dataset.tsId), "rejected"));
+  });
+}
+
+async function decideInfusionTimesheet(tsId, newStatus) {
+  const verb = newStatus === "approved" ? "Approve" : "Reject";
+  if (!await confirmDialog({
+    title: `${verb} timesheet`,
+    message: `${verb} this timesheet?`,
+    confirmText: verb,
+  })) return;
+  const { data: rows, error } = await sb
+    .from("timesheets")
+    .update({ status: newStatus })
+    .eq("id", tsId)
+    .eq("status", "submitted")
+    .select("id");
+  if (error) return notice(error.message, "error");
+  if (!rows?.length) {
+    notice("Already actioned by someone else", "warn");
+  } else {
+    notice(`Timesheet ${newStatus === "approved" ? "approved" : "rejected"}`, "success");
+  }
+  invalidateWeekDashboard(currentOrgId, fmtDate(infWeek));
+  await loadInfusionStatus();
+}
+
+// Approve-all: bulk-update every submitted timesheet for the active
+// non-overhead employees in this week. One round trip via .in("user_id").
+// RLS still gates the update so this is admin-only behaviourally even
+// though the button only renders on the admin page.
+document.getElementById("inf-approve-all-btn").addEventListener("click", async () => {
+  const pendingUserIds = infEmployees
+    .filter((e) => infTsMap[e.id]?.status === TS_STATUS.SUBMITTED)
+    .map((e) => e.id);
+  if (!pendingUserIds.length) return;
+  if (!await confirmDialog({
+    title: "Approve all submitted",
+    message: `Approve ${pendingUserIds.length} submitted timesheet${pendingUserIds.length === 1 ? "" : "s"} at once?`,
+    confirmText: "Approve all",
+  })) return;
+  const ws = fmtDate(infWeek);
+  const { data, error } = await sb
+    .from("timesheets")
+    .update({ status: "approved" })
+    .eq("organisation_id", currentOrgId)
+    .eq("week_start", ws)
+    .eq("status", "submitted")
+    .in("user_id", pendingUserIds)
+    .select("id");
+  if (error) return notice(error.message, "error");
+  notice(`Approved ${data?.length ?? 0} timesheet${(data?.length ?? 0) === 1 ? "" : "s"}`, "success");
+  invalidateWeekDashboard(currentOrgId, ws);
+  await loadInfusionStatus();
+});
 
 const navLoadInfusionStatus = makeLatestOnly((signal) => loadInfusionStatus(signal));
 
@@ -669,18 +799,30 @@ document.getElementById("inf-preview-btn").addEventListener("click", async () =>
 document.getElementById("inf-export-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("inf-status");
 
-  // Hard block: every active non-overhead employee must have a timesheet
-  // that's been approved or rejected before the export can run. No
-  // confirm-anyway override - undecided timesheets are not exportable.
-  if (infTotalEmps > 0 && infDecidedCount < infTotalEmps) {
-    const pending = infTotalEmps - infDecidedCount;
+  // Hard block: every submitted timesheet must be approved or rejected
+  // before the export. Decline / approve in the "Pending decisions" card
+  // above. No override - undecided submissions are not exportable.
+  if (infPendingDecisionCount > 0) {
     notice(
-      `${pending} timesheet${pending === 1 ? "" : "s"} not yet approved or declined ` +
-      `(${infDecidedCount}/${infTotalEmps}). Decide each one before exporting.`,
+      `${infPendingDecisionCount} submitted timesheet${infPendingDecisionCount === 1 ? "" : "s"} ` +
+      `still awaiting a decision. Approve or reject each one in the "Pending decisions" card above before exporting.`,
       "error",
     );
     statusEl.textContent = "";
     return;
+  }
+  // Soft warn: employees who never submitted (or are still in draft).
+  // Admin can choose to proceed - those rows simply won't appear in the
+  // export (no entries to push).
+  if (infMissingCount > 0) {
+    if (!await confirmDialog({
+      title: "Export with missing timesheets",
+      message: `${infMissingCount} employee${infMissingCount === 1 ? " hasn't" : "s haven't"} submitted a timesheet for this week. Export anyway?`,
+      confirmText: "Export",
+    })) {
+      statusEl.textContent = "";
+      return;
+    }
   }
 
   statusEl.textContent = "Generating…";

@@ -205,8 +205,9 @@ async function loadDashboard(signal) {
     }
     if (sub && ts.status === "submitted" && canApproveInline) {
       actions += `<button class="dept-approve-btn approve-btn" data-ts-id="${ts.id}">Approve</button>`;
+      actions += `<button class="dept-approve-btn reject-btn ghost" data-ts-id="${ts.id}">Reject</button>`;
     } else if (sub && ts.status === "submitted" && !canApproveInline) {
-      actions += `<span class="small muted" title="Manager must open the timesheet before approving">Review to approve</span>`;
+      actions += `<span class="small muted" title="Manager must open the timesheet before approving or rejecting">Review to decide</span>`;
     }
 
     return `
@@ -219,26 +220,37 @@ async function loadDashboard(signal) {
       </tr>`;
   }).join("");
 
-  // Approve handlers
+  // Approve / reject handlers. Both use the same shape: update only when
+  // the row is still 'submitted' so a concurrent decision doesn't get
+  // silently clobbered.
+  const decide = async (tsId, newStatus) => {
+    const verb = newStatus === "approved" ? "Approve" : "Reject";
+    if (!await confirmDialog({
+      title: `${verb} timesheet`,
+      message: `${verb} this timesheet?`,
+      confirmText: verb,
+    })) return;
+    const { data: rows, error } = await sb
+      .from("timesheets")
+      .update({ status: newStatus })
+      .eq("id", tsId)
+      .eq("status", "submitted")
+      .select("id");
+    if (error) return notice(error.message, "error");
+    if (!rows?.length) {
+      notice("Already actioned by another manager", "warn");
+    } else {
+      notice(`Timesheet ${newStatus === "approved" ? "approved" : "rejected"}`, "success");
+    }
+    invalidateWeekDashboard(currentOrgId, fmtDate(deptWeek));
+    await loadDashboard();
+  };
+
   body.querySelectorAll(".approve-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const tsId = Number(btn.dataset.tsId);
-      if (!await confirmDialog({ title: "Approve timesheet", message: "Approve this timesheet?", confirmText: "Approve" })) return;
-      const { data: rows, error } = await sb
-        .from("timesheets")
-        .update({ status: "approved" })
-        .eq("id", tsId)
-        .eq("status", "submitted")
-        .select("id");
-      if (error) return notice(error.message, "error");
-      if (!rows?.length) {
-        notice("Already actioned by another manager", "warn");
-      } else {
-        notice("Timesheet approved", "success");
-      }
-      invalidateWeekDashboard(currentOrgId, fmtDate(deptWeek));
-      await loadDashboard();
-    });
+    btn.addEventListener("click", () => decide(Number(btn.dataset.tsId), "approved"));
+  });
+  body.querySelectorAll(".reject-btn").forEach((btn) => {
+    btn.addEventListener("click", () => decide(Number(btn.dataset.tsId), "rejected"));
   });
 
   // Load pending + approved leave requests for the team

@@ -98,6 +98,21 @@
 
           <div id="inf-status-bars" class="mb-md"></div>
 
+          <!-- Pending approval decisions for the selected week. Admins
+               must approve or reject each submitted timesheet before
+               the Export button will run. -->
+          <div id="inf-approval-card" class="card" style="background:var(--surface-alt);margin-bottom:16px">
+            <div class="row-flex mb-md">
+              <h3 style="margin:0">Pending decisions</h3>
+              <span id="inf-approval-count" class="small muted"></span>
+              <div class="grow"></div>
+              <button id="inf-approve-all-btn" class="ghost" disabled>Approve all</button>
+            </div>
+            <div id="inf-approval-list">
+              <p class="muted small" style="text-align:center;margin:0">Loading…</p>
+            </div>
+          </div>
+
           <div class="row-flex mb-md">
             <label class="row-flex small muted" style="gap:4px;margin:0">
               <input type="checkbox" id="inf-include-drafts" /> Include draft timesheets
