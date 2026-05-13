@@ -582,6 +582,7 @@ async function buildInfusionRows() {
       const dayDate = addDays(infWeek, i);
       const dayKey = DAYS[i];
       const qty = Number(entry[`${dayKey}_hours`]) || 0;
+      if (qty === 0) continue;
 
       rows.push({
         "Transaction No": 6,
