@@ -377,6 +377,7 @@ function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
 let infWeek = new Date(thisMonday);
 let infRows = [];
 let infSubmittedCount = 0;
+let infDecidedCount = 0;
 let infTotalEmps = 0;
 let approvalWorkflow = "manager_then_admin";
 
@@ -431,6 +432,12 @@ async function loadInfusionStatus(signal) {
   infSubmittedCount = employees.filter((e) => {
     const ts = tsMap[e.id];
     return ts && (ts.status === "submitted" || ts.status === "approved");
+  }).length;
+  // "Decided" = the admin has either approved or rejected the timesheet.
+  // Export is blocked until every active non-overhead employee is decided.
+  infDecidedCount = employees.filter((e) => {
+    const ts = tsMap[e.id];
+    return ts && (ts.status === TS_STATUS.APPROVED || ts.status === TS_STATUS.REJECTED);
   }).length;
 
   const empPct = infTotalEmps === 0 ? 0 : Math.round((infSubmittedCount / infTotalEmps) * 100);
@@ -662,13 +669,18 @@ document.getElementById("inf-preview-btn").addEventListener("click", async () =>
 document.getElementById("inf-export-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("inf-status");
 
-  if (infTotalEmps > 0 && infSubmittedCount < infTotalEmps) {
-    const missing = infTotalEmps - infSubmittedCount;
-    if (!await confirmDialog({
-      title: "Export incomplete week",
-      message: `${missing} employee${missing === 1 ? " has" : "s have"} not submitted yet (${infSubmittedCount}/${infTotalEmps}). Export anyway?`,
-      confirmText: "Export",
-    })) return;
+  // Hard block: every active non-overhead employee must have a timesheet
+  // that's been approved or rejected before the export can run. No
+  // confirm-anyway override - undecided timesheets are not exportable.
+  if (infTotalEmps > 0 && infDecidedCount < infTotalEmps) {
+    const pending = infTotalEmps - infDecidedCount;
+    notice(
+      `${pending} timesheet${pending === 1 ? "" : "s"} not yet approved or declined ` +
+      `(${infDecidedCount}/${infTotalEmps}). Decide each one before exporting.`,
+      "error",
+    );
+    statusEl.textContent = "";
+    return;
   }
 
   statusEl.textContent = "Generating…";
