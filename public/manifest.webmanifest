@@ -1,0 +1,17 @@
+{
+  "name": "PTL Timesheet",
+  "short_name": "PTL Timesheet",
+  "description": "Weekly timesheet submission and approval for PTL.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#c2ff00",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
