@@ -72,8 +72,7 @@ begin
         select id from public.timesheets where organisation_id = p_org_id
      );
 
-    delete from public.timesheets where organisation_id = p_org_id
-     returning 1 into v_count;
+    delete from public.timesheets where organisation_id = p_org_id;
     get diagnostics v_count = row_count;
 
     return v_count;
