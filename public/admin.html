@@ -236,6 +236,19 @@
 
           <div id="gen-results" style="display:none" class="mt-md"></div>
         </div>
+
+        <div class="card mt-md" style="max-width:640px;border-color:var(--danger)">
+          <h3 style="margin-top:0;color:var(--danger)">Reset all hours</h3>
+          <p class="muted">
+            Deletes every timesheet and timesheet entry for this organisation. Use
+            this after a demo to wipe the test data you generated above. Cannot be
+            undone &mdash; real timesheets in this org will also be deleted.
+          </p>
+          <div class="row-flex mt-md">
+            <button id="reset-hours-btn" class="danger">Reset all hours</button>
+            <span id="reset-hours-msg" class="muted small"></span>
+          </div>
+        </div>
       </section>
     </main>
 

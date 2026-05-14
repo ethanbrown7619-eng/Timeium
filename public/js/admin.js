@@ -1322,6 +1322,37 @@ async function loadDevToolsForm() {
   document.getElementById("gen-week").value = fmtDate(monday);
 }
 
+document.getElementById("reset-hours-btn")?.addEventListener("click", async () => {
+  if (!currentOrgId) return notice("No org selected", "warn");
+  const btn = document.getElementById("reset-hours-btn");
+  const msg = document.getElementById("reset-hours-msg");
+
+  // Two-stage confirm: a generic confirm, then a type-the-word gate.
+  if (!await confirmDialog({
+    title: "Reset all hours?",
+    message: "This deletes every timesheet and entry in this organisation. Real timesheets will be wiped too. There is no undo.",
+    confirmText: "Continue",
+  })) return;
+  const typed = prompt('Type "RESET" to confirm:');
+  if (typed !== "RESET") return notice("Cancelled", "info");
+
+  btn.disabled = true;
+  msg.textContent = "Resetting…";
+  try {
+    const { data, error } = await sb.rpc("reset_org_hours", { p_org_id: currentOrgId });
+    if (error) throw error;
+    invalidateWeekDashboard(currentOrgId);
+    notice(`Deleted ${data ?? 0} timesheet${data === 1 ? "" : "s"} and all their entries`, "success");
+    msg.textContent = "Done";
+    setTimeout(() => { msg.textContent = ""; }, 4000);
+  } catch (err) {
+    notice(err.message || "Reset failed", "error");
+    msg.textContent = "";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 document.getElementById("gen-timesheets-btn")?.addEventListener("click", async () => {
   const deptId = Number(document.getElementById("gen-dept").value);
   const weekStr = document.getElementById("gen-week").value;

@@ -538,6 +538,17 @@ function openDialog(empId) {
     delBtn.classList.add("hidden");
   }
 
+  // Reset password is admin-only and only meaningful once an auth account
+  // exists. Shows next to Deactivate; clicking confirms then resets to
+  // the default 'PASSWORD' and forces a change on next login.
+  const resetBtn = document.getElementById("reset-password-btn");
+  if (isEdit && ctx.isAdminOrHigher && emp.auth_user_id) {
+    resetBtn.classList.remove("hidden");
+    resetBtn.onclick = () => resetEmployeePassword(emp.id, emp.name);
+  } else {
+    resetBtn.classList.add("hidden");
+  }
+
   // Gate form controls for manager role.
   const form = document.getElementById("employee-form");
   form.querySelectorAll("input,select,button[type=submit]").forEach((el) => {
@@ -717,6 +728,20 @@ async function reactivateEmployee(id) {
   document.getElementById("employee-dialog").close();
   notice("Reactivated", "success");
   await reloadAll();
+}
+
+// Reset password to the default 'PASSWORD' and force a change on next
+// login. The actual update happens server-side via the SECURITY DEFINER
+// RPC (migration 058) because clients can't write to auth.users.
+async function resetEmployeePassword(id, name) {
+  if (!await confirmDialog({
+    title: "Reset password",
+    message: `Reset ${name}'s password to the default? They'll be required to set a new one on next login.`,
+    confirmText: "Reset password",
+  })) return;
+  const { error } = await sb.rpc("reset_employee_password", { p_user_id: id });
+  if (error) return notice(error.message, "error");
+  notice(`Password reset. Default is "PASSWORD" — share that with ${name} so they can sign in once and pick a new one.`, "success");
 }
 function maybeClearOwnContext(empId) {
   const emp = employees.find((e) => e.id === empId);
