@@ -1189,3 +1189,84 @@ button.primary:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   Mobile (<=768px). Desktop is the primary target - these rules
+   only kick in on narrow viewports and never affect anything wider.
+   Goal: every page is USABLE on a phone, not necessarily beautiful.
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Tighter chrome - less wasted padding around the edges. */
+  .container { padding: 12px 12px 48px; }
+  .card { padding: 16px; }
+  .ts-current-card { padding: 20px; }
+
+  /* Topbar: stack into rows so the nav has room to scroll horizontally
+     and the user-info chunk doesn't crowd it. Brand on row 1, nav on
+     row 2, user on row 3 if needed. */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    min-height: 0;
+  }
+  .topbar .brand { margin-right: 0; }
+  .topbar nav {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar .grow { display: none; }
+  .topbar-user {
+    margin-left: auto;
+    font-size: 12px;
+    gap: 6px;
+  }
+  .topbar-user .who {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Bigger touch targets - Apple/Google recommend 44px min. */
+  button, .btn, .ghost {
+    min-height: 40px;
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+  /* Pagination, small ghost buttons, and the password-toggle icon are
+     intentionally compact - opt them back out of the mobile bump. */
+  .pagination button,
+  .password-toggle {
+    min-height: 0;
+    padding: 4px 10px;
+  }
+  .password-toggle { padding: 4px 6px; }
+
+  /* Inputs: full width by default so labels and fields fill the row. */
+  input, select, textarea {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Auth screens (sign in / signup / reset / change-password). */
+  .auth-wrap .card { max-width: none; }
+
+  /* Dialogs stretch to nearly full width so dense forms have room. */
+  dialog form { width: 95vw !important; }
+
+  /* Tables in cards already wrap in overflow-x:auto where it matters;
+     this catches the rest with a safety net. */
+  .card > table { display: block; overflow-x: auto; max-width: 100%; }
+
+  /* Donut charts side-by-side stack into a single column. */
+  .dash-charts { grid-template-columns: 1fr !important; }
+
+  /* Org / Department drag-drop columns stack vertically. */
+  .org-columns { grid-template-columns: 1fr !important; }
+}
