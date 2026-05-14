@@ -463,6 +463,16 @@ async function loadInfusionStatus(signal) {
   const empPct = infTotalEmps === 0 ? 0 : Math.round((infSubmittedCount / infTotalEmps) * 100);
   const allSubmitted = infSubmittedCount === infTotalEmps && infTotalEmps > 0;
 
+  // "Approved" counters mirror the submitted ones but use a stricter rule
+  // - only status === approved counts. Rejected timesheets are decided but
+  // not approved, so they do NOT advance these bars.
+  const infApprovedCount = employees.filter((e) => {
+    const ts = tsMap[e.id];
+    return ts && ts.status === TS_STATUS.APPROVED;
+  }).length;
+  const empApprovedPct = infTotalEmps === 0 ? 0 : Math.round((infApprovedCount / infTotalEmps) * 100);
+  const allApproved = infApprovedCount === infTotalEmps && infTotalEmps > 0;
+
   let html = `
     <div class="inf-bar-group">
       <div class="row-flex" style="gap:8px;margin-bottom:4px">
@@ -472,6 +482,16 @@ async function loadInfusionStatus(signal) {
       </div>
       <div class="ts-progress-bar">
         <div class="ts-progress-fill ${allSubmitted ? "submitted" : ""}" style="width:${empPct}%"></div>
+      </div>
+    </div>
+    <div class="inf-bar-group" style="margin-top:12px">
+      <div class="row-flex" style="gap:8px;margin-bottom:4px">
+        <span class="small" style="font-weight:600">Employees approved</span>
+        <div class="grow"></div>
+        <span class="small ${allApproved ? "" : "warn-text"}" style="font-weight:600">${infApprovedCount} / ${infTotalEmps}</span>
+      </div>
+      <div class="ts-progress-bar">
+        <div class="ts-progress-fill ${allApproved ? "submitted" : ""}" style="width:${empApprovedPct}%"></div>
       </div>
     </div>
   `;
@@ -488,11 +508,22 @@ async function loadInfusionStatus(signal) {
       if (!members || !members.length) return false;
       return members.every((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
     });
+    // Dept approved = every non-empty department where every member's
+    // timesheet has status approved. Strict - one rejected member fails.
+    const deptApproved = departments.filter((d) => {
+      const members = empsByDept.get(d.id);
+      if (!members || !members.length) return false;
+      return members.every((e) => tsMap[e.id]?.status === TS_STATUS.APPROVED);
+    });
 
     const deptTotal = departments.length;
     const deptCount = deptSubmitted.length;
     const deptPct = deptTotal === 0 ? 0 : Math.round((deptCount / deptTotal) * 100);
     const allDepts = deptCount === deptTotal && deptTotal > 0;
+
+    const deptApprovedCount = deptApproved.length;
+    const deptApprovedPct   = deptTotal === 0 ? 0 : Math.round((deptApprovedCount / deptTotal) * 100);
+    const allDeptsApproved  = deptApprovedCount === deptTotal && deptTotal > 0;
 
     html += `
       <div class="inf-bar-group" style="margin-top:12px">
@@ -503,6 +534,16 @@ async function loadInfusionStatus(signal) {
         </div>
         <div class="ts-progress-bar">
           <div class="ts-progress-fill ${allDepts ? "submitted" : ""}" style="width:${deptPct}%"></div>
+        </div>
+      </div>
+      <div class="inf-bar-group" style="margin-top:12px">
+        <div class="row-flex" style="gap:8px;margin-bottom:4px">
+          <span class="small" style="font-weight:600">Departments approved</span>
+          <div class="grow"></div>
+          <span class="small ${allDeptsApproved ? "" : "warn-text"}" style="font-weight:600">${deptApprovedCount} / ${deptTotal}</span>
+        </div>
+        <div class="ts-progress-bar">
+          <div class="ts-progress-fill ${allDeptsApproved ? "submitted" : ""}" style="width:${deptApprovedPct}%"></div>
         </div>
       </div>
     `;
