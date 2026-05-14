@@ -27,7 +27,17 @@
           </div>
           <div class="mb-md">
             <label for="password">Password</label>
-            <input id="password" type="password" required autocomplete="current-password" style="width:100%" />
+            <div class="password-wrap">
+              <input id="password" type="password" required autocomplete="current-password" style="width:100%" />
+              <button type="button" id="toggle-password" class="password-toggle"
+                      aria-label="Show password" aria-pressed="false">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+            </div>
           </div>
           <button type="submit" style="width:100%" id="submit-btn">Sign in</button>
         </form>
@@ -43,6 +53,18 @@
       import { notice, routeAfterAuth } from "/js/shared.js";
 
       const sb = await getSupabase();
+
+      // Show / hide password toggle. The button's aria-pressed state and
+      // label flip in sync with the input type so screen readers stay
+      // accurate.
+      document.getElementById("toggle-password").addEventListener("click", (e) => {
+        const input = document.getElementById("password");
+        const btn = e.currentTarget;
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        btn.setAttribute("aria-pressed", showing ? "false" : "true");
+        btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+      });
 
       // Already signed in? Bounce straight through.
       const { data: { session } } = await sb.auth.getSession();

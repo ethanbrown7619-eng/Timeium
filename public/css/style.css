@@ -256,6 +256,35 @@ a:hover { text-decoration: underline; }
 
 label { display: block; margin-bottom: 4px; font-size: 13px; color: var(--text-muted); }
 
+/* Wrapper for a password input + a show/hide eye toggle pinned to the right.
+   Used on signin so the user can verify what they're typing. */
+.password-wrap { position: relative; }
+.password-wrap input { padding-right: 38px; }
+.password-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  padding: 4px 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  box-shadow: none;
+  transition: color 0.2s ease;
+}
+.password-toggle:hover {
+  background: transparent;
+  color: var(--text);
+  border-color: transparent;
+  box-shadow: none;
+  transform: translateY(-50%);
+}
+.password-toggle:active { transform: translateY(-50%) scale(0.92); }
+.password-toggle[aria-pressed="true"] { color: var(--ptl-black); }
+
 input, select, textarea {
   font: inherit;
   padding: 6px 10px;
