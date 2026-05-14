@@ -248,7 +248,7 @@ export function debounce(fn, ms = 150) {
 
 /* ---------------------------------------------------------------- password */
 
-export const MIN_PASSWORD_LENGTH = 12;
+export const MIN_PASSWORD_LENGTH = 8;
 
 export function validatePassword(pw) {
   if (!pw || pw.length < MIN_PASSWORD_LENGTH) {
