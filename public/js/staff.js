@@ -173,7 +173,7 @@ async function loadEmployees() {
     .from("users")
     .select(
       // auth_user_id is required by openDialog and syncAdminRole; keep it.
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, active, organisation_id, is_manager, is_test, auth_user_id"
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, receives_overtime, active, organisation_id, is_manager, is_test, auth_user_id"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
@@ -492,6 +492,9 @@ function openDialog(empId) {
   updateRateRef(emp?.department_id);
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
   document.getElementById("f-manager").checked = emp?.is_manager || false;
+  // Receives-overtime defaults to true for new employees and respects the
+  // saved value for existing ones. ?? not || so an explicit false sticks.
+  document.getElementById("f-receives-ot").checked = emp?.receives_overtime ?? true;
   document.getElementById("f-admin").checked = emp?.auth_user_id ? adminUserIds.has(emp.auth_user_id) : false;
   if (ctx.isDeveloper) {
     document.getElementById("test-staff-wrap").classList.remove("hidden");
@@ -637,6 +640,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
         ? null
         : Number(document.getElementById("f-ot").value),
     is_manager: document.getElementById("f-manager").checked,
+    receives_overtime: document.getElementById("f-receives-ot").checked,
     is_test: ctx.isDeveloper ? document.getElementById("f-test").checked : undefined,
   };
 

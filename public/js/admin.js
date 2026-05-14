@@ -942,7 +942,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
 
   const { data: employees } = await sb
     .from("users")
-    .select("id, name, employee_code, department_id, employment_type, active")
+    .select("id, name, employee_code, department_id, employment_type, receives_overtime, active")
     .eq("organisation_id", currentOrgId)
     .eq("active", true);
 
@@ -1043,6 +1043,9 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
   for (const { userId, wsDate, days } of Object.values(empDayTotals)) {
     const emp = empMap[userId];
     if (!emp) continue;
+    // Skip employees flagged as not receiving overtime. Their hours
+    // still log to the timesheet but they don't appear on the report.
+    if (emp.receives_overtime === false) continue;
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
     for (let i = 0; i < 7; i++) {
       const excess = Math.max(0, (days[i] || 0) - LV_STANDARD_HOURS);
