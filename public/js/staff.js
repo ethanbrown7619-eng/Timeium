@@ -18,6 +18,10 @@ import {
   requireAdmin,
   debounce,
   confirmDialog,
+  promptDialog,
+  getMonday,
+  getActiveMonday,
+  fmtDate,
   clearUserContextCache,
 } from "/js/shared.js";
 
@@ -552,6 +556,16 @@ function openDialog(empId) {
     resetBtn.classList.add("hidden");
   }
 
+  // Reset-a-week is developer-only: wipes one employee's timesheet for a
+  // chosen week so the developer can re-test or rescue a stuck row.
+  const resetWeekBtn = document.getElementById("reset-week-btn");
+  if (isEdit && ctx.isDeveloper) {
+    resetWeekBtn.classList.remove("hidden");
+    resetWeekBtn.onclick = () => resetEmployeeWeek(emp.id, emp.name);
+  } else {
+    resetWeekBtn.classList.add("hidden");
+  }
+
   // Gate form controls for manager role.
   const form = document.getElementById("employee-form");
   form.querySelectorAll("input,select,button[type=submit]").forEach((el) => {
@@ -746,6 +760,37 @@ async function resetEmployeePassword(id, name) {
   const { error } = await sb.rpc("reset_employee_password", { p_user_id: id });
   if (error) return notice(error.message, "error");
   notice(`Password reset. Default is "PASSWORD" — share that with ${name} so they can sign in once and pick a new one.`, "success");
+}
+
+// Developer-only: wipe one user's timesheet+entries for a chosen week.
+// Prompt for any date in the target week; the server-side RPC snaps to
+// the Monday via the same week_start the row was created with.
+async function resetEmployeeWeek(id, name) {
+  const today = fmtDate(getActiveMonday());
+  const raw = await promptDialog({
+    title: `Reset week for ${name}`,
+    message: "Enter any date within the week to reset (Monday is best). The timesheet and all its entries will be deleted.",
+    defaultValue: today,
+    placeholder: "YYYY-MM-DD",
+    confirmText: "Continue",
+  });
+  if (!raw) return;
+  const parsed = new Date(raw + "T00:00:00");
+  if (isNaN(parsed)) return notice("Invalid date", "warn");
+  const weekStart = fmtDate(getMonday(parsed));
+  if (!await confirmDialog({
+    title: "Reset week",
+    message: `Permanently delete ${name}'s timesheet for the week of ${weekStart}? This cannot be undone.`,
+    confirmText: "Delete week",
+    danger: true,
+  })) return;
+  const { data: count, error } = await sb.rpc("reset_user_week", { p_user_id: id, p_week_start: weekStart });
+  if (error) return notice(error.message, "error");
+  if (!count) {
+    notice(`No timesheet existed for ${name} the week of ${weekStart}`, "info");
+  } else {
+    notice(`Reset ${name}'s timesheet for the week of ${weekStart}`, "success");
+  }
 }
 function maybeClearOwnContext(empId) {
   const emp = employees.find((e) => e.id === empId);

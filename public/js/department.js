@@ -4,7 +4,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
-  DAYS, getMonday, fmtDate, addDays,
+  DAYS, getMonday, getActiveMonday, fmtDate, addDays,
   donutSvg, makeLatestOnly,
   isTsSubmittedOrApproved,
   confirmDialog, promptDialog,
@@ -67,7 +67,7 @@ function renderDonut(container, submitted, total, label) {
 
 /* ---------------------------------------------------------------- week nav */
 
-let deptWeek = getMonday(new Date());
+let deptWeek = getActiveMonday();
 
 function updateDeptWeekLabel() {
   const end = addDays(deptWeek, 6);

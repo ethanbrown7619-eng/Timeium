@@ -15,6 +15,18 @@ export function getMonday(d) {
   return dt;
 }
 
+// The "active" week the UI should focus on for the current moment. Mondays
+// still show last week (so employees finishing up and managers/admins
+// approving have an extra day of runway); Tue–Sun shows the current week.
+// `now` is parameterised so tests/tools can probe specific dates.
+export function getActiveMonday(now = new Date()) {
+  const m = getMonday(now);
+  if (now.getDay() === 1) {
+    m.setDate(m.getDate() - 7);
+  }
+  return m;
+}
+
 export function fmtDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");

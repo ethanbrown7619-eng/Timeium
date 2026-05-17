@@ -7,6 +7,7 @@ import {
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
   invalidateWeekDashboard,
+  getActiveMonday,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -130,7 +131,9 @@ function weekLabel() {
   return `${weekStart.toLocaleDateString(undefined, optsWithYear)} — ${end.toLocaleDateString(undefined, optsWithYear)}`;
 }
 
-const thisMonday = getMonday(new Date());
+// "Active" week the UI focuses on: Mondays still show last week so the
+// previous week stays editable / reviewable for one extra day.
+const thisMonday = getActiveMonday();
 
 const loadedHolidayYears = new Set();
 const holidayYearLoads = new Map();

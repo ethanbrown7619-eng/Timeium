@@ -4,7 +4,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, requireAdmin,
-  DAYS, DAY_LABELS, getMonday, fmtDate, addDays, fmtDMY,
+  DAYS, DAY_LABELS, getMonday, getActiveMonday, fmtDate, addDays, fmtDMY,
   donutSvg, makeLatestOnly,
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
@@ -45,7 +45,7 @@ if (!currentOrgId) {
 
 /* ---------------------------------------------------------------- helpers */
 
-const thisMonday = getMonday(new Date());
+const thisMonday = getActiveMonday();
 
 /* ---------------------------------------------------------------- tabs */
 
@@ -1334,7 +1334,7 @@ async function loadDevToolsForm() {
     .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`)
     .join("");
 
-  const monday = getMonday(new Date());
+  const monday = getActiveMonday();
   document.getElementById("gen-week").value = fmtDate(monday);
 }
 
