@@ -38,10 +38,16 @@ renderTopbar({
 const params = new URLSearchParams(location.search);
 const viewUserId = Number(params.get("user"));
 const weekStart = params.get("week");
+const returnTo = params.get("return") === "admin" ? "/admin.html#tab=infusion" : "/department.html";
 
 if (!viewUserId || !weekStart) {
   notice("Missing user or week parameter", "error", { sticky: true });
   throw new Error("missing params");
+}
+
+document.getElementById("back-link").href = returnTo;
+if (returnTo.startsWith("/admin.html")) {
+  document.getElementById("back-link").textContent = "← Back to Admin";
 }
 
 /* ---------------------------------------------------------------- load */
@@ -58,6 +64,17 @@ async function load() {
   const { data: ts } = await sb.from("timesheets")
     .select("id, status, submitted_at, notes")
     .eq("user_id", viewUserId).eq("week_start", weekStart).maybeSingle();
+
+  // Admins can edit any timesheet (existing or not). The Edit button routes
+  // to the regular timesheet editor in admin-override mode.
+  if (isAdminOrDev) {
+    const editBtn = document.getElementById("admin-edit-btn");
+    editBtn.classList.remove("hidden");
+    editBtn.onclick = () => {
+      const ret = encodeURIComponent(returnTo);
+      location.href = `/timesheet.html?user=${viewUserId}&week=${weekStart}&admin=1&return=${ret}`;
+    };
+  }
 
   if (!ts) {
     document.getElementById("view-subtitle").textContent = `Week of ${weekStart} — no timesheet created`;
@@ -144,12 +161,12 @@ async function load() {
       if (error) return notice(error.message, "error");
       if (!rows?.length) {
         notice("Already actioned by another manager", "warn");
-        setTimeout(() => location.href = "/department.html", 600);
+        setTimeout(() => location.href = returnTo, 600);
         return;
       }
       invalidateWeekDashboard(currentOrgId, weekStart);
       notice("Timesheet approved", "success");
-      setTimeout(() => location.href = "/department.html", 600);
+      setTimeout(() => location.href = returnTo, 600);
     };
     document.getElementById("reject-btn").onclick = async () => {
       const note = await promptDialog({ title: "Reject timesheet", message: "Reason for rejection (optional):", placeholder: "e.g. Missing job code on Wednesday" }) || null;
@@ -162,12 +179,12 @@ async function load() {
       if (error) return notice(error.message, "error");
       if (!rows?.length) {
         notice("Already actioned by another manager", "warn");
-        setTimeout(() => location.href = "/department.html", 600);
+        setTimeout(() => location.href = returnTo, 600);
         return;
       }
       invalidateWeekDashboard(currentOrgId, weekStart);
       notice("Timesheet rejected", "success");
-      setTimeout(() => location.href = "/department.html", 600);
+      setTimeout(() => location.href = returnTo, 600);
     };
   } else if (ts.status === "approved") {
     document.getElementById("ts-view-status").textContent = "Already approved";

@@ -17,7 +17,38 @@ const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
 const ctx = await getUserContext(sb, session);
-const { isDeveloper, adminRow, isManager, employee } = ctx;
+const { isDeveloper, adminRow, isManager } = ctx;
+let employee = ctx.employee;
+
+// ---------------------------------------------------------------- admin mode
+// When an admin opens timesheet.html?user=<id>&week=<date>&admin=1 (linked
+// from the timesheet-view "Edit (admin)" button), override `employee` with
+// the target user's record so the rest of the page edits their timesheet
+// instead of the caller's. RLS allows admin updates via the
+// `admins manage org timesheets` / `admins manage org entries` policies.
+const _adminParams = new URLSearchParams(location.search);
+const ADMIN_MODE = _adminParams.get("admin") === "1" && !!_adminParams.get("user");
+const ADMIN_RETURN = decodeURIComponent(_adminParams.get("return") || "") || "/admin.html#tab=infusion";
+const ADMIN_TARGET_USER_ID = ADMIN_MODE ? Number(_adminParams.get("user")) : null;
+const ADMIN_TARGET_WEEK = ADMIN_MODE ? _adminParams.get("week") : null;
+
+if (ADMIN_MODE) {
+  const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
+  if (!isAdminOrDev) {
+    location.replace("/timesheet.html");
+    throw new Error("admin mode requires admin role");
+  }
+  const { data: target, error: targetErr } = await sb
+    .from("users")
+    .select("id, name, organisation_id, department_id, auth_user_id")
+    .eq("id", ADMIN_TARGET_USER_ID)
+    .maybeSingle();
+  if (targetErr || !target) {
+    notice("Couldn't load target employee", "error", { sticky: true });
+    throw new Error("admin target user not found");
+  }
+  employee = target;
+}
 
 if (!employee) {
   location.replace("/welcome.html");
@@ -324,7 +355,10 @@ function showEditor(ws) {
   loadWeek();
 }
 
-document.getElementById("back-to-hub").addEventListener("click", () => showHub());
+document.getElementById("back-to-hub").addEventListener("click", () => {
+  if (ADMIN_MODE) { location.href = ADMIN_RETURN; return; }
+  showHub();
+});
 
 /* ---------------------------------------------------------------- current week card */
 
@@ -715,7 +749,9 @@ async function loadWeek() {
     loadHolidaysForYear(weekStart.getFullYear()),
   ]);
 
-  document.getElementById("week-label").textContent = weekLabel();
+  document.getElementById("week-label").textContent =
+    ADMIN_MODE ? `${employee.name} · ${weekLabel()}` : weekLabel();
+  if (ADMIN_MODE) document.title = `Admin edit — ${employee.name} · PTL Timesheet`;
 
   const dateRow = document.getElementById("date-row");
   dateRow.innerHTML = `<td colspan="5"></td>` +
@@ -734,11 +770,36 @@ async function loadWeek() {
     `<td class="day-col"></td><td></td>`;
 
   try {
-    const { data, error } = await sb.rpc("get_or_create_timesheet", {
-      p_week_start: fmtDate(weekStart),
-    });
-    if (error) throw error;
-    timesheetId = data;
+    if (ADMIN_MODE) {
+      // get_or_create_timesheet keys on auth.uid(), so admins can't use it to
+      // touch someone else's timesheet. Look up directly, or create a draft
+      // shell row if none exists for this user+week.
+      const ws = fmtDate(weekStart);
+      const { data: existing, error: lookupErr } = await sb
+        .from("timesheets")
+        .select("id")
+        .eq("user_id", employee.id)
+        .eq("week_start", ws)
+        .maybeSingle();
+      if (lookupErr) throw lookupErr;
+      if (existing?.id) {
+        timesheetId = existing.id;
+      } else {
+        const { data: created, error: createErr } = await sb
+          .from("timesheets")
+          .insert({ organisation_id: currentOrgId, user_id: employee.id, week_start: ws })
+          .select("id")
+          .single();
+        if (createErr) throw createErr;
+        timesheetId = created.id;
+      }
+    } else {
+      const { data, error } = await sb.rpc("get_or_create_timesheet", {
+        p_week_start: fmtDate(weekStart),
+      });
+      if (error) throw error;
+      timesheetId = data;
+    }
   } catch (err) {
     console.error(err);
     notice(err.message || "Failed to load timesheet", "error");
@@ -793,14 +854,28 @@ function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
 
   function render(query) {
     const q = (query || "").toLowerCase();
-    const filtered = q
-      ? items.filter((it) => it._label.toLowerCase().includes(q) || (it._desc || "").toLowerCase().includes(q))
-      : (requireQuery ? [] : items);
+    let filtered;
+    if (q) {
+      // Rank: code starts-with > code contains > description contains. Within
+      // each tier preserve the original (alphabetical) order. Enter picks
+      // the top-ranked row, which is virtually always the user's intent.
+      const tiers = [[], [], []];
+      for (const it of items) {
+        const label = it._label.toLowerCase();
+        const desc = (it._desc || "").toLowerCase();
+        if (label.startsWith(q)) tiers[0].push(it);
+        else if (label.includes(q)) tiers[1].push(it);
+        else if (desc.includes(q)) tiers[2].push(it);
+      }
+      filtered = tiers[0].concat(tiers[1], tiers[2]);
+    } else {
+      filtered = requireQuery ? [] : items;
+    }
     const show = filtered.slice(0, 100);
-    highlighted = -1;
+    highlighted = show.length && q ? 0 : -1;
     list.innerHTML =
       show.map((it, i) =>
-        `<div class="ac-item" data-idx="${i}" data-id="${it.id}">
+        `<div class="ac-item${i === highlighted ? " highlighted" : ""}" data-idx="${i}" data-id="${it.id}">
           <span>${escapeHtml(it._label)}</span>
           ${it._desc ? `<span class="ac-desc">${escapeHtml(it._desc)}</span>` : ""}
         </div>`
@@ -926,12 +1001,18 @@ function renderStatusBadge() {
 
 function renderGrid() {
   const body = document.getElementById("ts-body");
-  const isSubmitted = isTsSubmittedOrApproved(tsStatus);
+  // Admins editing on behalf of an employee bypass the status lock so they
+  // can correct an already-submitted/approved timesheet.
+  const isSubmitted = !ADMIN_MODE && isTsSubmittedOrApproved(tsStatus);
 
   // Show/hide submit bar based on status
   const submitBtn = document.getElementById("submit-ts-btn");
   const lockedMsg = document.getElementById("ts-locked-msg");
-  if (isSubmitted) {
+  if (ADMIN_MODE) {
+    submitBtn.style.display = "none";
+    lockedMsg.style.display = "";
+    lockedMsg.textContent = `Admin override — editing as ${employee.name}. Status (${tsStatus}) is not changed by your edits.`;
+  } else if (isSubmitted) {
     submitBtn.style.display = "none";
     lockedMsg.style.display = "";
     lockedMsg.textContent = `This timesheet has been ${tsStatus} and cannot be edited.`;
@@ -948,7 +1029,7 @@ function renderGrid() {
   const addRowBtn = document.getElementById("add-row-btn");
   const importBtn = document.getElementById("import-last-week");
   if (addRowBtn) addRowBtn.style.display = isSubmitted ? "none" : "";
-  if (importBtn) importBtn.style.display = isSubmitted ? "none" : "";
+  if (importBtn) importBtn.style.display = isSubmitted || ADMIN_MODE ? "none" : "";
 
   if (!entries.length) {
     body.innerHTML = `<tr><td colspan="14" class="muted small" style="text-align:center;padding:24px">No tasks yet — click "+ Add task" below to start.</td></tr>`;
@@ -1129,7 +1210,7 @@ function replaceRowInPlace(idx) {
   const body = document.getElementById("ts-body");
   const oldRow = body.querySelector(`tr[data-idx="${idx}"]`);
   if (!oldRow) { renderGrid(); return; }
-  const isSubmitted = isTsSubmittedOrApproved(tsStatus);
+  const isSubmitted = !ADMIN_MODE && isTsSubmittedOrApproved(tsStatus);
   const tmp = document.createElement("tbody");
   tmp.innerHTML = rowHtml(entries[idx], idx, isSubmitted).trim();
   const newRow = tmp.firstElementChild;
@@ -1460,7 +1541,18 @@ const deptInfo = await deptInfoPromise;
 isOverhead = deptInfo.isOverhead;
 requireTask = deptInfo.requireTask;
 
-if (isOverhead) {
+if (ADMIN_MODE) {
+  // Admin-edit override: jump straight to the editor for the target week.
+  // Entries are autosaved, so the "Back" button is really "done editing".
+  ensureLookups();
+  document.getElementById("back-to-hub").textContent = "← Save & return";
+  const parsed = new Date(ADMIN_TARGET_WEEK + "T00:00:00");
+  if (isNaN(parsed)) {
+    notice("Invalid week parameter", "error", { sticky: true });
+  } else {
+    showEditor(getMonday(parsed));
+  }
+} else if (isOverhead) {
   await showOverheadView();
 } else {
   // Pre-warm lookups in the background so the editor opens fast, but don't

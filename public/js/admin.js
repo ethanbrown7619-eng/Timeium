@@ -58,22 +58,35 @@ if (ctx.isDeveloper) {
   tabBar.appendChild(devBtn);
 }
 
-let activeTab = "dashboard";
+const VALID_TABS = new Set(["dashboard", "clockvts", "infusion", "leavereport", "devtools"]);
+function tabFromHash() {
+  const m = /tab=([a-z]+)/.exec(location.hash);
+  const t = m?.[1];
+  return VALID_TABS.has(t) ? t : null;
+}
+let activeTab = tabFromHash() || "dashboard";
+
+function applyActiveTab() {
+  document.querySelectorAll("[data-tab]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === activeTab);
+  });
+  document.getElementById("tab-dashboard").style.display    = activeTab === "dashboard"   ? "" : "none";
+  document.getElementById("tab-clockvts").style.display     = activeTab === "clockvts"    ? "" : "none";
+  document.getElementById("tab-infusion").style.display     = activeTab === "infusion"    ? "" : "none";
+  document.getElementById("tab-leavereport").style.display  = activeTab === "leavereport" ? "" : "none";
+  document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
+  if (activeTab === "dashboard") navLoadDashboard();
+  if (activeTab === "clockvts") navLoadClockComparison();
+  if (activeTab === "infusion") navLoadInfusionStatus();
+  if (activeTab === "leavereport") { if (lvSubView === "waged") loadWagedReport(); else loadSalariedReport(); }
+  if (activeTab === "devtools") loadDevToolsForm();
+}
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll("[data-tab]").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
     activeTab = btn.dataset.tab;
-    document.getElementById("tab-dashboard").style.display    = activeTab === "dashboard"   ? "" : "none";
-    document.getElementById("tab-clockvts").style.display     = activeTab === "clockvts"    ? "" : "none";
-    document.getElementById("tab-infusion").style.display     = activeTab === "infusion"    ? "" : "none";
-    document.getElementById("tab-leavereport").style.display  = activeTab === "leavereport" ? "" : "none";
-    document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
-    if (activeTab === "clockvts") navLoadClockComparison();
-    if (activeTab === "infusion") navLoadInfusionStatus();
-    if (activeTab === "leavereport") { if (lvSubView === "waged") loadWagedReport(); else loadSalariedReport(); }
-    if (activeTab === "devtools") loadDevToolsForm();
+    history.replaceState(null, "", `#tab=${activeTab}`);
+    applyActiveTab();
   });
 });
 
@@ -593,7 +606,7 @@ function renderInfusionApprovalList() {
               <td>${escapeHtml(e.name || "")}</td>
               <td class="muted">${escapeHtml(deptName)}</td>
               <td style="white-space:nowrap;text-align:right">
-                <a href="/timesheet-view.html?user=${e.id}&week=${fmtDate(infWeek)}" class="dept-view-btn">View</a>
+                <a href="/timesheet-view.html?user=${e.id}&week=${fmtDate(infWeek)}&return=admin" class="dept-view-btn">View</a>
                 <button class="approve-btn" data-ts-id="${tsId}" data-user-id="${e.id}">Approve</button>
                 <button class="reject-btn ghost" data-ts-id="${tsId}" data-user-id="${e.id}">Reject</button>
               </td>
@@ -1590,4 +1603,4 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
 /* ---------------------------------------------------------------- boot */
 
 loadOrgSettings().then(() => navLoadInfusionStatus());
-navLoadDashboard();
+applyActiveTab();
