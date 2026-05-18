@@ -1269,4 +1269,54 @@ button.primary:hover {
 
   /* Org / Department drag-drop columns stack vertically. */
   .org-columns { grid-template-columns: 1fr !important; }
+
+  /* Timesheet editor toolbar: let the week label, status pill, back
+     button and "Import last week's tasks" wrap onto multiple rows
+     instead of squishing into one. */
+  #editor-view > .row-flex {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  #editor-view #week-label {
+    flex-basis: 100%;
+    min-width: 0 !important;
+    font-size: 16px;
+    order: -1;
+  }
+
+  /* The timesheet grid is 14 dense columns — pure stacking would lose
+     the spreadsheet feel that makes weekly entry fast. Instead let it
+     scroll horizontally and pin the Job column so the row you're
+     editing stays anchored as you swipe across the days. */
+  .ts-grid-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    /* margin trick lets the table scroll edge-to-edge of the viewport
+       even though .card has padding. */
+    margin: 0 -16px;
+    padding: 0 16px;
+  }
+  .ts-grid {
+    /* fixed layout + tight percentage widths collapses unreadably on a
+       phone; switch to auto layout with a comfortable minimum so each
+       day-col stays tappable. */
+    table-layout: auto;
+    min-width: 760px;
+  }
+  .ts-grid .col-desc { min-width: 140px; }
+  .ts-grid .day-col  { min-width: 52px; }
+
+  /* Sticky Job column. tfoot's "Daily totals" label uses colspan=5 so we
+     leave it alone — pinning it would cover half the scroll area.
+     Background-paint masks scrolling cells beneath; box-shadow gives a
+     soft right edge so the freeze is obvious. */
+  .ts-grid thead th:first-child,
+  .ts-grid tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .ts-grid thead th:first-child { z-index: 3; }
 }

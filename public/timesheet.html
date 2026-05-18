@@ -117,44 +117,46 @@
           <button class="ghost" id="import-last-week">Import last week's tasks</button>
         </div>
 
-        <table class="ts-grid">
-          <thead>
-            <tr>
-              <th class="col-job">Job</th>
-              <th class="col-status">Status</th>
-              <th class="col-dept">Dept</th>
-              <th class="col-task">Task</th>
-              <th class="col-desc">Description</th>
-              <th class="day-col">Mon</th>
-              <th class="day-col">Tue</th>
-              <th class="day-col">Wed</th>
-              <th class="day-col">Thu</th>
-              <th class="day-col">Fri</th>
-              <th class="day-col day-weekend">Sat</th>
-              <th class="day-col day-weekend">Sun</th>
-              <th class="col-total">Total</th>
-              <th class="col-actions"></th>
-            </tr>
-            <tr id="date-row" class="small muted"></tr>
-          </thead>
-          <tbody id="ts-body">
-            <tr><td colspan="14" class="muted small" style="text-align:center">Loading…</td></tr>
-          </tbody>
-          <tfoot>
-            <tr id="totals-row">
-              <td colspan="5" style="text-align:right"><strong>Daily totals</strong></td>
-              <td class="day-col" id="total-mon">0</td>
-              <td class="day-col" id="total-tue">0</td>
-              <td class="day-col" id="total-wed">0</td>
-              <td class="day-col" id="total-thu">0</td>
-              <td class="day-col" id="total-fri">0</td>
-              <td class="day-col day-weekend" id="total-sat">0</td>
-              <td class="day-col day-weekend" id="total-sun">0</td>
-              <td class="day-col" id="total-week"><strong>0</strong></td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
+        <div class="ts-grid-scroll">
+          <table class="ts-grid">
+            <thead>
+              <tr>
+                <th class="col-job">Job</th>
+                <th class="col-status">Status</th>
+                <th class="col-dept">Dept</th>
+                <th class="col-task">Task</th>
+                <th class="col-desc">Description</th>
+                <th class="day-col">Mon</th>
+                <th class="day-col">Tue</th>
+                <th class="day-col">Wed</th>
+                <th class="day-col">Thu</th>
+                <th class="day-col">Fri</th>
+                <th class="day-col day-weekend">Sat</th>
+                <th class="day-col day-weekend">Sun</th>
+                <th class="col-total">Total</th>
+                <th class="col-actions"></th>
+              </tr>
+              <tr id="date-row" class="small muted"></tr>
+            </thead>
+            <tbody id="ts-body">
+              <tr><td colspan="14" class="muted small" style="text-align:center">Loading…</td></tr>
+            </tbody>
+            <tfoot>
+              <tr id="totals-row">
+                <td colspan="5" style="text-align:right"><strong>Daily totals</strong></td>
+                <td class="day-col" id="total-mon">0</td>
+                <td class="day-col" id="total-tue">0</td>
+                <td class="day-col" id="total-wed">0</td>
+                <td class="day-col" id="total-thu">0</td>
+                <td class="day-col" id="total-fri">0</td>
+                <td class="day-col day-weekend" id="total-sat">0</td>
+                <td class="day-col day-weekend" id="total-sun">0</td>
+                <td class="day-col" id="total-week"><strong>0</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
 
         <div id="add-row-wrap" class="mt-sm">
           <button class="ghost" id="add-row-btn">+ Add task</button>
