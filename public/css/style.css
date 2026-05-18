@@ -1297,14 +1297,28 @@ button.primary:hover {
     padding: 0 16px;
   }
   .ts-grid {
-    /* fixed layout + tight percentage widths collapses unreadably on a
-       phone; switch to auto layout with a comfortable minimum so each
-       day-col stays tappable. */
+    /* Fixed layout + tight percentage widths collapses unreadably on a
+       phone; switch to auto layout with comfortable per-column minimums
+       so every input is tappable and shows its content without truncation. */
     table-layout: auto;
-    min-width: 760px;
+    min-width: 920px;
   }
-  .ts-grid .col-desc { min-width: 140px; }
-  .ts-grid .day-col  { min-width: 52px; }
+  .ts-grid th, .ts-grid td { padding: 6px 8px; }
+  .ts-grid .col-job    { min-width: 120px; }
+  .ts-grid .col-status { min-width: 76px; }
+  .ts-grid .col-dept   { min-width: 90px; }
+  .ts-grid .col-task   { min-width: 96px; }
+  .ts-grid .col-desc   { min-width: 180px; }
+  .ts-grid .day-col    { min-width: 56px; }
+  .ts-grid .col-total  { min-width: 56px; }
+  .ts-grid .col-actions { min-width: 36px; }
+
+  /* Inputs need to bump up too — 13px hours fields are right on the
+     edge of iOS auto-zoom (Safari zooms into anything under 16px on
+     focus). Use 16px so taps stay in place. */
+  .ts-grid .hours-input { width: 50px !important; font-size: 16px; padding: 6px 4px; }
+  .ts-grid .desc-input  { font-size: 16px; padding: 6px 8px; }
+  .ac-wrap input        { font-size: 16px; padding: 6px 8px; }
 
   /* Sticky Job column. tfoot's "Daily totals" label uses colspan=5 so we
      leave it alone — pinning it would cover half the scroll area.
