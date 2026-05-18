@@ -80,7 +80,27 @@
         btn.disabled = true;
         btn.textContent = "Signing in…";
 
+        // Soft lockout: 5 failed attempts in 15 min blocks further tries.
+        // Server-authoritative via check_login_locked RPC.
+        const { data: locked } = await sb.rpc("check_login_locked", { p_email: email });
+        if (locked) {
+          notice("Too many failed sign-in attempts. Please wait 15 minutes and try again.", "error");
+          btn.disabled = false;
+          btn.textContent = "Sign in";
+          return;
+        }
+
         const { data: signinData, error } = await sb.auth.signInWithPassword({ email, password });
+
+        // Audit every attempt (success or failure) for forensic review.
+        // Fire-and-forget — UX shouldn't block on the audit write.
+        sb.rpc("record_login_attempt", {
+          p_email: email,
+          p_succeeded: !error,
+          p_failure_reason: error?.message || null,
+          p_user_agent: navigator.userAgent || null,
+        }).then(() => {}, () => {});
+
         if (error) {
           notice(error.message || "Sign in failed", "error");
           btn.disabled = false;
