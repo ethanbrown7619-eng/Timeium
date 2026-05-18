@@ -707,7 +707,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, smtp_host, smtp_port, smtp_user, smtp_from";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -776,6 +776,14 @@ async function loadSettings() {
 
     // Staff Types
     renderStaffTypes(data.employment_type_settings);
+
+    // SMTP (smtp_pass is never round-tripped — admin types a new one to
+    // change it, blank means keep existing).
+    document.getElementById("smtp-host").value = data.smtp_host || "";
+    document.getElementById("smtp-port").value = data.smtp_port ?? 2525;
+    document.getElementById("smtp-user").value = data.smtp_user || "";
+    document.getElementById("smtp-pass").value = "";
+    document.getElementById("smtp-from").value = data.smtp_from || "";
   } catch (err) {
     notice(err.message || "Failed to load settings", "error");
   }
@@ -939,6 +947,72 @@ function flashStatus(id) {
   el.textContent = "Saved";
   setTimeout(() => el.textContent = "", 3000);
 }
+
+/* -------------------------------------------------------- SMTP */
+
+document.getElementById("save-smtp-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  const host = document.getElementById("smtp-host").value.trim();
+  const portStr = document.getElementById("smtp-port").value.trim();
+  const port = portStr ? Number(portStr) : 2525;
+  const user = document.getElementById("smtp-user").value.trim();
+  const pass = document.getElementById("smtp-pass").value; // keep whitespace
+  const from = document.getElementById("smtp-from").value.trim();
+
+  if (host && (!Number.isFinite(port) || port < 1 || port > 65535)) {
+    return notice("Port must be a number between 1 and 65535", "warn");
+  }
+
+  // Build a payload that omits smtp_pass when blank so the existing
+  // password is preserved. Empty strings on other fields clear them.
+  const payload = {
+    smtp_host: host,
+    smtp_port: host ? String(port) : "",
+    smtp_user: user,
+    smtp_from: from,
+  };
+  if (pass) payload.smtp_pass = pass;
+
+  try {
+    await saveOrgSettings(payload);
+    document.getElementById("smtp-pass").value = "";
+    notice("SMTP settings saved", "success");
+    flashStatus("smtp-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
+document.getElementById("test-smtp-btn").addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  const to = prompt("Send test email to:", ctx.session?.user?.email || "");
+  if (!to) return;
+  const btn = document.getElementById("test-smtp-btn");
+  btn.disabled = true;
+  const statusEl = document.getElementById("smtp-status");
+  statusEl.textContent = "Sending…";
+  try {
+    const { data, error } = await sb.functions.invoke("send-timesheet-notifications", {
+      body: { force_org_id: currentOrgId, test_send_to: to },
+    });
+    if (error) throw error;
+    if (data?.ok) {
+      notice(`Test email sent to ${to}`, "success");
+      statusEl.textContent = "Sent";
+    } else {
+      notice(data?.error || "Send failed", "error");
+      statusEl.textContent = "";
+    }
+  } catch (err) {
+    notice(err.message || "Send failed", "error");
+    statusEl.textContent = "";
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { if (statusEl.textContent === "Sent") statusEl.textContent = ""; }, 4000);
+  }
+});
 
 /* -------------------------------------------------------- staff types */
 

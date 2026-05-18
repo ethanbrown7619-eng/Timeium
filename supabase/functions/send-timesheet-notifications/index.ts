@@ -48,6 +48,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMTPClient }   from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
+// SMTP defaults pulled from env. Each org row may override these by
+// populating organisations.smtp_* — when present those win, otherwise
+// the function falls back to whatever was set as edge-function secrets
+// at deploy time. Letting orgs own their own config means the Configure
+// page can manage credentials without touching wrangler or Supabase
+// dashboard secrets.
 const SMTP_HOST    = Deno.env.get("SMTP_HOST");
 const SMTP_PORT    = Number(Deno.env.get("SMTP_PORT") ?? "2525");
 const SMTP_USER    = Deno.env.get("SMTP_USER");
@@ -149,22 +155,50 @@ function escapeHtml(s: any): string {
 // the end. Closing isn't optional - leaving the socket open will keep the
 // Deno process alive past the response and time out the function.
 
-let smtpClient: SMTPClient | null = null;
+// SMTP config is resolved per-org: organisations.smtp_* overrides the
+// env-secret fallback. processOrg() calls openSmtpFor(org) before firing
+// any sends and closeSmtpClient() in finally — that way each tenant uses
+// its own credentials and the TCP socket is released between orgs.
+//
+// State is module-level (rather than threaded through every fire* and
+// sendEmail call) purely to keep the diff narrow. Don't call sendEmail
+// without openSmtpFor() preceding it in the same scope.
 
-function getSmtpClient(): SMTPClient {
-    if (smtpClient) return smtpClient;
-    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-        throw new Error("SMTP_HOST / SMTP_USER / SMTP_PASS not set");
+interface SmtpConfig {
+    host: string; port: number; user: string; pass: string; from: string;
+}
+
+let smtpClient: SMTPClient | null = null;
+let smtpFrom: string = NOTIFY_FROM;
+
+function resolveSmtpConfig(org: any): SmtpConfig {
+    const host = (org?.smtp_host as string) || SMTP_HOST || "";
+    const portRaw = org?.smtp_port ?? null;
+    const port = portRaw ? Number(portRaw) : SMTP_PORT;
+    const user = (org?.smtp_user as string) || SMTP_USER || "";
+    const pass = (org?.smtp_pass as string) || SMTP_PASS || "";
+    const from = (org?.smtp_from as string) || NOTIFY_FROM;
+    if (!host || !user || !pass) {
+        throw new Error(
+            "SMTP not configured for this org and no fallback secret set. " +
+            "Populate organisations.smtp_* via the Configure page or set " +
+            "SMTP_HOST / SMTP_USER / SMTP_PASS on the edge function.");
     }
+    return { host, port, user, pass, from };
+}
+
+async function openSmtpFor(org: any): Promise<void> {
+    await closeSmtpClient();
+    const cfg = resolveSmtpConfig(org);
     smtpClient = new SMTPClient({
         connection: {
-            hostname: SMTP_HOST,
-            port:     SMTP_PORT,
+            hostname: cfg.host,
+            port:     cfg.port,
             tls:      false,        // STARTTLS auto-negotiated on 2525/587
-            auth:     { username: SMTP_USER, password: SMTP_PASS },
+            auth:     { username: cfg.user, password: cfg.pass },
         },
     });
-    return smtpClient;
+    smtpFrom = cfg.from;
 }
 
 async function closeSmtpClient(): Promise<void> {
@@ -174,7 +208,7 @@ async function closeSmtpClient(): Promise<void> {
 }
 
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-    const client = getSmtpClient();
+    if (!smtpClient) throw new Error("SMTP client not initialised — call openSmtpFor(org) first");
     let actualTo      = to;
     let actualSubject = subject;
     let actualHtml    = html;
@@ -186,8 +220,8 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
             `<b>[DEBUG]</b> redirected from <b>${to}</b>. Set ` +
             `DEBUG_REDIRECT_EMAIL='' to send for real.</div>` + html;
     }
-    await client.send({
-        from:    NOTIFY_FROM,
+    await smtpClient.send({
+        from:    smtpFrom,
         to:      actualTo,
         subject: actualSubject,
         content: "auto",
@@ -538,6 +572,10 @@ async function fireDiscrepancy(org: any, weekStart: string, weekEnd: string,
 // ---------------------------------------------------------------------------
 
 async function processOrg(org: any, force: { kind?: string } = {}): Promise<any> {
+    // Open this org's SMTP relay first — opening per-org rather than once
+    // per invocation means different tenants can use different relays.
+    await openSmtpFor(org);
+
     const tz      = await getOrgTimezone(org.id);
     const orgName = await getOrgName(org.id);
     const now     = new Date();
@@ -623,12 +661,49 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
 Deno.serve(async (req) => {
     let force_org_id: number | null = null;
     let force_kind:   string | null = null;
+    let test_send_to: string | null = null;
     if (req.method === "POST") {
         try {
             const body = await req.json();
             if (body?.force_org_id) force_org_id = Number(body.force_org_id);
             if (body?.force_kind)   force_kind   = String(body.force_kind);
+            if (body?.test_send_to) test_send_to = String(body.test_send_to);
         } catch { /* empty body is fine */ }
+    }
+
+    // Test-send mode: open SMTP for the requested org, fire one canary
+    // message to the supplied address, return success/failure. Used by
+    // the Configure page's "Send test" button so admins can verify SMTP
+    // creds without waiting for the scheduled cron tick.
+    if (test_send_to) {
+        if (!force_org_id) {
+            return new Response(JSON.stringify({ error: "test_send_to requires force_org_id" }),
+                { status: 400, headers: { "content-type": "application/json" } });
+        }
+        const { data: org, error: orgErr } = await supabase.from("organisations")
+            .select("id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from")
+            .eq("id", force_org_id).maybeSingle();
+        if (orgErr || !org) {
+            return new Response(JSON.stringify({ error: "Org not found" }),
+                { status: 404, headers: { "content-type": "application/json" } });
+        }
+        try {
+            await openSmtpFor(org);
+            await sendEmail(
+                test_send_to,
+                "PTL Timesheet — SMTP test",
+                `<p>This is a test email from the PTL Timesheet app. ` +
+                `If you're reading it, the SMTP relay configured for org ${org.id} is working.</p>` +
+                `<p style="color:#666;font-size:12px">Sent at ${new Date().toISOString()}</p>`,
+            );
+            return new Response(JSON.stringify({ ok: true, sent_to: test_send_to }),
+                { headers: { "content-type": "application/json" } });
+        } catch (err) {
+            return new Response(JSON.stringify({ ok: false, error: String(err) }),
+                { status: 500, headers: { "content-type": "application/json" } });
+        } finally {
+            await closeSmtpClient();
+        }
     }
 
     let q = supabase.from("organisations").select(`
@@ -639,7 +714,8 @@ Deno.serve(async (req) => {
         overdue_last_sent_at,
         notify_discrepancy, discrepancy_day, discrepancy_time, discrepancy_last_sent_at,
         clock_tolerance_hours,
-        deadline_week, deadline_day, deadline_time
+        deadline_week, deadline_day, deadline_time,
+        smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from
     `);
     if (force_org_id) q = q.eq("id", force_org_id);
 

@@ -853,6 +853,49 @@
             <span id="clock-status" class="muted small" style="margin-left:12px"></span>
           </div>
         </div>
+
+        <!-- SMTP / outbound email relay -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Email Sending (SMTP)</h2>
+          <p class="muted">
+            Outbound mail (reminders, overdue, discrepancy) is sent through
+            this SMTP relay. Leave the password blank to keep the current
+            value when saving.
+          </p>
+
+          <div class="settings-row">
+            <div class="settings-field" style="flex:2">
+              <label for="smtp-host">Host</label>
+              <input id="smtp-host" placeholder="e.g. mail-au.smtp2go.com" style="width:100%" />
+            </div>
+            <div class="settings-field">
+              <label for="smtp-port">Port</label>
+              <input id="smtp-port" type="number" min="1" max="65535" placeholder="2525" style="width:100%" />
+            </div>
+          </div>
+
+          <div class="mt-sm">
+            <label for="smtp-user">Username</label>
+            <input id="smtp-user" placeholder="usually the sender email" style="width:100%" />
+          </div>
+
+          <div class="mt-sm">
+            <label for="smtp-pass">Password</label>
+            <input id="smtp-pass" type="password" placeholder="leave blank to keep existing" autocomplete="new-password" style="width:100%" />
+          </div>
+
+          <div class="mt-sm">
+            <label for="smtp-from">From header</label>
+            <input id="smtp-from" placeholder='PTL Timesheet &lt;noreply@example.com&gt;' style="width:100%" />
+            <p class="muted small mt-sm">Full RFC 5322 form. Must use an address the relay is authorised to send as.</p>
+          </div>
+
+          <div class="mt-md row-flex" style="gap:8px;align-items:center">
+            <button id="save-smtp-btn">Save</button>
+            <button id="test-smtp-btn" class="ghost" type="button">Send test email…</button>
+            <span id="smtp-status" class="muted small"></span>
+          </div>
+        </div>
       </section>
     </main>
 
