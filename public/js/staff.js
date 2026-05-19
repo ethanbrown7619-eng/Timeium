@@ -496,9 +496,10 @@ function openDialog(empId) {
   updateRateRef(emp?.department_id);
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
   document.getElementById("f-manager").checked = emp?.is_manager || false;
-  // Receives-overtime defaults to true for new employees and respects the
+  // Receives-overtime defaults to false for new employees (majority of
+  // staff are salaried / contractor and don't accrue OT) and respects the
   // saved value for existing ones. ?? not || so an explicit false sticks.
-  document.getElementById("f-receives-ot").checked = emp?.receives_overtime ?? true;
+  document.getElementById("f-receives-ot").checked = emp?.receives_overtime ?? false;
   document.getElementById("f-admin").checked = emp?.auth_user_id ? adminUserIds.has(emp.auth_user_id) : false;
   if (ctx.isDeveloper) {
     document.getElementById("test-staff-wrap").classList.remove("hidden");
@@ -701,6 +702,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       p_employment_type: payload.employment_type,
       p_employee_code: payload.employee_code,
       p_overtime_threshold_hours: payload.overtime_threshold_hours,
+      p_receives_overtime: payload.receives_overtime,
     });
     if (error) return notice(friendlyConstraintMsg(error, payload), "error");
 
