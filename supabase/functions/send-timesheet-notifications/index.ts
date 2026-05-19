@@ -660,7 +660,28 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
 // Entry point
 // ---------------------------------------------------------------------------
 
+// CORS headers attached to every response so browser-initiated invocations
+// (Configure → "Send test email") pass the preflight check. Cron pings the
+// function server-to-server so they're harmless for that path too.
+const CORS_HEADERS = {
+    "Access-Control-Allow-Origin":  "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+function withCors(init: ResponseInit = {}): ResponseInit {
+    return {
+        ...init,
+        headers: { ...(init.headers || {}), ...CORS_HEADERS },
+    };
+}
+
 Deno.serve(async (req) => {
+    // Browsers send an OPTIONS preflight before the actual POST.
+    if (req.method === "OPTIONS") {
+        return new Response("ok", withCors({ status: 204 }));
+    }
+
     let force_org_id: number | null = null;
     let force_kind:   string | null = null;
     let test_send_to: string | null = null;
@@ -680,14 +701,14 @@ Deno.serve(async (req) => {
     if (test_send_to) {
         if (!force_org_id) {
             return new Response(JSON.stringify({ error: "test_send_to requires force_org_id" }),
-                { status: 400, headers: { "content-type": "application/json" } });
+                withCors({ status: 400, headers: { "content-type": "application/json" } }));
         }
         const { data: org, error: orgErr } = await supabase.from("organisations")
             .select("id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from")
             .eq("id", force_org_id).maybeSingle();
         if (orgErr || !org) {
             return new Response(JSON.stringify({ error: "Org not found" }),
-                { status: 404, headers: { "content-type": "application/json" } });
+                withCors({ status: 404, headers: { "content-type": "application/json" } }));
         }
         try {
             await openSmtpFor(org);
@@ -699,10 +720,10 @@ Deno.serve(async (req) => {
                 `<p style="color:#666;font-size:12px">Sent at ${new Date().toISOString()}</p>`,
             );
             return new Response(JSON.stringify({ ok: true, sent_to: test_send_to }),
-                { headers: { "content-type": "application/json" } });
+                withCors({ headers: { "content-type": "application/json" } }));
         } catch (err) {
             return new Response(JSON.stringify({ ok: false, error: String(err) }),
-                { status: 500, headers: { "content-type": "application/json" } });
+                withCors({ status: 500, headers: { "content-type": "application/json" } }));
         } finally {
             await closeSmtpClient();
         }
@@ -722,7 +743,7 @@ Deno.serve(async (req) => {
     if (force_org_id) q = q.eq("id", force_org_id);
 
     const { data: orgs, error } = await q;
-    if (error) return new Response(error.message, { status: 500 });
+    if (error) return new Response(error.message, withCors({ status: 500 }));
 
     const results: Record<string, any> = {};
     try {
@@ -742,5 +763,5 @@ Deno.serve(async (req) => {
     }
 
     return new Response(JSON.stringify(results, null, 2),
-        { headers: { "content-type": "application/json" } });
+        withCors({ headers: { "content-type": "application/json" } }));
 });
