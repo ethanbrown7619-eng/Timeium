@@ -678,8 +678,9 @@ function withCors(init: ResponseInit = {}): ResponseInit {
 
 Deno.serve(async (req) => {
     // Browsers send an OPTIONS preflight before the actual POST.
+    // 204 forbids a body, so pass null.
     if (req.method === "OPTIONS") {
-        return new Response("ok", withCors({ status: 204 }));
+        return new Response(null, withCors({ status: 204 }));
     }
 
     let force_org_id: number | null = null;
