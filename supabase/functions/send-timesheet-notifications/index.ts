@@ -572,10 +572,6 @@ async function fireDiscrepancy(org: any, weekStart: string, weekEnd: string,
 // ---------------------------------------------------------------------------
 
 async function processOrg(org: any, force: { kind?: string } = {}): Promise<any> {
-    // Open this org's SMTP relay first — opening per-org rather than once
-    // per invocation means different tenants can use different relays.
-    await openSmtpFor(org);
-
     const tz      = await getOrgTimezone(org.id);
     const orgName = await getOrgName(org.id);
     const now     = new Date();
@@ -588,13 +584,35 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
     const thisSunday    = addDaysIso(thisMonday,  6);
     const lastSunday    = addDaysIso(lastMonday,  6);
 
-    const result: Record<string, any> = {};
-
-    // Reminder slot 1
+    // Decide which slots fire *before* touching SMTP, so quiet cron ticks
+    // (no slot matches) never open a connection — keeps the logs clean
+    // when SMTP isn't configured yet.
     const fireR1 = force.kind === "reminder" ||
         (org.notify_reminder &&
          slotMatches(tz, org.reminder_day,   org.reminder_time,   now) &&
          !alreadySentToday(tz, org.reminder_last_sent_at, now));
+    const fireR2 = force.kind === "reminder_2" ||
+        (org.notify_reminder &&
+         slotMatches(tz, org.reminder_day_2, org.reminder_time_2, now) &&
+         !alreadySentToday(tz, org.reminder_2_last_sent_at, now));
+    const fireO = force.kind === "overdue" ||
+        (org.notify_overdue &&
+         slotMatches(tz, org.overdue_day, org.overdue_time, now) &&
+         !alreadySentToday(tz, org.overdue_last_sent_at, now));
+    const fireD = force.kind === "discrepancy" ||
+        (org.notify_discrepancy &&
+         slotMatches(tz, org.discrepancy_day, org.discrepancy_time, now) &&
+         !alreadySentToday(tz, org.discrepancy_last_sent_at, now));
+
+    if (!fireR1 && !fireR2 && !fireO && !fireD) {
+        return { skipped: today };
+    }
+
+    // At least one slot fires → open SMTP now.
+    await openSmtpFor(org);
+
+    const result: Record<string, any> = {};
+
     if (fireR1) {
         try {
             const sent = await fireReminder(org, 1, thisMonday, thisSunday, tz, orgName);
@@ -605,11 +623,6 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         }
     }
 
-    // Reminder slot 2
-    const fireR2 = force.kind === "reminder_2" ||
-        (org.notify_reminder &&
-         slotMatches(tz, org.reminder_day_2, org.reminder_time_2, now) &&
-         !alreadySentToday(tz, org.reminder_2_last_sent_at, now));
     if (fireR2) {
         try {
             const sent = await fireReminder(org, 2, thisMonday, thisSunday, tz, orgName);
@@ -620,11 +633,6 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         }
     }
 
-    // Overdue
-    const fireO = force.kind === "overdue" ||
-        (org.notify_overdue &&
-         slotMatches(tz, org.overdue_day, org.overdue_time, now) &&
-         !alreadySentToday(tz, org.overdue_last_sent_at, now));
     if (fireO) {
         try {
             const sent = await fireOverdue(org, lastMonday, lastSunday, tz, orgName);
@@ -635,11 +643,6 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         }
     }
 
-    // Discrepancy
-    const fireD = force.kind === "discrepancy" ||
-        (org.notify_discrepancy &&
-         slotMatches(tz, org.discrepancy_day, org.discrepancy_time, now) &&
-         !alreadySentToday(tz, org.discrepancy_last_sent_at, now));
     if (fireD) {
         try {
             const sent = await fireDiscrepancy(org, lastMonday, lastSunday, tz, orgName);
@@ -650,7 +653,6 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         }
     }
 
-    if (!Object.keys(result).length) result.skipped = today;
     return result;
 }
 
