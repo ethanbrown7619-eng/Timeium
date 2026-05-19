@@ -6,8 +6,23 @@
 // - Supabase anon key exposed to the browser (safe — RLS gates everything)
 // - all writes go through SECURITY DEFINER RPCs or RLS-scoped policies
 
+// ISO 3166 country codes refused at the edge per IT direction. Cloudflare
+// attaches request.cf.country to every request (browser-facing requests
+// only — won't be set when Wrangler runs locally, hence the guard). 451
+// = Unavailable For Legal Reasons, which is the correct status for
+// geographic restrictions and what most CDNs use here.
+const BLOCKED_COUNTRIES = new Set(["RU", "CN", "NG"]);
+
 export default {
   async fetch(request, env, ctx) {
+    const country = request.cf?.country;
+    if (country && BLOCKED_COUNTRIES.has(country)) {
+      return new Response(
+        "Access to this service is not available from your region.",
+        { status: 451, headers: { "content-type": "text/plain" } },
+      );
+    }
+
     const url = new URL(request.url);
 
     if (url.pathname === "/config.json") {
