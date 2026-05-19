@@ -39,6 +39,7 @@
               </button>
             </div>
           </div>
+          <div id="turnstile-container" class="mb-sm" style="min-height:0"></div>
           <button type="submit" style="width:100%" id="submit-btn">Sign in</button>
         </form>
 
@@ -51,8 +52,10 @@
     <script type="module">
       import { getSupabase } from "/js/supabase-client.js";
       import { notice, routeAfterAuth } from "/js/shared.js";
+      import { mountTurnstile } from "/js/turnstile.js";
 
       const sb = await getSupabase();
+      const turnstile = await mountTurnstile(document.getElementById("turnstile-container"));
 
       // Show / hide password toggle. The button's aria-pressed state and
       // label flip in sync with the input type so screen readers stay
@@ -90,7 +93,10 @@
           return;
         }
 
-        const { data: signinData, error } = await sb.auth.signInWithPassword({ email, password });
+        const captchaToken = await turnstile.getToken();
+        const { data: signinData, error } = await sb.auth.signInWithPassword({
+          email, password, options: { captchaToken },
+        });
 
         // Audit every attempt (success or failure) for forensic review.
         // Fire-and-forget — UX shouldn't block on the audit write.
@@ -103,6 +109,7 @@
 
         if (error) {
           notice(error.message || "Sign in failed", "error");
+          turnstile.reset();
           btn.disabled = false;
           btn.textContent = "Sign in";
           return;

@@ -45,6 +45,10 @@ export default {
         JSON.stringify({
           supabaseUrl: env.SUPABASE_URL,
           supabaseAnonKey: env.SUPABASE_ANON_KEY,
+          // Cloudflare Turnstile site key. Public, safe to expose. The
+          // signin/signup/forgot/reset pages render the widget only when
+          // a key is present; missing key = CAPTCHA disabled gracefully.
+          turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
         }),
         {
           headers: {
@@ -97,11 +101,15 @@ function addSecurityHeaders(response) {
     "Content-Security-Policy",
     [
       "default-src 'self'",
-      "script-src 'self' https://esm.sh 'unsafe-inline'",
+      // challenges.cloudflare.com hosts the Turnstile widget script.
+      "script-src 'self' https://esm.sh https://challenges.cloudflare.com 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
       "connect-src 'self' https://*.supabase.co https://esm.sh",
+      // Turnstile renders its challenge UI inside an iframe served from
+      // challenges.cloudflare.com.
+      "frame-src https://challenges.cloudflare.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

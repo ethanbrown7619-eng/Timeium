@@ -35,6 +35,7 @@
             <input id="password" type="password" required minlength="8"
               autocomplete="new-password" style="width:100%" />
           </div>
+          <div id="turnstile-container" class="mb-sm"></div>
           <button type="submit" style="width:100%" id="submit-btn">Sign up</button>
         </form>
 
@@ -47,8 +48,10 @@
     <script type="module">
       import { getSupabase } from "/js/supabase-client.js";
       import { notice, routeAfterAuth, validatePassword } from "/js/shared.js";
+      import { mountTurnstile } from "/js/turnstile.js";
 
       const sb = await getSupabase();
+      const turnstile = await mountTurnstile(document.getElementById("turnstile-container"));
 
       // Already signed in? Skip straight to the router.
       const { data: { session } } = await sb.auth.getSession();
@@ -66,9 +69,13 @@
         btn.disabled = true;
         btn.textContent = "Creating account…";
 
-        const { data, error } = await sb.auth.signUp({ email, password });
+        const captchaToken = await turnstile.getToken();
+        const { data, error } = await sb.auth.signUp({
+          email, password, options: { captchaToken },
+        });
         if (error) {
           notice(error.message || "Sign up failed", "error");
+          turnstile.reset();
           btn.disabled = false;
           btn.textContent = "Sign up";
           return;
