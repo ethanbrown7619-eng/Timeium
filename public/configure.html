@@ -579,22 +579,22 @@
         <!-- Approval Workflow -->
         <div class="card" style="max-width:640px">
           <h2 style="margin-top:0">Approval Workflow</h2>
-          <p class="muted">Choose how timesheets are routed for approval.</p>
+          <p class="muted">Who can approve a submitted timesheet. One approval is final either way.</p>
 
           <div class="workflow-options">
             <label class="workflow-option" id="wf-manager-then-admin">
               <input type="radio" name="approval_workflow" value="manager_then_admin" />
               <div class="workflow-option-body">
-                <strong>Employee → Manager → Admin</strong>
-                <span class="muted small">Employees submit to their department manager. Managers review and forward to admin for final approval.</span>
+                <strong>Manager or Admin</strong>
+                <span class="muted small">Department managers and admins can both approve. Whoever clicks first finalises the timesheet — no second sign-off needed. Admin dashboard shows a department-level rollup.</span>
               </div>
             </label>
 
             <label class="workflow-option" id="wf-direct-to-admin">
               <input type="radio" name="approval_workflow" value="direct_to_admin" />
               <div class="workflow-option-body">
-                <strong>Employee → Admin</strong>
-                <span class="muted small">All employees submit directly to admin. Managers are bypassed in the approval flow.</span>
+                <strong>Admin only</strong>
+                <span class="muted small">Only admins see approve buttons. Use this if you don't run a manager layer.</span>
               </div>
             </label>
           </div>

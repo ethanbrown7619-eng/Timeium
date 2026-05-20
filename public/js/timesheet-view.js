@@ -147,9 +147,16 @@ async function load() {
   }
   document.getElementById("total-week").innerHTML = `<strong>${weekTotal}</strong>`;
 
-  // Show approve/reject only for submitted timesheets
+  // Show approve/reject only for submitted timesheets, and only to users
+  // who actually have authority under the org's approval_workflow setting.
+  // direct_to_admin -> managers don't see the buttons.
+  const { data: orgRow } = await sb.from("organisations")
+    .select("approval_workflow").eq("id", currentOrgId).maybeSingle();
+  const approvalWorkflow = orgRow?.approval_workflow || "manager_then_admin";
+  const canDecide = isAdminOrDev || approvalWorkflow !== "direct_to_admin";
+
   const bar = document.getElementById("approve-bar");
-  if (ts.status === "submitted") {
+  if (ts.status === "submitted" && canDecide) {
     bar.style.display = "";
     document.getElementById("approve-btn").onclick = async () => {
       if (!await confirmDialog({ title: "Approve timesheet", message: "Approve this timesheet?", confirmText: "Approve" })) return;

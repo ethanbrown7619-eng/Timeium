@@ -92,11 +92,13 @@ document.getElementById("dept-next").addEventListener("click", () => {
 
 let forceViewBeforeApproval = false;
 
+let approvalWorkflow = "manager_then_admin";
 async function loadOrgSettings() {
   if (!currentOrgId) return;
   const { data } = await sb.from("organisations")
-    .select("force_view_before_approval").eq("id", currentOrgId).maybeSingle();
+    .select("force_view_before_approval, approval_workflow").eq("id", currentOrgId).maybeSingle();
   forceViewBeforeApproval = !!data?.force_view_before_approval;
+  approvalWorkflow = data?.approval_workflow || "manager_then_admin";
 }
 
 async function loadDashboard(signal) {
@@ -177,7 +179,10 @@ async function loadDashboard(signal) {
   }
 
   // Managers must view before approval if setting is on; admins always bypass.
-  const canApproveInline = isAdminOrDev || !forceViewBeforeApproval;
+  // direct_to_admin mode: managers don't get approve buttons at all
+  // (admins/devs always do, regardless of mode).
+  const managersCanApprove = isAdminOrDev || approvalWorkflow !== "direct_to_admin";
+  const canApproveInline = managersCanApprove && (isAdminOrDev || !forceViewBeforeApproval);
 
   body.innerHTML = myTeam.map((e) => {
     const ts = tsMap.get(e.id);
