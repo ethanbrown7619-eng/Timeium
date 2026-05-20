@@ -178,8 +178,9 @@ function showHub() {
   document.getElementById("editor-view").style.display = "none";
   document.querySelector(".container").classList.remove("ts-container");
   loadCurrentWeekCard();
-  loadLeaveBalances();
-  loadMyLeaveRequests();
+  // Leave-request widgets are dormant — code kept for future re-enable.
+  // loadLeaveBalances();
+  // loadMyLeaveRequests();
   renderCalendar();
 }
 
@@ -1430,8 +1431,9 @@ async function showOverheadView() {
   document.getElementById("editor-view").style.display = "none";
   document.getElementById("overhead-view").style.display = "";
 
-  await loadOverheadLeaveBalances();
-  await loadOverheadLeaveRequests();
+  // Leave-request widgets are dormant — code kept for future re-enable.
+  // await loadOverheadLeaveBalances();
+  // await loadOverheadLeaveRequests();
 }
 
 async function loadOverheadLeaveBalances() {
