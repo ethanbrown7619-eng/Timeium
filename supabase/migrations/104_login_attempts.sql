@@ -36,6 +36,17 @@ create index if not exists login_attempts_email_idx
 create index if not exists login_attempts_attempted_at_idx
   on public.login_attempts (attempted_at desc);
 
+-- Explicit grants for the post-Oct-2026 Data API behaviour.
+--
+-- - authenticated: SELECT only — required for the "developers read login
+--   attempts" RLS policy to be reachable. RLS filters down to is_developer()
+--   so non-devs see zero rows even though the grant exists.
+-- - service_role: full access for dashboard / SQL editor queries.
+-- - anon: no table-level access. anon writes through record_login_attempt,
+--   which is a SECURITY DEFINER RPC and bypasses table grants.
+grant select on public.login_attempts to authenticated;
+grant select, insert, update, delete on public.login_attempts to service_role;
+
 alter table public.login_attempts enable row level security;
 
 drop policy if exists "developers read login attempts" on public.login_attempts;
