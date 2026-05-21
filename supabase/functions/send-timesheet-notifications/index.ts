@@ -230,6 +230,114 @@ async function closeSmtpClient(): Promise<void> {
     smtpClient = null;
 }
 
+// Hand-rolled SMTP send used by the test-send path. We bypass denomailer
+// entirely because denomailer's error wrapping reduces every server
+// rejection to a generic "invalid cmd" string with no visibility into
+// which command failed or what the server actually said.
+//
+// Returns a transcript of the entire conversation. On failure throws an
+// Error with the full transcript in .message so the caller can surface
+// the precise SMTP server reply (e.g. "535 5.7.0 Auth failed") instead
+// of a useless cryptic error.
+async function rawSmtpSend(
+    cfg: SmtpConfig,
+    to: string,
+    subject: string,
+    html: string,
+): Promise<string> {
+    const lines: string[] = [];
+    const log = (line: string) => { lines.push(line); console.log("[smtp]", line); };
+
+    const conn = await Deno.connect({ hostname: cfg.host, port: cfg.port });
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    let tlsConn: Deno.TlsConn | null = null;
+
+    const currentConn = (): Deno.Conn => tlsConn ?? conn;
+
+    const read = async (): Promise<string> => {
+        const buf = new Uint8Array(8192);
+        const n = await currentConn().read(buf);
+        if (n === null) throw new Error("connection closed unexpectedly\n" + lines.join("\n"));
+        const text = decoder.decode(buf.subarray(0, n));
+        for (const ln of text.split(/\r?\n/)) if (ln) log("< " + ln);
+        return text;
+    };
+    const write = async (s: string, redact = false): Promise<void> => {
+        log("> " + (redact ? "<redacted>" : s.replace(/\r?\n$/, "")));
+        await currentConn().write(encoder.encode(s));
+    };
+    const expect = async (prefix: string): Promise<string> => {
+        const resp = await read();
+        // SMTP multi-line responses use "250-" for continuation, "250 " for last.
+        // Match against the FINAL response code line.
+        const finalLine = resp.split(/\r?\n/).reverse().find((ln) => /^\d{3} /.test(ln))
+            ?? resp.split(/\r?\n/).reverse().find((ln) => /^\d{3}-/.test(ln))
+            ?? resp;
+        if (!finalLine.startsWith(prefix)) {
+            throw new Error(`expected ${prefix}, got: ${finalLine.trim()}\n--- full transcript ---\n` + lines.join("\n"));
+        }
+        return resp;
+    };
+
+    try {
+        await expect("220");                                  // greeting
+        await write(`EHLO ${cfg.host}\r\n`);
+        const ehloResp = await expect("250");
+
+        // Upgrade to TLS via STARTTLS if the server advertises it (plaintext
+        // port 2525 / 587 case). Skip if already on implicit-TLS port 465.
+        if (cfg.port !== 465 && /STARTTLS/i.test(ehloResp)) {
+            await write("STARTTLS\r\n");
+            await expect("220");
+            tlsConn = await Deno.startTls(conn, { hostname: cfg.host });
+            await write(`EHLO ${cfg.host}\r\n`);
+            await expect("250");
+        }
+
+        // AUTH LOGIN: username and password are base64-encoded one per write.
+        await write("AUTH LOGIN\r\n");
+        await expect("334");
+        await write(btoa(cfg.user) + "\r\n", true);
+        await expect("334");
+        await write(btoa(cfg.pass) + "\r\n", true);
+        await expect("235");                                  // auth ok
+
+        // Parse "Name <email>" or bare "email" — only the email part goes
+        // in MAIL FROM:.
+        const fromAddr = (cfg.from.match(/<([^>]+)>/)?.[1] ?? cfg.from).trim();
+        await write(`MAIL FROM:<${fromAddr}>\r\n`);
+        await expect("250");
+        await write(`RCPT TO:<${to}>\r\n`);
+        await expect("250");
+        await write("DATA\r\n");
+        await expect("354");
+
+        const dateHeader = new Date().toUTCString();
+        const messageId = `<${crypto.randomUUID()}@${cfg.host}>`;
+        const body =
+            `From: ${cfg.from}\r\n` +
+            `To: ${to}\r\n` +
+            `Subject: ${subject}\r\n` +
+            `Date: ${dateHeader}\r\n` +
+            `Message-ID: ${messageId}\r\n` +
+            `MIME-Version: 1.0\r\n` +
+            `Content-Type: text/html; charset=utf-8\r\n` +
+            `\r\n` +
+            html.replace(/^\./gm, "..") +     // dot-stuff per RFC 5321 §4.5.2
+            `\r\n.\r\n`;
+        await write(body);
+        await expect("250");                                  // accepted
+
+        await write("QUIT\r\n");
+        try { await read(); } catch { /* server may close before reply */ }
+        return lines.join("\n");
+    } finally {
+        try { tlsConn?.close(); } catch { /* */ }
+        try { conn.close(); } catch { /* */ }
+    }
+}
+
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
     if (!smtpClient) throw new Error("SMTP client not initialised — call openSmtpFor(org) first");
     let actualTo      = to;
@@ -734,35 +842,30 @@ Deno.serve(async (req) => {
             return new Response(JSON.stringify({ error: "Org not found" }),
                 withCors({ status: 404, headers: { "content-type": "application/json" } }));
         }
-        lastAsyncSmtpError = null;
-        let syncError: string | null = null;
+        // Test-send goes through rawSmtpSend (not denomailer) so any
+        // server-side rejection is surfaced verbatim with full transcript.
+        let cfg: SmtpConfig;
         try {
-            await openSmtpFor(org);
-            await sendEmail(
+            cfg = resolveSmtpConfig(org);
+        } catch (err) {
+            return new Response(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }),
+                withCors({ status: 500, headers: { "content-type": "application/json" } }));
+        }
+        try {
+            const transcript = await rawSmtpSend(
+                cfg,
                 test_send_to,
                 "PTL Timesheet — SMTP test",
                 `<p>This is a test email from the PTL Timesheet app. ` +
                 `If you're reading it, the SMTP relay configured for org ${org.id} is working.</p>` +
                 `<p style="color:#666;font-size:12px">Sent at ${new Date().toISOString()}</p>`,
             );
+            return new Response(JSON.stringify({ ok: true, sent_to: test_send_to, transcript }),
+                withCors({ headers: { "content-type": "application/json" } }));
         } catch (err) {
-            syncError = String((err as { message?: string } | undefined)?.message ?? err);
-        }
-        // Closing flushes denomailer's internal command queue, which is
-        // where async SMTP errors (caught by the unhandledrejection
-        // handler above) actually surface.
-        await closeSmtpClient();
-        // Give the microtask queue one more tick to deliver any late
-        // rejection from denomailer's connection teardown.
-        await new Promise((r) => setTimeout(r, 50));
-
-        const errMsg = syncError ?? lastAsyncSmtpError;
-        if (errMsg) {
-            return new Response(JSON.stringify({ ok: false, error: errMsg }),
+            return new Response(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }),
                 withCors({ status: 500, headers: { "content-type": "application/json" } }));
         }
-        return new Response(JSON.stringify({ ok: true, sent_to: test_send_to }),
-            withCors({ headers: { "content-type": "application/json" } }));
     }
 
     let q = supabase.from("organisations").select(`
