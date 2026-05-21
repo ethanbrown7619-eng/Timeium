@@ -210,6 +210,16 @@ async function openSmtpFor(org: any): Promise<void> {
             tls:      false,        // STARTTLS auto-negotiated on 2525/587
             auth:     { username: cfg.user, password: cfg.pass },
         },
+        // Log every SMTP command + response so we can see what the server
+        // actually said when denomailer throws its generic "invalid cmd".
+        // Verbose, but the Supabase function logs are the only window we
+        // have into the SMTP conversation.
+        debug: {
+            log:           true,
+            allowUnsecure: true,
+            encodeLB:      false,
+            noStartTLS:    false,
+        },
     });
     smtpFrom = cfg.from;
 }
