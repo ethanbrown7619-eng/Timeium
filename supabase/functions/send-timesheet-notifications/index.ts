@@ -71,6 +71,19 @@ const DEBUG_REDIRECT_EMAIL = Deno.env.get("DEBUG_REDIRECT_EMAIL");
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
+// denomailer queues SMTP commands and rejects on a microtask tick AFTER
+// the awaited send() returns. If we don't capture the rejection globally
+// the Deno worker crashes (Supabase returns 503, browser sees no CORS
+// header). Stash the latest async SMTP error so the test-send branch can
+// surface it in the response body instead of dying silently.
+let lastAsyncSmtpError: string | null = null;
+addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
+    const msg = String((e.reason as { message?: string } | undefined)?.message ?? e.reason);
+    console.error("unhandled rejection (likely denomailer):", msg);
+    lastAsyncSmtpError = msg;
+    e.preventDefault();
+});
+
 // ---------------------------------------------------------------------------
 // Date helpers (mirrors Attendium's send-weekly-flags conventions)
 // ---------------------------------------------------------------------------
@@ -711,6 +724,8 @@ Deno.serve(async (req) => {
             return new Response(JSON.stringify({ error: "Org not found" }),
                 withCors({ status: 404, headers: { "content-type": "application/json" } }));
         }
+        lastAsyncSmtpError = null;
+        let syncError: string | null = null;
         try {
             await openSmtpFor(org);
             await sendEmail(
@@ -720,14 +735,24 @@ Deno.serve(async (req) => {
                 `If you're reading it, the SMTP relay configured for org ${org.id} is working.</p>` +
                 `<p style="color:#666;font-size:12px">Sent at ${new Date().toISOString()}</p>`,
             );
-            return new Response(JSON.stringify({ ok: true, sent_to: test_send_to }),
-                withCors({ headers: { "content-type": "application/json" } }));
         } catch (err) {
-            return new Response(JSON.stringify({ ok: false, error: String(err) }),
-                withCors({ status: 500, headers: { "content-type": "application/json" } }));
-        } finally {
-            await closeSmtpClient();
+            syncError = String((err as { message?: string } | undefined)?.message ?? err);
         }
+        // Closing flushes denomailer's internal command queue, which is
+        // where async SMTP errors (caught by the unhandledrejection
+        // handler above) actually surface.
+        await closeSmtpClient();
+        // Give the microtask queue one more tick to deliver any late
+        // rejection from denomailer's connection teardown.
+        await new Promise((r) => setTimeout(r, 50));
+
+        const errMsg = syncError ?? lastAsyncSmtpError;
+        if (errMsg) {
+            return new Response(JSON.stringify({ ok: false, error: errMsg }),
+                withCors({ status: 500, headers: { "content-type": "application/json" } }));
+        }
+        return new Response(JSON.stringify({ ok: true, sent_to: test_send_to }),
+            withCors({ headers: { "content-type": "application/json" } }));
     }
 
     let q = supabase.from("organisations").select(`
