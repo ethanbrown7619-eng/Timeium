@@ -814,16 +814,107 @@ Deno.serve(async (req) => {
         return new Response(null, withCors({ status: 204 }));
     }
 
-    let force_org_id: number | null = null;
-    let force_kind:   string | null = null;
-    let test_send_to: string | null = null;
+    let force_org_id:    number | null = null;
+    let force_kind:      string | null = null;
+    let test_send_to:    string | null = null;
+    let test_kind:       string | null = null;
+    let test_redirect_to:string | null = null;
     if (req.method === "POST") {
         try {
             const body = await req.json();
-            if (body?.force_org_id) force_org_id = Number(body.force_org_id);
-            if (body?.force_kind)   force_kind   = String(body.force_kind);
-            if (body?.test_send_to) test_send_to = String(body.test_send_to);
+            if (body?.force_org_id)    force_org_id    = Number(body.force_org_id);
+            if (body?.force_kind)      force_kind      = String(body.force_kind);
+            if (body?.test_send_to)    test_send_to    = String(body.test_send_to);
+            if (body?.test_kind)       test_kind       = String(body.test_kind);
+            if (body?.test_redirect_to) test_redirect_to = String(body.test_redirect_to);
         } catch { /* empty body is fine */ }
+    }
+
+    // Test-notification preview mode: builds the requested notification
+    // type's email body (using the same templates the scheduled cron
+    // uses) and routes a single copy to test_redirect_to. No DB writes,
+    // no last_sent_at touched, no fan-out to real recipients. Lets the
+    // admin see exactly what each kind of email looks like before
+    // turning the live toggles on.
+    if (test_kind && test_redirect_to && force_org_id) {
+        const { data: org, error: orgErr } = await supabase.from("organisations")
+            .select("id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, " +
+                    "deadline_day, deadline_time, deadline_week, clock_tolerance_hours, " +
+                    "notify_overdue_recipient")
+            .eq("id", force_org_id).maybeSingle();
+        if (orgErr || !org) {
+            return new Response(JSON.stringify({ ok: false, error: "Org not found" }),
+                withCors({ status: 404, headers: { "content-type": "application/json" } }));
+        }
+
+        let cfg: SmtpConfig;
+        try { cfg = resolveSmtpConfig(org); }
+        catch (err) {
+            return new Response(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }),
+                withCors({ status: 500, headers: { "content-type": "application/json" } }));
+        }
+
+        const tz       = await getOrgTimezone(org.id);
+        const orgName  = await getOrgName(org.id);
+        const now      = new Date();
+        const thisMon  = mondayOf(tz, now);
+        const lastMon  = addDaysIso(thisMon, -7);
+        const thisSun  = addDaysIso(thisMon,  6);
+        const lastSun  = addDaysIso(lastMon,  6);
+
+        // Realistic placeholder data so digest/discrepancy templates have
+        // visible content. The admin viewing the test understands these
+        // aren't live names — they're labelled "Sample employee".
+        const sampleUnsub = [
+            { name: "Sample employee A", email: "samplea@example.com" },
+            { name: "Sample employee B", email: "sampleb@example.com" },
+        ];
+        const sampleDiffs = [
+            { name: "Sample employee A", loggedHours: 40,   clockedHours: 38.5, diff:  1.5 },
+            { name: "Sample employee B", loggedHours: 37.5, clockedHours: 39,   diff: -1.5 },
+        ];
+
+        let subject: string;
+        let html: string;
+        switch (test_kind) {
+            case "reminder": {
+                const dlDay  = org.deadline_day  || "monday";
+                const dlTime = org.deadline_time || "08:00";
+                const deadlineLine = `Deadline: ${dlDay} ${dlTime}` +
+                    (org.deadline_week === "this_week" ? " (this week)" : " (next week)") + ".";
+                subject = `[TEST] PTL Timesheet — reminder, week ${formatDate(thisMon)}`;
+                html    = reminderHtml(orgName, thisMon, thisSun, deadlineLine);
+                break;
+            }
+            case "overdue_employee": {
+                subject = `[TEST] PTL Timesheet — OVERDUE, week ${formatDate(lastMon)}`;
+                html    = overdueEmployeeHtml(orgName, lastMon, lastSun);
+                break;
+            }
+            case "overdue_admin": {
+                subject = `[TEST] PTL Timesheet — overdue digest, week ${formatDate(lastMon)}`;
+                html    = overdueAdminHtml(orgName, lastMon, lastSun, sampleUnsub);
+                break;
+            }
+            case "discrepancy": {
+                const tol = Number(org.clock_tolerance_hours ?? 0.5);
+                subject = `[TEST] PTL Timesheet — clock discrepancies, week ${formatDate(lastMon)}`;
+                html    = discrepancyHtml(orgName, lastMon, lastSun, tol, sampleDiffs);
+                break;
+            }
+            default:
+                return new Response(JSON.stringify({ ok: false, error: `Unknown test_kind: ${test_kind}` }),
+                    withCors({ status: 400, headers: { "content-type": "application/json" } }));
+        }
+
+        try {
+            await rawSmtpSend(cfg, test_redirect_to, subject, html);
+            return new Response(JSON.stringify({ ok: true, sent_to: test_redirect_to, test_kind }),
+                withCors({ headers: { "content-type": "application/json" } }));
+        } catch (err) {
+            return new Response(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }),
+                withCors({ status: 500, headers: { "content-type": "application/json" } }));
+        }
     }
 
     // Test-send mode: open SMTP for the requested org, fire one canary

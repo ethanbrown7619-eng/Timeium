@@ -896,6 +896,38 @@
             <span id="smtp-status" class="muted small"></span>
           </div>
         </div>
+
+        <!-- Test a real notification template, redirected to one address -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Preview Notification Email</h2>
+          <p class="muted">
+            Build the exact email body the cron would send for each
+            notification type and route a single copy to one address.
+            Uses sample data — no real employees are emailed, no schedule
+            stamps are touched.
+          </p>
+
+          <div class="settings-row">
+            <div class="settings-field" style="flex:2">
+              <label for="preview-kind">Notification type</label>
+              <select id="preview-kind" style="width:100%">
+                <option value="reminder">Submission reminder (current week)</option>
+                <option value="overdue_employee">Overdue — employee version (last week)</option>
+                <option value="overdue_admin">Overdue — admin digest (last week)</option>
+                <option value="discrepancy">Clock vs timesheet discrepancy (last week)</option>
+              </select>
+            </div>
+            <div class="settings-field" style="flex:2">
+              <label for="preview-email">Send to</label>
+              <input id="preview-email" type="email" placeholder="your@email.com" style="width:100%" />
+            </div>
+          </div>
+
+          <div class="mt-md row-flex" style="gap:8px;align-items:center">
+            <button id="preview-send-btn" type="button">Send preview</button>
+            <span id="preview-status" class="muted small"></span>
+          </div>
+        </div>
       </section>
     </main>
 

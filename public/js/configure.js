@@ -1014,6 +1014,48 @@ document.getElementById("test-smtp-btn").addEventListener("click", async () => {
   }
 });
 
+// Preview a notification template (reminder / overdue / discrepancy) by
+// having the edge function build the email body with sample data and
+// route a single copy to the admin-chosen address. No live recipients,
+// no last_sent_at touched.
+document.getElementById("preview-send-btn")?.addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  const kind = document.getElementById("preview-kind").value;
+  const to   = document.getElementById("preview-email").value.trim();
+  if (!to) return notice("Enter an email address", "warn");
+
+  const btn = document.getElementById("preview-send-btn");
+  btn.disabled = true;
+  const statusEl = document.getElementById("preview-status");
+  statusEl.textContent = "Sending…";
+  try {
+    const { data, error } = await sb.functions.invoke("send-timesheet-notifications", {
+      body: { force_org_id: currentOrgId, test_kind: kind, test_redirect_to: to },
+    });
+    if (error) throw error;
+    if (data?.ok) {
+      notice(`Preview sent to ${to}`, "success");
+      statusEl.textContent = "Sent";
+    } else {
+      notice(data?.error || "Send failed", "error");
+      statusEl.textContent = "";
+    }
+  } catch (err) {
+    notice(err.message || "Send failed", "error");
+    statusEl.textContent = "";
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { if (statusEl.textContent === "Sent") statusEl.textContent = ""; }, 4000);
+  }
+});
+
+// Prefill the preview email field with the admin's own address.
+const _previewEmail = document.getElementById("preview-email");
+if (_previewEmail && ctx?.session?.user?.email && !_previewEmail.value) {
+  _previewEmail.value = ctx.session.user.email;
+}
+
 /* -------------------------------------------------------- staff types */
 
 const EMPLOYMENT_TYPES = ["waged", "salaried", "contractor"];
