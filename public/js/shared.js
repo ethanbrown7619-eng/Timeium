@@ -389,7 +389,7 @@ export function renderTopbar(opts) {
     { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
     { key: "department", href: "/department.html",   label: "My Departments", show: !!opts.isManager || role === "developer" },
     { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
-    { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
+    { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev || !!opts.isClockViewer },
     { key: "configure",  href: "/configure.html",    label: "Configure",      show: isAdminOrDev },
     { key: "settings",   href: "/settings.html",     label: "Settings",       show: true },
   ];
@@ -535,7 +535,7 @@ export async function getUserContext(sb, session, { force = false } = {}) {
   const [devRes, adminRes, meRes] = await Promise.allSettled([
     sb.rpc("is_developer"),
     sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
-    sb.from("users").select("id, organisation_id, name, is_manager, department_id").eq("auth_user_id", session.user.id).maybeSingle(),
+    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison").eq("auth_user_id", session.user.id).maybeSingle(),
   ]);
 
   if (devRes.status === "rejected") console.warn("is_developer failed:", devRes.reason);
@@ -554,6 +554,9 @@ export async function getUserContext(sb, session, { force = false } = {}) {
     isManager: !!employee?.is_manager,
     role,
     isAdminOrHigher: role === "admin" || role === "developer",
+    // Clock-comparison-only viewer: gets the Admin nav link, but the
+    // admin page hides every tab except Timesheet vs Clock.
+    isClockViewer: !!employee?.can_view_clock_comparison,
   };
 
   try {
@@ -579,7 +582,7 @@ export function clearUserContextCache(session) {
   }
 }
 
-export async function requireAdmin(sb, { allowManager = true } = {}) {
+export async function requireAdmin(sb, { allowManager = true, allowClockViewer = false } = {}) {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) {
     location.replace("/signin.html");
@@ -589,7 +592,10 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
   const ctx = await getUserContext(sb, session);
   const role = ctx.role;
   const canView =
-    role === "developer" || role === "admin" || (allowManager && role === "manager");
+    role === "developer" ||
+    role === "admin" ||
+    (allowManager && role === "manager") ||
+    (allowClockViewer && ctx.isClockViewer);
 
   if (!canView) {
     location.replace("/welcome.html");
@@ -614,13 +620,14 @@ export async function requireAdmin(sb, { allowManager = true } = {}) {
     );
     currentOrgId = orgs.find((o) => o.id === saved)?.id || orgs[0]?.id || null;
   } else {
-    currentOrgId = ctx.adminRow?.organisation_id || null;
+    currentOrgId = ctx.adminRow?.organisation_id || ctx.employee?.organisation_id || null;
   }
 
   return {
     session,
     isDeveloper: ctx.isDeveloper,
     isManager: ctx.isManager,
+    isClockViewer: ctx.isClockViewer,
     adminRow: ctx.adminRow,
     employee: ctx.employee,
     role,

@@ -33,6 +33,7 @@ renderTopbar({
   session: ctx.session,
   isDeveloper: ctx.isDeveloper,
   isManager: ctx.isManager,
+  isClockViewer: ctx.isClockViewer,
   adminRow: ctx.adminRow,
   orgs: ctx.orgs,
   currentOrgId,
@@ -177,7 +178,7 @@ async function loadEmployees() {
     .from("users")
     .select(
       // auth_user_id is required by openDialog and syncAdminRole; keep it.
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, receives_overtime, active, organisation_id, is_manager, is_test, auth_user_id"
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, receives_overtime, active, organisation_id, is_manager, is_test, auth_user_id, rate_source_department_id, can_view_clock_comparison"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
@@ -488,12 +489,34 @@ function openDialog(empId) {
   document.getElementById("f-email").value = emp?.email || "";
   document.getElementById("f-code").value = emp?.employee_code || "";
   document.getElementById("f-employment").value = emp?.employment_type || "waged";
-  const hasSpecificRate = emp ? (emp.cost_rate != null || emp.sell_rate != null) : false;
+  const hasSpecificRate = emp
+    ? (emp.cost_rate != null || emp.sell_rate != null || emp.rate_source_department_id != null)
+    : false;
   document.getElementById("f-specific-rate").checked = hasSpecificRate;
   document.getElementById("f-cost").value = emp?.cost_rate ?? "";
   document.getElementById("f-sell").value = emp?.sell_rate ?? "";
-  document.getElementById("rate-fields").style.display = hasSpecificRate ? "" : "none";
-  updateRateRef(emp?.department_id);
+
+  // Rate-source dropdown: "Custom" + every active department. Pre-selects
+  // the saved rate_source_department_id when present.
+  const rateSourceSel = document.getElementById("f-rate-source");
+  rateSourceSel.innerHTML = `<option value="custom">Custom values below</option>` +
+    departments
+      .filter((d) => d.active)
+      .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`)
+      .join("");
+  const usingDeptRate = emp?.rate_source_department_id != null;
+  rateSourceSel.value = usingDeptRate ? String(emp.rate_source_department_id) : "custom";
+
+  // Show/hide rate-source wrapper + numeric inputs based on the two toggles.
+  const refreshRateUi = () => {
+    const specific = document.getElementById("f-specific-rate").checked;
+    const sourceIsDept = rateSourceSel.value !== "custom";
+    document.getElementById("rate-source-wrap").style.display = specific ? "" : "none";
+    document.getElementById("rate-fields").style.display      = specific && !sourceIsDept ? "" : "none";
+    updateRateRef(Number(document.getElementById("f-department").value) || null);
+  };
+  refreshRateUi();
+
   document.getElementById("f-ot").value = emp?.overtime_threshold_hours ?? 40;
   document.getElementById("f-manager").checked = emp?.is_manager || false;
   // Receives-overtime defaults to false for new employees (majority of
@@ -501,15 +524,14 @@ function openDialog(empId) {
   // saved value for existing ones. ?? not || so an explicit false sticks.
   document.getElementById("f-receives-ot").checked = emp?.receives_overtime ?? false;
   document.getElementById("f-admin").checked = emp?.auth_user_id ? adminUserIds.has(emp.auth_user_id) : false;
+  document.getElementById("f-clock-viewer").checked = !!emp?.can_view_clock_comparison;
   if (ctx.isDeveloper) {
     document.getElementById("test-staff-wrap").classList.remove("hidden");
     document.getElementById("f-test").checked = emp?.is_test || false;
   }
 
-  document.getElementById("f-specific-rate").onchange = (e) => {
-    document.getElementById("rate-fields").style.display = e.target.checked ? "" : "none";
-    updateRateRef(Number(document.getElementById("f-department").value) || null);
-  };
+  document.getElementById("f-specific-rate").onchange = refreshRateUi;
+  rateSourceSel.onchange = refreshRateUi;
   document.getElementById("f-department").onchange = () => {
     updateRateRef(Number(document.getElementById("f-department").value) || null);
   };
@@ -638,6 +660,13 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
 
   const form = e.currentTarget;
+  // Rate source: "custom" means use the numeric inputs; any other value
+  // is a department id whose rates this user inherits (so we null out
+  // the per-user cost/sell to avoid two sources fighting each other).
+  const specific = document.getElementById("f-specific-rate").checked;
+  const rateSourceVal = document.getElementById("f-rate-source").value;
+  const usingDeptRate = specific && rateSourceVal !== "custom";
+
   const payload = {
     name: document.getElementById("f-name").value.trim(),
     email: document.getElementById("f-email").value.trim() || null,
@@ -646,16 +675,18 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       : null,
     employment_type: document.getElementById("f-employment").value,
     employee_code: document.getElementById("f-code").value.trim() || null,
-    cost_rate: document.getElementById("f-specific-rate").checked && document.getElementById("f-cost").value !== ""
+    cost_rate: specific && !usingDeptRate && document.getElementById("f-cost").value !== ""
       ? Number(document.getElementById("f-cost").value) : null,
-    sell_rate: document.getElementById("f-specific-rate").checked && document.getElementById("f-sell").value !== ""
+    sell_rate: specific && !usingDeptRate && document.getElementById("f-sell").value !== ""
       ? Number(document.getElementById("f-sell").value) : null,
+    rate_source_department_id: usingDeptRate ? Number(rateSourceVal) : null,
     overtime_threshold_hours:
       document.getElementById("f-ot").value === ""
         ? null
         : Number(document.getElementById("f-ot").value),
     is_manager: document.getElementById("f-manager").checked,
     receives_overtime: document.getElementById("f-receives-ot").checked,
+    can_view_clock_comparison: document.getElementById("f-clock-viewer").checked,
     is_test: ctx.isDeveloper ? document.getElementById("f-test").checked : undefined,
   };
 
@@ -712,6 +743,20 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: newEmpId });
       if (provErr) console.warn("provision_employee_login:", provErr.message);
     }
+
+    // create_employee RPC doesn't take the newer columns. Patch them in
+    // via UPDATE so the dialog's choices on the add path actually stick.
+    if (newEmpId && (payload.rate_source_department_id != null || payload.can_view_clock_comparison)) {
+      const { error: patchErr } = await sb.from("users")
+        .update({
+          rate_source_department_id: payload.rate_source_department_id,
+          can_view_clock_comparison: payload.can_view_clock_comparison,
+        })
+        .eq("id", newEmpId)
+        .eq("organisation_id", currentOrgId);
+      if (patchErr) console.warn("post-create patch:", patchErr.message);
+    }
+
     notice("Employee created", "success");
   }
 

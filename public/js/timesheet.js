@@ -18,7 +18,7 @@ const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
 const ctx = await getUserContext(sb, session);
-const { isDeveloper, adminRow, isManager } = ctx;
+const { isDeveloper, adminRow, isManager, isClockViewer } = ctx;
 let employee = ctx.employee;
 
 // ---------------------------------------------------------------- admin mode
@@ -84,6 +84,7 @@ renderTopbar({
   session,
   isDeveloper,
   isManager,
+  isClockViewer,
   adminRow,
   orgs: null,
   currentOrgId,

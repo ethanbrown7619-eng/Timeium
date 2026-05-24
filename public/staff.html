@@ -184,6 +184,16 @@
           </label>
           <div id="rate-ref" class="small muted mt-sm" style="display:none"></div>
         </div>
+        <div id="rate-source-wrap" class="mb-sm" style="display:none">
+          <label for="f-rate-source">Rate source</label>
+          <select id="f-rate-source" style="width:100%">
+            <option value="custom">Custom values below</option>
+          </select>
+          <p class="small muted mt-sm">
+            Pick a department to inherit its rates — useful when a manager
+            sits in one department for approval but bills at another's rate.
+          </p>
+        </div>
         <div id="rate-fields" class="row-flex mb-sm" style="display:none">
           <div class="grow">
             <label for="f-cost">Cost rate $/hr</label>
@@ -216,6 +226,14 @@
             <input type="checkbox" id="f-admin" />
             <span>Admin</span>
             <span class="small muted">— full access to admin dashboard, exports, and settings</span>
+          </label>
+        </div>
+
+        <div class="mb-md">
+          <label class="row-flex" style="gap:8px;cursor:pointer">
+            <input type="checkbox" id="f-clock-viewer" />
+            <span>Can view Timesheet vs Clock</span>
+            <span class="small muted">— grants Admin tab access, but only to the Timesheet vs Clock page</span>
           </label>
         </div>
 

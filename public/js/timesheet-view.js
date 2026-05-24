@@ -17,7 +17,7 @@ const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
 const ctx = await getUserContext(sb, session);
-const { isDeveloper, adminRow, isManager, employee: me } = ctx;
+const { isDeveloper, adminRow, isManager, isClockViewer, employee: me } = ctx;
 
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
 if (!isManager && !isAdminOrDev) {
@@ -28,7 +28,7 @@ if (!isManager && !isAdminOrDev) {
 const currentOrgId = me?.organisation_id || adminRow?.organisation_id || null;
 
 renderTopbar({
-  sb, session, isDeveloper, isManager, adminRow,
+  sb, session, isDeveloper, isManager, isClockViewer, adminRow,
   orgs: null, currentOrgId, onOrgChange: () => {},
   active: "department",
 });

@@ -19,13 +19,26 @@ function getXLSX() {
 }
 
 const sb = await getSupabase();
-const ctx = await requireAdmin(sb);
+const ctx = await requireAdmin(sb, { allowClockViewer: true });
 let currentOrgId = ctx.currentOrgId;
+
+// Clock-viewer-only users see the Admin tab in the nav but the page
+// itself collapses to just the Timesheet vs Clock sub-tab. Every other
+// tab button and panel is hidden, and dashboard / infusion / leave
+// loaders are short-circuited via this flag.
+const IS_CLOCK_VIEWER_ONLY = !!ctx.isClockViewer && !ctx.isAdminOrHigher;
+if (IS_CLOCK_VIEWER_ONLY) {
+  // Hide every tab button except Timesheet vs Clock.
+  for (const btn of document.querySelectorAll("#admin-tabs [data-tab]")) {
+    if (btn.dataset.tab !== "clockvts") btn.style.display = "none";
+  }
+}
 
 renderTopbar({
   session: ctx.session,
   isDeveloper: ctx.isDeveloper,
   isManager: ctx.isManager,
+  isClockViewer: ctx.isClockViewer,
   adminRow: ctx.adminRow,
   orgs: ctx.orgs,
   currentOrgId,
@@ -64,7 +77,7 @@ function tabFromHash() {
   const t = m?.[1];
   return VALID_TABS.has(t) ? t : null;
 }
-let activeTab = tabFromHash() || "dashboard";
+let activeTab = IS_CLOCK_VIEWER_ONLY ? "clockvts" : (tabFromHash() || "dashboard");
 
 function applyActiveTab() {
   document.querySelectorAll("[data-tab]").forEach((b) => {
@@ -717,7 +730,7 @@ async function buildInfusionRows() {
 
   const [empExtraRes, deptExtraRes] = await Promise.all([
     empIds.length
-      ? sb.from("users").select("id, employee_code, cost_rate, sell_rate").in("id", empIds)
+      ? sb.from("users").select("id, employee_code, cost_rate, sell_rate, rate_source_department_id").in("id", empIds)
       : Promise.resolve({ data: [] }),
     deptIds.length
       ? sb.from("departments").select("id, cost_rate, sell_rate").in("id", deptIds)
@@ -747,7 +760,15 @@ async function buildInfusionRows() {
   for (const t of timesheets) tsUserMap[t.id] = t.user_id;
 
   function effectiveRate(emp, field) {
+    // 1. Explicit rate-source department wins (e.g. managers who bill
+    //    at another department's rate).
+    if (emp.rate_source_department_id) {
+      const src = deptExtraById.get(emp.rate_source_department_id);
+      if (src && src[field] != null) return Number(src[field]);
+    }
+    // 2. Per-user override.
     if (emp[field] != null) return Number(emp[field]);
+    // 3. Fall through to the employee's own department default.
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
     if (dept && !dept.is_overhead && dept[field] != null) return Number(dept[field]);
     return 0;
@@ -1602,5 +1623,7 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
 
 /* ---------------------------------------------------------------- boot */
 
-loadOrgSettings().then(() => navLoadInfusionStatus());
+if (!IS_CLOCK_VIEWER_ONLY) {
+  loadOrgSettings().then(() => navLoadInfusionStatus());
+}
 applyActiveTab();

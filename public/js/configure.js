@@ -26,6 +26,7 @@ renderTopbar({
   session: ctx.session,
   isDeveloper: ctx.isDeveloper,
   isManager: ctx.isManager,
+  isClockViewer: ctx.isClockViewer,
   adminRow: ctx.adminRow,
   orgs: ctx.orgs,
   currentOrgId,

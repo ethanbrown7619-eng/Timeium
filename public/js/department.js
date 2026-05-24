@@ -19,7 +19,7 @@ const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
 const ctx = await getUserContext(sb, session);
-const { isDeveloper, adminRow, isManager, employee } = ctx;
+const { isDeveloper, adminRow, isManager, isClockViewer, employee } = ctx;
 
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
 // Leave RPCs (approve_leave_request, reject_leave_request,
@@ -42,6 +42,7 @@ renderTopbar({
   session,
   isDeveloper,
   isManager,
+  isClockViewer,
   adminRow,
   orgs: null,
   currentOrgId,
