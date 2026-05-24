@@ -183,6 +183,9 @@ interface SmtpConfig {
 
 let smtpClient: SMTPClient | null = null;
 let smtpFrom: string = NOTIFY_FROM;
+// Per-invocation debug redirect — populated from organisations.debug_redirect_email
+// at the top of processOrg. Falls back to DEBUG_REDIRECT_EMAIL env var when null.
+let currentDebugRedirect: string | null = null;
 
 function resolveSmtpConfig(org: any): SmtpConfig {
     const host = (org?.smtp_host as string) || SMTP_HOST || "";
@@ -202,6 +205,7 @@ function resolveSmtpConfig(org: any): SmtpConfig {
 
 async function openSmtpFor(org: any): Promise<void> {
     await closeSmtpClient();
+    currentDebugRedirect = (org?.debug_redirect_email as string) || null;
     const cfg = resolveSmtpConfig(org);
     smtpClient = new SMTPClient({
         connection: {
@@ -244,7 +248,18 @@ async function rawSmtpSend(
     to: string,
     subject: string,
     html: string,
+    redirectOverride: string | null = null,
 ): Promise<string> {
+    // Apply per-org / explicit redirect so the test-send and preview
+    // paths honour the same routing rules the cron does.
+    const effectiveRedirect = redirectOverride ?? currentDebugRedirect ?? DEBUG_REDIRECT_EMAIL ?? null;
+    if (effectiveRedirect) {
+        subject = `[DEBUG -> ${to}] ${subject}`;
+        html = `<div style="background:#fef08a;padding:12px;` +
+            `font-family:sans-serif;border-bottom:2px solid #ca8a04">` +
+            `<b>[DEBUG]</b> redirected from <b>${to}</b>.</div>` + html;
+        to = effectiveRedirect;
+    }
     const lines: string[] = [];
     const log = (line: string) => { lines.push(line); console.log("[smtp]", line); };
 
@@ -343,13 +358,17 @@ async function sendEmail(to: string, subject: string, html: string): Promise<voi
     let actualTo      = to;
     let actualSubject = subject;
     let actualHtml    = html;
-    if (DEBUG_REDIRECT_EMAIL) {
-        actualTo      = DEBUG_REDIRECT_EMAIL;
+    // Per-org debug redirect wins over the global env var. Either one
+    // pulls every send into a single inbox so admins can verify the
+    // automation without spamming staff.
+    const redirect = currentDebugRedirect ?? DEBUG_REDIRECT_EMAIL;
+    if (redirect) {
+        actualTo      = redirect;
         actualSubject = `[DEBUG -> ${to}] ${subject}`;
         actualHtml    = `<div style="background:#fef08a;padding:12px;` +
             `font-family:sans-serif;border-bottom:2px solid #ca8a04">` +
-            `<b>[DEBUG]</b> redirected from <b>${to}</b>. Set ` +
-            `DEBUG_REDIRECT_EMAIL='' to send for real.</div>` + html;
+            `<b>[DEBUG]</b> redirected from <b>${to}</b>. Clear the debug ` +
+            `redirect (Configure &rarr; SMTP) to send for real.</div>` + html;
     }
     await smtpClient.send({
         from:    smtpFrom,
@@ -699,6 +718,139 @@ async function fireDiscrepancy(org: any, weekStart: string, weekEnd: string,
 }
 
 // ---------------------------------------------------------------------------
+// Manager-approval digest
+// ---------------------------------------------------------------------------
+//
+// For each user with users.is_manager = true, find the departments they
+// own (departments.manager_id = user.id) and roll up last week's
+// timesheet status of every employee in those departments. Email the
+// manager a digest split by department: submitted (awaiting their
+// approval), not-submitted (missing entirely), already-approved
+// (informational footnote). Skips managers whose departments have
+// nothing pending and nothing missing.
+
+interface ManagerDeptRollup {
+    name:         string;
+    submitted:    string[];   // names of employees whose timesheet needs approval
+    notSubmitted: string[];   // names of employees who haven't submitted at all
+    approvedCount: number;    // count only; informational
+}
+
+function managerApprovalHtml(
+    mgrName: string,
+    orgName: string,
+    weekStart: string,
+    weekEnd: string,
+    depts: ManagerDeptRollup[],
+): string {
+    const sections = depts.map((d) => {
+        const subHtml = d.submitted.length
+            ? `<p style="margin:6px 0 4px"><b>Awaiting your approval (${d.submitted.length}):</b></p>` +
+              `<ul style="margin:0 0 12px 18px">${d.submitted.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
+            : "";
+        const missHtml = d.notSubmitted.length
+            ? `<p style="margin:6px 0 4px;color:#dc2626"><b>Not submitted (${d.notSubmitted.length}):</b></p>` +
+              `<ul style="margin:0 0 12px 18px">${d.notSubmitted.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
+            : "";
+        const okHtml = d.approvedCount
+            ? `<p style="margin:6px 0 16px;color:#64748b;font-size:13px">${d.approvedCount} already approved.</p>`
+            : "";
+        return `
+            <div style="border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin-bottom:12px">
+                <h3 style="margin:0 0 8px;font-size:16px">${escapeHtml(d.name)}</h3>
+                ${subHtml}${missHtml}${okHtml}
+            </div>`;
+    }).join("");
+    return `
+        <div style="font-family:sans-serif;color:#0f172a;max-width:600px">
+            <p>Hi ${escapeHtml(mgrName)},</p>
+            <p>Status of timesheets in your department(s) at <b>${escapeHtml(orgName)}</b>
+            for the week of <b>${escapeHtml(formatDate(weekStart))}</b> to
+            <b>${escapeHtml(formatDate(weekEnd))}</b>:</p>
+            ${sections}
+            <p><a href="${APP_BASE_URL}/department.html"
+                  style="display:inline-block;padding:10px 16px;background:#0f172a;color:#fff;text-decoration:none;border-radius:6px">
+                Open My Departments
+            </a></p>
+            <p style="color:#64748b;font-size:13px;margin-top:24px">
+                Sent automatically by PTL Timesheet. Disable in
+                Configure &rarr; Settings.
+            </p>
+        </div>`;
+}
+
+async function buildManagerRollup(
+    orgId: number,
+    mgr: { id: number; name: string; email: string },
+    weekStart: string,
+): Promise<ManagerDeptRollup[] | null> {
+    const { data: depts } = await supabase.from("departments")
+        .select("id, name")
+        .eq("organisation_id", orgId)
+        .eq("active", true)
+        .eq("manager_id", mgr.id);
+    if (!depts?.length) return null;
+
+    const deptIds = depts.map((d: any) => d.id);
+    const { data: emps } = await supabase.from("users")
+        .select("id, name, department_id")
+        .eq("organisation_id", orgId)
+        .eq("active", true)
+        .in("department_id", deptIds);
+    if (!emps?.length) return null;
+
+    const empIds = emps.map((e: any) => e.id);
+    const { data: tsRows } = await supabase.from("timesheets")
+        .select("user_id, status")
+        .eq("organisation_id", orgId)
+        .eq("week_start", weekStart)
+        .in("user_id", empIds);
+    const tsByUser = new Map<number, string>();
+    for (const t of tsRows || []) tsByUser.set(t.user_id as number, (t.status as string) || "draft");
+
+    const byDept = new Map<number, ManagerDeptRollup>();
+    for (const d of depts) byDept.set(d.id as number,
+        { name: d.name as string, submitted: [], notSubmitted: [], approvedCount: 0 });
+    for (const e of emps) {
+        const bucket = byDept.get(e.department_id as number);
+        if (!bucket) continue;
+        const status = tsByUser.get(e.id as number);
+        if (status === "submitted")        bucket.submitted.push(e.name || `Employee ${e.id}`);
+        else if (status === "approved")    bucket.approvedCount++;
+        else                                bucket.notSubmitted.push(e.name || `Employee ${e.id}`);
+    }
+    return [...byDept.values()];
+}
+
+async function fireManagerApproval(org: any, weekStart: string, weekEnd: string,
+                                   _tz: string, orgName: string): Promise<number> {
+    const { data: managers } = await supabase.from("users")
+        .select("id, name, email")
+        .eq("organisation_id", org.id)
+        .eq("active", true)
+        .eq("is_manager", true)
+        .not("email", "is", null);
+    if (!managers?.length) return 0;
+
+    let sent = 0;
+    for (const mgr of managers as any[]) {
+        const rollup = await buildManagerRollup(org.id, mgr, weekStart);
+        if (!rollup) continue;
+        // Skip if nothing actionable in any of their departments.
+        const anyPending = rollup.some((d) => d.submitted.length > 0 || d.notSubmitted.length > 0);
+        if (!anyPending) continue;
+        const subject = `PTL Timesheet — Timesheets to approve, week ${formatDate(weekStart)}`;
+        const html    = managerApprovalHtml(mgr.name || "there", orgName, weekStart, weekEnd, rollup);
+        try { await sendEmail(mgr.email, subject, html); sent++; }
+        catch (err) { console.error(`manager_approval send failed (mgr ${mgr.id})`, err); }
+    }
+    await supabase.from("organisations")
+        .update({ manager_approval_last_sent_at: new Date().toISOString() })
+        .eq("id", org.id);
+    return sent;
+}
+
+// ---------------------------------------------------------------------------
 // Per-org dispatch
 // ---------------------------------------------------------------------------
 
@@ -734,8 +886,12 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         (org.notify_discrepancy &&
          slotMatches(tz, org.discrepancy_day, org.discrepancy_time, now) &&
          !alreadySentToday(tz, org.discrepancy_last_sent_at, now));
+    const fireMA = force.kind === "manager_approval" ||
+        (org.notify_manager_approval &&
+         slotMatches(tz, org.manager_approval_day, org.manager_approval_time, now) &&
+         !alreadySentToday(tz, org.manager_approval_last_sent_at, now));
 
-    if (!fireR1 && !fireR2 && !fireO && !fireD) {
+    if (!fireR1 && !fireR2 && !fireO && !fireD && !fireMA) {
         return { skipped: today };
     }
 
@@ -781,6 +937,17 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         } catch (err) {
             console.error(`discrepancy failed (org ${org.id})`, err);
             result.discrepancy = { error: String(err) };
+        }
+    }
+
+    if (fireMA) {
+        try {
+            // Manager-approval looks at LAST week (the cycle just ended).
+            const sent = await fireManagerApproval(org, lastMonday, lastSunday, tz, orgName);
+            result.manager_approval = { sent };
+        } catch (err) {
+            console.error(`manager_approval failed (org ${org.id})`, err);
+            result.manager_approval = { error: String(err) };
         }
     }
 
@@ -840,7 +1007,7 @@ Deno.serve(async (req) => {
         const { data: org, error: orgErr } = await supabase.from("organisations")
             .select("id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, " +
                     "deadline_day, deadline_time, deadline_week, clock_tolerance_hours, " +
-                    "notify_overdue_recipient")
+                    "notify_overdue_recipient, debug_redirect_email")
             .eq("id", force_org_id).maybeSingle();
         if (orgErr || !org) {
             return new Response(JSON.stringify({ ok: false, error: "Org not found" }),
@@ -902,6 +1069,25 @@ Deno.serve(async (req) => {
                 html    = discrepancyHtml(orgName, lastMon, lastSun, tol, sampleDiffs);
                 break;
             }
+            case "manager_approval": {
+                const sampleDepts: ManagerDeptRollup[] = [
+                    {
+                        name: "Sample Department A",
+                        submitted: ["Sample employee A", "Sample employee B"],
+                        notSubmitted: ["Sample employee C"],
+                        approvedCount: 2,
+                    },
+                    {
+                        name: "Sample Department B",
+                        submitted: ["Sample employee D"],
+                        notSubmitted: [],
+                        approvedCount: 1,
+                    },
+                ];
+                subject = `[TEST] PTL Timesheet — Timesheets to approve, week ${formatDate(lastMon)}`;
+                html    = managerApprovalHtml("there", orgName, lastMon, lastSun, sampleDepts);
+                break;
+            }
             default:
                 return new Response(JSON.stringify({ ok: false, error: `Unknown test_kind: ${test_kind}` }),
                     withCors({ status: 400, headers: { "content-type": "application/json" } }));
@@ -927,7 +1113,7 @@ Deno.serve(async (req) => {
                 withCors({ status: 400, headers: { "content-type": "application/json" } }));
         }
         const { data: org, error: orgErr } = await supabase.from("organisations")
-            .select("id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from")
+            .select("id, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, debug_redirect_email")
             .eq("id", force_org_id).maybeSingle();
         if (orgErr || !org) {
             return new Response(JSON.stringify({ error: "Org not found" }),
@@ -966,9 +1152,11 @@ Deno.serve(async (req) => {
         notify_overdue, overdue_day, overdue_time, notify_overdue_recipient,
         overdue_last_sent_at,
         notify_discrepancy, discrepancy_day, discrepancy_time, discrepancy_last_sent_at,
+        notify_manager_approval, manager_approval_day, manager_approval_time, manager_approval_last_sent_at,
         clock_tolerance_hours,
         deadline_week, deadline_day, deadline_time,
-        smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from
+        smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,
+        debug_redirect_email
     `);
     if (force_org_id) q = q.eq("id", force_org_id);
 

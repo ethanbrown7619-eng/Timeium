@@ -854,6 +854,54 @@
           </div>
         </div>
 
+        <!-- Manager Approval digest -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Manager Approval Reminders</h2>
+          <p class="muted">
+            Emails each department manager a digest of the previous week's
+            timesheets in their department — who submitted (awaiting their
+            approval) and who didn't submit at all. Skips managers whose
+            departments have nothing pending.
+          </p>
+
+          <div class="settings-checks">
+            <label class="settings-check">
+              <input type="checkbox" id="notify-manager-approval" />
+              <div>
+                <strong>Manager approval digest</strong>
+                <span class="muted small">Send weekly to every department manager.</span>
+              </div>
+            </label>
+          </div>
+
+          <div id="manager-approval-schedule" style="display:none">
+            <p class="muted small mt-sm">When should the digest be sent?</p>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="manager-approval-day">Day</label>
+                <select id="manager-approval-day" style="width:100%">
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                  <option value="sunday">Sunday</option>
+                </select>
+              </div>
+              <div class="settings-field">
+                <label for="manager-approval-time">Time</label>
+                <input type="time" id="manager-approval-time" value="09:00" style="width:100%" />
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-md">
+            <button id="save-manager-approval-btn">Save</button>
+            <span id="manager-approval-status" class="muted small" style="margin-left:12px"></span>
+          </div>
+        </div>
+
         <!-- SMTP / outbound email relay -->
         <div class="card" style="max-width:640px">
           <h2 style="margin-top:0">Email Sending (SMTP)</h2>
@@ -890,6 +938,18 @@
             <p class="muted small mt-sm">Full RFC 5322 form. Must use an address the relay is authorised to send as.</p>
           </div>
 
+          <div class="mt-sm">
+            <label for="smtp-debug-redirect">Debug — reroute all sends to</label>
+            <input id="smtp-debug-redirect" type="email" placeholder="leave blank for normal delivery" style="width:100%" />
+            <p class="muted small mt-sm">
+              When set, <b>every</b> email this app would send (reminders, overdue,
+              discrepancy, manager-approval, previews) goes to this address instead
+              of the real recipient. The original recipient is preserved in the
+              subject prefix. Use to safely verify schedules without spamming
+              staff; clear to go live.
+            </p>
+          </div>
+
           <div class="mt-md row-flex" style="gap:8px;align-items:center">
             <button id="save-smtp-btn">Save</button>
             <button id="test-smtp-btn" class="ghost" type="button">Send test email…</button>
@@ -915,6 +975,7 @@
                 <option value="overdue_employee">Overdue — employee version (last week)</option>
                 <option value="overdue_admin">Overdue — admin digest (last week)</option>
                 <option value="discrepancy">Clock vs timesheet discrepancy (last week)</option>
+                <option value="manager_approval">Manager approval digest (last week)</option>
               </select>
             </div>
             <div class="settings-field" style="flex:2">

@@ -707,7 +707,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, smtp_host, smtp_port, smtp_user, smtp_from";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, smtp_host, smtp_port, smtp_user, smtp_from, debug_redirect_email, notify_manager_approval, manager_approval_day, manager_approval_time";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -784,6 +784,13 @@ async function loadSettings() {
     document.getElementById("smtp-user").value = data.smtp_user || "";
     document.getElementById("smtp-pass").value = "";
     document.getElementById("smtp-from").value = data.smtp_from || "";
+    document.getElementById("smtp-debug-redirect").value = data.debug_redirect_email || "";
+
+    // Manager-approval digest
+    document.getElementById("notify-manager-approval").checked = !!data.notify_manager_approval;
+    document.getElementById("manager-approval-day").value = data.manager_approval_day || "monday";
+    document.getElementById("manager-approval-time").value = (data.manager_approval_time || "09:00").slice(0, 5);
+    document.getElementById("manager-approval-schedule").style.display = data.notify_manager_approval ? "" : "none";
   } catch (err) {
     notice(err.message || "Failed to load settings", "error");
   }
@@ -948,6 +955,28 @@ function flashStatus(id) {
   setTimeout(() => el.textContent = "", 3000);
 }
 
+/* -------------------------------------------------------- Manager approval digest */
+
+document.getElementById("notify-manager-approval")?.addEventListener("change", (e) => {
+  document.getElementById("manager-approval-schedule").style.display = e.target.checked ? "" : "none";
+});
+
+document.getElementById("save-manager-approval-btn")?.addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    await saveOrgSettings({
+      notify_manager_approval: document.getElementById("notify-manager-approval").checked,
+      manager_approval_day:    document.getElementById("manager-approval-day").value,
+      manager_approval_time:   document.getElementById("manager-approval-time").value || "09:00",
+    });
+    notice("Manager approval reminders saved", "success");
+    flashStatus("manager-approval-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
 /* -------------------------------------------------------- SMTP */
 
 document.getElementById("save-smtp-btn").addEventListener("click", async () => {
@@ -971,6 +1000,7 @@ document.getElementById("save-smtp-btn").addEventListener("click", async () => {
     smtp_port: host ? String(port) : "",
     smtp_user: user,
     smtp_from: from,
+    debug_redirect_email: document.getElementById("smtp-debug-redirect").value.trim(),
   };
   if (pass) payload.smtp_pass = pass;
 
