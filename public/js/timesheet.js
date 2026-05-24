@@ -8,6 +8,7 @@ import {
   confirmDialog,
   invalidateWeekDashboard,
   getActiveMonday,
+  isUserEffectiveOverhead,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -72,7 +73,10 @@ const deptInfoPromise = (async () => {
       .select("is_overhead, require_task")
       .eq("id", employee.department_id)
       .maybeSingle();
-    return { isOverhead: !!data?.is_overhead, requireTask: !!data?.require_task };
+    // Specific-rate employees in an overhead department still submit
+    // timesheets — see isUserEffectiveOverhead in shared.js.
+    const isOverhead = isUserEffectiveOverhead(employee, data);
+    return { isOverhead, requireTask: !!data?.require_task };
   } catch (err) {
     console.warn("department lookup failed:", err);
     return { isOverhead: false, requireTask: false };

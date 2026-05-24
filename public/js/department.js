@@ -9,6 +9,7 @@ import {
   isTsSubmittedOrApproved,
   confirmDialog, promptDialog,
   fetchWeekDashboardData, invalidateWeekDashboard,
+  isUserEffectiveOverhead,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -109,8 +110,14 @@ async function loadDashboard(signal) {
   if (!dash) return;
 
   const allDepts = dash.departments.filter((d) => d.active);
-  // Exclude overhead departments — they don't submit timesheets
-  const nonOverheadDepts = allDepts.filter((d) => !d.is_overhead);
+  // Per-user effective-overhead lets a manager in an overhead dept who
+  // has their own rate still count toward the manager dashboard. A dept
+  // surfaces only if it still has a non-overhead member after filtering.
+  const deptById = new Map(allDepts.map((d) => [d.id, d]));
+  const billingEmployees = dash.employees.filter((e) =>
+    !isUserEffectiveOverhead(e, deptById.get(e.department_id)));
+  const remainingDeptIds = new Set(billingEmployees.map((e) => e.department_id));
+  const nonOverheadDepts = allDepts.filter((d) => remainingDeptIds.has(d.id));
 
   // Admins/devs see all non-overhead departments; managers see only their own
   const managedDepts = isAdminOrDev
@@ -134,7 +141,7 @@ async function loadDashboard(signal) {
   document.getElementById("emp-table-title").textContent =
     managedDepts.length === 1 ? "My Employees" : "Employees";
 
-  const myTeam = dash.employees.filter((e) => managedDeptIds.has(e.department_id));
+  const myTeam = billingEmployees.filter((e) => managedDeptIds.has(e.department_id));
 
   // tsMap is a real Map so number keys stay numbers (Object.entries
   // stringifies, which silently mismatches when callers look up by e.id).

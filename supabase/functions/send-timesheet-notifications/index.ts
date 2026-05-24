@@ -414,17 +414,38 @@ async function getAdminEmails(orgId: number): Promise<string[]> {
 }
 
 // Active employees in an org with no submitted timesheet for `weekStart`.
+// Truly-overhead employees (admin/ops in an overhead department, no rate)
+// are excluded — they don't file timesheets so reminders / overdue mails
+// would just spam them.
 async function getUnsubmittedEmployees(orgId: number, weekStart: string)
         : Promise<Array<{ id: number; name: string; email: string }>> {
-    const { data: employees } = await supabase
-        .from("users")
-        .select("id, name, email")
-        .eq("organisation_id", orgId)
-        .eq("active", true)
-        .not("email", "is", null);
-    if (!employees?.length) return [];
+    const [empRes, deptRes] = await Promise.all([
+        supabase.from("users")
+            .select("id, name, email, department_id, cost_rate, sell_rate, rate_source_department_id")
+            .eq("organisation_id", orgId)
+            .eq("active", true)
+            .not("email", "is", null),
+        supabase.from("departments")
+            .select("id, is_overhead")
+            .eq("organisation_id", orgId),
+    ]);
+    const employees = empRes.data || [];
+    const deptOverhead = new Map<number, boolean>();
+    for (const d of (deptRes.data || []) as any[]) {
+        deptOverhead.set(d.id as number, !!d.is_overhead);
+    }
+    if (!employees.length) return [];
 
-    const userIds = employees.map((e: any) => e.id);
+    const billing = employees.filter((e: any) => {
+        if (!deptOverhead.get(e.department_id)) return true;
+        if (e.rate_source_department_id != null) return true;
+        if (e.cost_rate != null) return true;
+        if (e.sell_rate != null) return true;
+        return false;
+    });
+    if (!billing.length) return [];
+
+    const userIds = billing.map((e: any) => e.id);
     const { data: tsRows } = await supabase
         .from("timesheets")
         .select("user_id, status")
@@ -437,7 +458,7 @@ async function getUnsubmittedEmployees(orgId: number, weekStart: string)
             .filter((t: any) => t.status === "submitted" || t.status === "approved")
             .map((t: any) => t.user_id)
     );
-    return employees
+    return billing
         .filter((e: any) => !submittedUserIds.has(e.id) && e.email)
         .map((e: any) => ({ id: e.id, name: e.name || "", email: e.email }));
 }
@@ -785,21 +806,37 @@ async function buildManagerRollup(
     weekStart: string,
 ): Promise<ManagerDeptRollup[] | null> {
     const { data: depts } = await supabase.from("departments")
-        .select("id, name")
+        .select("id, name, is_overhead")
         .eq("organisation_id", orgId)
         .eq("active", true)
         .eq("manager_id", mgr.id);
     if (!depts?.length) return null;
 
     const deptIds = depts.map((d: any) => d.id);
+    // Pull rate columns so we can skip truly-overhead employees (admin /
+    // ops staff sitting in an overhead dept with no specific rate) from
+    // the "submitted vs not submitted" counts. Rate-having members in
+    // an overhead dept stay in — they file real timesheets.
     const { data: emps } = await supabase.from("users")
-        .select("id, name, department_id")
+        .select("id, name, department_id, cost_rate, sell_rate, rate_source_department_id")
         .eq("organisation_id", orgId)
         .eq("active", true)
         .in("department_id", deptIds);
     if (!emps?.length) return null;
 
-    const empIds = emps.map((e: any) => e.id);
+    const deptById = new Map<number, any>();
+    for (const d of depts) deptById.set(d.id as number, d);
+    const billingEmps = emps.filter((e: any) => {
+        const d = deptById.get(e.department_id);
+        if (!d?.is_overhead) return true;
+        if (e.rate_source_department_id != null) return true;
+        if (e.cost_rate != null) return true;
+        if (e.sell_rate != null) return true;
+        return false;
+    });
+    if (!billingEmps.length) return null;
+
+    const empIds = billingEmps.map((e: any) => e.id);
     const { data: tsRows } = await supabase.from("timesheets")
         .select("user_id, status")
         .eq("organisation_id", orgId)
@@ -809,9 +846,16 @@ async function buildManagerRollup(
     for (const t of tsRows || []) tsByUser.set(t.user_id as number, (t.status as string) || "draft");
 
     const byDept = new Map<number, ManagerDeptRollup>();
-    for (const d of depts) byDept.set(d.id as number,
-        { name: d.name as string, submitted: [], notSubmitted: [], approvedCount: 0 });
-    for (const e of emps) {
+    // Only create buckets for departments that still have billing
+    // members — otherwise an empty Management dept would render with
+    // zero rows, which is just noise.
+    const survivingDeptIds = new Set(billingEmps.map((e: any) => e.department_id));
+    for (const d of depts) {
+        if (!survivingDeptIds.has(d.id as number)) continue;
+        byDept.set(d.id as number,
+            { name: d.name as string, submitted: [], notSubmitted: [], approvedCount: 0 });
+    }
+    for (const e of billingEmps) {
         const bucket = byDept.get(e.department_id as number);
         if (!bucket) continue;
         const status = tsByUser.get(e.id as number);

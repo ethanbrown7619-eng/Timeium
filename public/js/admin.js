@@ -9,6 +9,7 @@ import {
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
   fetchWeekDashboardData, invalidateWeekDashboard,
+  isUserEffectiveOverhead,
 } from "/js/shared.js";
 
 // XLSX is ~600KB. Load only when an Export button is actually clicked.
@@ -141,9 +142,17 @@ async function loadDashboard(signal) {
   if (!dash) return;
 
   const allDepartments = (dash.departments || []).filter((d) => d.active);
-  const overheadDeptIds = new Set(allDepartments.filter((d) => d.is_overhead).map((d) => d.id));
-  const departments = allDepartments.filter((d) => !d.is_overhead);
-  const employees = dash.employees.filter((e) => !overheadDeptIds.has(e.department_id));
+  const deptById = new Map(allDepartments.map((d) => [d.id, d]));
+  // Per-user effective-overhead lets a manager in an overhead dept who
+  // has their own rate still count toward timesheet rollups. Drop any
+  // employee whose effective status is overhead.
+  const employees = dash.employees.filter((e) =>
+    !isUserEffectiveOverhead(e, deptById.get(e.department_id)));
+  // Show a dept on the donut iff it still has at least one non-overhead
+  // member after filtering — so Management appears when its rate-having
+  // managers are members, stays hidden when only admin/ops people are.
+  const remainingDeptIds = new Set(employees.map((e) => e.department_id));
+  const departments = allDepartments.filter((d) => remainingDeptIds.has(d.id));
   const tsMap = dash.timesheetsByUserId;
   const hoursMap = dash.hoursByTsId;
 
@@ -253,11 +262,16 @@ async function loadClockComparison(signal) {
   if (!dash) return;
 
   const allCvtDepts = dash.departments;
-  const cvtOverheadIds = new Set(allCvtDepts.filter((d) => d.is_overhead).map((d) => d.id));
+  const cvtDeptById = new Map(allCvtDepts.map((d) => [d.id, d]));
+  const employees = dash.employees.filter((e) =>
+    !isUserEffectiveOverhead(e, cvtDeptById.get(e.department_id)));
   const deptMap = {};
   for (const d of allCvtDepts) if (!d.is_overhead) deptMap[d.id] = d.name;
-
-  const employees = dash.employees.filter((e) => !cvtOverheadIds.has(e.department_id));
+  // Keep Management visible in the dept lookup if any of its members
+  // survived the overhead filter (they billed time, so their rows show).
+  for (const e of employees) {
+    if (!deptMap[e.department_id]) deptMap[e.department_id] = cvtDeptById.get(e.department_id)?.name || "";
+  }
 
   const tsUserMap = {};
   for (const ts of dash.timesheets) tsUserMap[ts.id] = ts.user_id;
@@ -457,9 +471,11 @@ async function loadInfusionStatus(signal) {
   if (!dash) { barsEl.innerHTML = ""; return; }
 
   const allInfDepts = dash.departments.filter((d) => d.active);
-  const infOverheadIds = new Set(allInfDepts.filter((d) => d.is_overhead).map((d) => d.id));
-  const employees = dash.employees.filter((e) => !infOverheadIds.has(e.department_id));
-  const departments = allInfDepts.filter((d) => !d.is_overhead);
+  const infDeptById = new Map(allInfDepts.map((d) => [d.id, d]));
+  const employees = dash.employees.filter((e) =>
+    !isUserEffectiveOverhead(e, infDeptById.get(e.department_id)));
+  const remainingDeptIds = new Set(employees.map((e) => e.department_id));
+  const departments = allInfDepts.filter((d) => remainingDeptIds.has(d.id));
   const tsMap = dash.timesheetsByUserId;
 
   infTotalEmps = employees.length;

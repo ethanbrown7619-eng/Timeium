@@ -34,6 +34,20 @@ export function fmtDate(d) {
   return `${y}-${m}-${day}`;
 }
 
+// An employee is "effectively overhead" when their home department is
+// flagged overhead AND they don't carry an explicit rate of any flavour.
+// A specific cost/sell rate (custom or via rate_source_department_id)
+// signals "this person bills time" and overrides the dept default.
+// Used wherever the codebase decides whether someone files a timesheet
+// or just appears in the leave-only view.
+export function isUserEffectiveOverhead(user, dept) {
+  if (!dept?.is_overhead) return false;
+  if (user?.rate_source_department_id != null) return false;
+  if (user?.cost_rate != null) return false;
+  if (user?.sell_rate != null) return false;
+  return true;
+}
+
 export function fmtShortDate(d) {
   return `${d.getDate()}/${d.getMonth() + 1}`;
 }
@@ -199,7 +213,7 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart) {
   const promise = (async () => {
     const [empRes, deptRes, tsRes] = await Promise.all([
       sb.from("users")
-        .select("id, name, department_id, active")
+        .select("id, name, department_id, active, cost_rate, sell_rate, rate_source_department_id")
         .eq("organisation_id", orgId)
         .eq("active", true)
         .order("name"),
@@ -535,7 +549,7 @@ export async function getUserContext(sb, session, { force = false } = {}) {
   const [devRes, adminRes, meRes] = await Promise.allSettled([
     sb.rpc("is_developer"),
     sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
-    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison").eq("auth_user_id", session.user.id).maybeSingle(),
+    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison, cost_rate, sell_rate, rate_source_department_id").eq("auth_user_id", session.user.id).maybeSingle(),
   ]);
 
   if (devRes.status === "rejected") console.warn("is_developer failed:", devRes.reason);
