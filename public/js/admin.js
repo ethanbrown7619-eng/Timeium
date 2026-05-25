@@ -725,7 +725,6 @@ async function buildInfusionRows() {
   if (!currentOrgId) return [];
 
   const ws = fmtDate(infWeek);
-  const includeDrafts = document.getElementById("inf-include-drafts").checked;
 
   // Reuse the cached dashboard data for users / departments / timesheets,
   // then fetch only the extra columns (rate fields, employee_code) keyed
@@ -735,10 +734,10 @@ async function buildInfusionRows() {
   const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
   if (!dash) return [];
 
-  let timesheets = dash.timesheets;
-  if (!includeDrafts) {
-    timesheets = timesheets.filter((t) => t.status === "submitted" || t.status === "approved");
-  }
+  // Only approved rows are exportable. Already-exported rows (terminal
+  // status) are skipped so the second click for late submissions only
+  // picks up the new approvals.
+  const timesheets = dash.timesheets.filter((t) => t.status === "approved");
   if (!timesheets.length) return [];
 
   const empIds = dash.employees.map((e) => e.id);
@@ -954,8 +953,28 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
     const weekLabel = fmtDate(infWeek);
     XLSX.writeFile(wb, `infusion-export-${weekLabel}.xlsx`);
 
+    // After the file is written, flip every approved timesheet for the
+    // exported week to 'exported'. Re-runs (late submissions) pick up
+    // only the new approvals. If the update fails we still show success
+    // because the file did go out — admin can retry the export, the
+    // already-downloaded file's data will still match.
+    try {
+      const { error: stampErr } = await sb
+        .from("timesheets")
+        .update({ status: "exported" })
+        .eq("organisation_id", currentOrgId)
+        .eq("week_start", fmtDate(infWeek))
+        .eq("status", "approved");
+      if (stampErr) console.warn("flip approved -> exported failed:", stampErr.message);
+    } catch (err) {
+      console.warn("flip approved -> exported threw:", err);
+    }
+
     statusEl.textContent = "Done";
     notice(`Exported ${infRows.length} rows`, "success");
+    invalidateWeekDashboard(currentOrgId, fmtDate(infWeek));
+    infRows = [];
+    navLoadInfusionStatus();
     setTimeout(() => statusEl.textContent = "", 3000);
   } catch (err) {
     notice(err.message || "Export failed", "error");

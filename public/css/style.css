@@ -853,6 +853,7 @@ dialog::backdrop {
 .status-submitted { background: var(--info-blue-bg-alt); color: var(--info-blue); }
 .status-approved { background: var(--success-bg); color: var(--success); }
 .status-rejected { background: var(--flag); color: var(--danger); }
+.status-exported { background: #e6f4ea; color: #1e7a39; border: 1px solid #b6dcbf; }
 .status-active { background: var(--success-bg); color: var(--success); }
 .status-completed,
 .status-dispatched,
@@ -876,6 +877,8 @@ dialog::backdrop {
 .ts-status-submitted { background: var(--info-blue-bg-alt); color: var(--info-blue); }
 .ts-status-approved { background: var(--success-bg); color: var(--success); }
 .ts-status-rejected { background: var(--danger-bg); color: var(--danger); }
+.ts-status-exported { background: #d8eed8; color: #1e7a39; }
+.ts-status-dot.exported { background: #1e7a39; }
 .ts-status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
@@ -1069,6 +1072,8 @@ details.card[open] > summary::before { content: "▾ "; }
 .dept-badge-draft::before { background: var(--text-muted); }
 .dept-badge-none { background: var(--warn-bg); color: var(--warn-text-dark); }
 .dept-badge-none::before { background: var(--warn-text-dark); }
+.dept-badge-exported { background: #d8eed8; color: #1e7a39; }
+.dept-badge-exported::before { background: #1e7a39; }
 
 .dept-view-btn {
   display: inline-block;

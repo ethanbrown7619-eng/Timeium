@@ -198,7 +198,10 @@ async function loadDashboard(signal) {
     const hours = ts ? (hoursMap[ts.id] || 0) : 0;
 
     let badge, badgeClass;
-    if (ts?.status === "approved") {
+    if (ts?.status === "exported") {
+      badge = "Exported";
+      badgeClass = "dept-badge dept-badge-exported";
+    } else if (ts?.status === "approved") {
       badge = "Approved";
       badgeClass = "dept-badge dept-badge-approved";
     } else if (sub) {

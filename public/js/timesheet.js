@@ -1001,6 +1001,7 @@ function renderStatusBadge() {
   }
   const dotClass = tsStatus === "approved"  ? "approved" :
                    tsStatus === "rejected"  ? "rejected" :
+                   tsStatus === "exported"  ? "exported" :
                                               "submitted";
   el.className = `ts-status-badge ts-status-${dotClass}`;
   el.innerHTML = `<span class="ts-status-dot ${dotClass}"></span> ${label}${timeStr}`;
@@ -1020,7 +1021,11 @@ function renderGrid() {
   if (ADMIN_MODE) {
     submitBtn.style.display = "none";
     lockedMsg.style.display = "";
-    lockedMsg.textContent = `Admin override — editing as ${employee.name}. Status (${tsStatus}) is not changed by your edits.`;
+    let msg = `Admin override — editing as ${employee.name}. Status (${tsStatus}) is not changed by your edits.`;
+    if (tsStatus === TS_STATUS.EXPORTED) {
+      msg = `⚠ This timesheet has already been EXPORTED to payroll. Changes here will NOT sync — fix the data in payroll separately, or use the dev "Revert exported → approved" button to re-export.`;
+    }
+    lockedMsg.textContent = msg;
   } else if (isSubmitted) {
     submitBtn.style.display = "none";
     lockedMsg.style.display = "";

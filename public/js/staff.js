@@ -589,6 +589,17 @@ function openDialog(empId) {
     resetWeekBtn.classList.add("hidden");
   }
 
+  // Revert-exported is the escape hatch when the Infusion export went
+  // out but payroll lost the file. Flips that week's timesheet from
+  // 'exported' back to 'approved' so the next export pulls it again.
+  const revertBtn = document.getElementById("revert-exported-btn");
+  if (isEdit && ctx.isDeveloper) {
+    revertBtn.classList.remove("hidden");
+    revertBtn.onclick = () => revertExportedWeek(emp.id, emp.name);
+  } else {
+    revertBtn.classList.add("hidden");
+  }
+
   // Gate form controls for manager role.
   const form = document.getElementById("employee-form");
   form.querySelectorAll("input,select,button[type=submit]").forEach((el) => {
@@ -839,6 +850,44 @@ async function resetEmployeeWeek(id, name) {
     notice(`Reset ${name}'s timesheet for the week of ${weekStart}`, "success");
   }
 }
+
+// Developer-only: flip exported -> approved for one user's week so the
+// Infusion export can re-run for it. Used when payroll lost the file.
+async function revertExportedWeek(id, name) {
+  const today = fmtDate(getActiveMonday());
+  const raw = await promptDialog({
+    title: `Revert exported week for ${name}`,
+    message: "Enter any date within the week to revert. The timesheet flips from 'exported' back to 'approved' so the next Infusion export picks it up.",
+    defaultValue: today,
+    placeholder: "YYYY-MM-DD",
+    confirmText: "Continue",
+  });
+  if (!raw) return;
+  const parsed = new Date(raw + "T00:00:00");
+  if (isNaN(parsed)) return notice("Invalid date", "warn");
+  const weekStart = fmtDate(getMonday(parsed));
+
+  // Find the timesheet id for this user+week so we can call the RPC.
+  const { data: ts, error: lookupErr } = await sb.from("timesheets")
+    .select("id, status")
+    .eq("user_id", id)
+    .eq("week_start", weekStart)
+    .maybeSingle();
+  if (lookupErr) return notice(lookupErr.message, "error");
+  if (!ts) return notice(`No timesheet for ${name} the week of ${weekStart}`, "info");
+  if (ts.status !== "exported") {
+    return notice(`Timesheet status is "${ts.status}", not "exported" — nothing to revert.`, "info");
+  }
+  if (!await confirmDialog({
+    title: "Revert exported timesheet",
+    message: `Flip ${name}'s timesheet for the week of ${weekStart} back to "approved"? The next Infusion export will include it again.`,
+    confirmText: "Revert",
+  })) return;
+  const { error } = await sb.rpc("reset_to_approved", { p_timesheet_id: ts.id });
+  if (error) return notice(error.message, "error");
+  notice(`Reverted ${name}'s timesheet for the week of ${weekStart}`, "success");
+}
+
 function maybeClearOwnContext(empId) {
   const emp = employees.find((e) => e.id === empId);
   if (emp?.auth_user_id && emp.auth_user_id === ctx.session?.user?.id) {

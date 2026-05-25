@@ -71,6 +71,7 @@ export const TS_STATUS = Object.freeze({
   SUBMITTED: "submitted",
   APPROVED: "approved",
   REJECTED: "rejected",
+  EXPORTED: "exported",
 });
 
 export const LEAVE_STATUS = Object.freeze({
@@ -80,8 +81,13 @@ export const LEAVE_STATUS = Object.freeze({
   CANCELLED: "cancelled",
 });
 
+// Exported is treated the same as approved + submitted for editor-lock
+// purposes: the timesheet is past the point where the employee should
+// touch it. Admin override still works (see ADMIN_MODE in timesheet.js).
 export function isTsSubmittedOrApproved(status) {
-  return status === TS_STATUS.SUBMITTED || status === TS_STATUS.APPROVED;
+  return status === TS_STATUS.SUBMITTED
+      || status === TS_STATUS.APPROVED
+      || status === TS_STATUS.EXPORTED;
 }
 
 /* ---------------------------------------------------------------- donut */
