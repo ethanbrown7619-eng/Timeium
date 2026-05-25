@@ -234,9 +234,19 @@ function missingFields(emp) {
 }
 
 function effectiveRate(emp, field) {
+  // 1. Explicit rate-source department wins (manager in Management
+  //    overhead dept who bills at Workshop's rate, etc).
+  if (emp.rate_source_department_id) {
+    const src = deptById.get(emp.rate_source_department_id);
+    if (src && src[field] != null) {
+      return { value: Number(src[field]), source: "borrowed", sourceName: src.name };
+    }
+  }
   const dept = emp.department_id ? deptById.get(emp.department_id) : null;
-  if (dept?.is_overhead) return { value: null, source: "overhead" };
+  // 2. Per-user override.
   if (emp[field] != null) return { value: Number(emp[field]), source: "employee" };
+  // 3. Home dept default — but only if the home dept isn't overhead.
+  if (dept?.is_overhead) return { value: null, source: "overhead" };
   if (dept && dept[field] != null) return { value: Number(dept[field]), source: "dept" };
   return null;
 }
@@ -244,6 +254,9 @@ function effectiveRate(emp, field) {
 function fmtRate(r) {
   if (!r) return '<span class="muted">—</span>';
   if (r.source === "overhead") return '<span class="muted">N/A</span>';
+  if (r.source === "borrowed") {
+    return `<span title="Borrowed from ${escapeHtml(r.sourceName || "")}">${r.value.toFixed(2)} <span class="small muted">(${escapeHtml(r.sourceName || "dept")})</span></span>`;
+  }
   return r.source === "dept"
     ? `<span title="From department">${r.value.toFixed(2)} <span class="small muted">(dept)</span></span>`
     : r.value.toFixed(2);
