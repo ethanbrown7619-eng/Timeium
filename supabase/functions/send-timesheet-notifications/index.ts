@@ -416,7 +416,9 @@ async function getAdminEmails(orgId: number): Promise<string[]> {
 // Active employees in an org with no submitted timesheet for `weekStart`.
 // Truly-overhead employees (admin/ops in an overhead department, no rate)
 // are excluded — they don't file timesheets so reminders / overdue mails
-// would just spam them.
+// would just spam them. Employees whose department is INACTIVE are also
+// excluded — admins use the inactive flag to "archive" a department and
+// expect notifications to stop.
 async function getUnsubmittedEmployees(orgId: number, weekStart: string)
         : Promise<Array<{ id: number; name: string; email: string }>> {
     const [empRes, deptRes] = await Promise.all([
@@ -426,17 +428,21 @@ async function getUnsubmittedEmployees(orgId: number, weekStart: string)
             .eq("active", true)
             .not("email", "is", null),
         supabase.from("departments")
-            .select("id, is_overhead")
+            .select("id, is_overhead, active")
             .eq("organisation_id", orgId),
     ]);
     const employees = empRes.data || [];
     const deptOverhead = new Map<number, boolean>();
+    const deptActive = new Map<number, boolean>();
     for (const d of (deptRes.data || []) as any[]) {
         deptOverhead.set(d.id as number, !!d.is_overhead);
+        deptActive.set(d.id as number, !!d.active);
     }
     if (!employees.length) return [];
 
     const billing = employees.filter((e: any) => {
+        // Skip employees in inactive (archived) departments.
+        if (e.department_id && deptActive.get(e.department_id) === false) return false;
         if (!deptOverhead.get(e.department_id)) return true;
         if (e.rate_source_department_id != null) return true;
         if (e.cost_rate != null) return true;
