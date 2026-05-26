@@ -1457,7 +1457,5 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
 
 /* ---------------------------------------------------------------- boot */
 
-if (!IS_CLOCK_VIEWER_ONLY) {
-  loadOrgSettings().then(() => navLoadInfusionStatus());
-}
+loadOrgSettings().then(() => navLoadInfusionStatus());
 applyActiveTab();
