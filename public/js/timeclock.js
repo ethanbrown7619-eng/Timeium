@@ -57,12 +57,16 @@ function applySubView() {
   document.getElementById("tc-live").style.display     = tcSubView === "live"     ? "" : "none";
   document.getElementById("tc-clockvts").style.display = tcSubView === "clockvts" ? "" : "none";
   document.getElementById("tc-flags").style.display    = tcSubView === "flags"    ? "" : "none";
+  document.getElementById("tc-full").style.display     = tcSubView === "full"     ? "" : "none";
+  document.getElementById("tc-offsite").style.display  = tcSubView === "offsite"  ? "" : "none";
   if (tcSubView === "live") {
     startLivePresence();
   } else {
     stopLivePresence();
     if (tcSubView === "clockvts") navLoadClockComparison();
     if (tcSubView === "flags")    navLoadFlagReport();
+    if (tcSubView === "full")     navLoadFullReport();
+    if (tcSubView === "offsite")  navLoadOffsiteReport();
   }
 }
 
@@ -482,6 +486,248 @@ async function loadFlagReport() {
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
             <td class="num small">${r.raw_hours != null ? Number(r.raw_hours).toFixed(2) : "—"}</td>
             <td class="num"><strong>${r.hours != null ? Number(r.hours).toFixed(2) : "—"}</strong></td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ---------------------------------------------------------------- Full report */
+//
+// Every employee, every day this week — clock-in / clock-out / hours.
+// Uses the same weekly_timesheet RPC the other tabs do; doesn't filter
+// by flag so days with no clock event still appear (just blank).
+
+let fullWeek = new Date(thisMonday);
+
+function updateFullWeekLabel() {
+  const end = addDays(fullWeek, 6);
+  document.getElementById("full-week-label").textContent =
+    `${fullWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+updateFullWeekLabel();
+
+const navLoadFullReport = makeLatestOnly((signal) => loadFullReport(signal));
+document.getElementById("full-prev").addEventListener("click", () => {
+  fullWeek = addDays(fullWeek, -7);
+  updateFullWeekLabel();
+  navLoadFullReport();
+});
+document.getElementById("full-next").addEventListener("click", () => {
+  fullWeek = addDays(fullWeek, 7);
+  updateFullWeekLabel();
+  navLoadFullReport();
+});
+
+async function loadFullReport() {
+  if (!currentOrgId) return;
+  const tableEl   = document.getElementById("full-table");
+  const summaryEl = document.getElementById("full-summary");
+  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  summaryEl.innerHTML = "";
+
+  const ws = fmtDate(fullWeek);
+  let rows = [];
+  try {
+    const { data, error } = await sb.rpc("weekly_timesheet", {
+      p_week_start: ws,
+      p_tz: null,
+      p_org_id: currentOrgId,
+    });
+    if (error) throw error;
+    rows = data || [];
+  } catch (err) {
+    tableEl.innerHTML = `
+      <div class="notice warn" style="margin:0">
+        Could not load clock data.<br>
+        <span class="small">${escapeHtml(err.message || "")}</span>
+      </div>`;
+    return;
+  }
+
+  // Hide rows with neither clock-in nor clock-out — they're just the
+  // RPC's filler for days an employee didn't work.
+  const worked = rows.filter((r) => r.first_in || r.last_out);
+  if (!worked.length) {
+    summaryEl.innerHTML = `<div class="notice info" style="margin:0">No clock events this week.</div>`;
+    tableEl.innerHTML = "";
+    return;
+  }
+
+  worked.sort((a, b) => {
+    const an = String(a.name || ""); const bn = String(b.name || "");
+    if (an !== bn) return an.localeCompare(bn);
+    return (a.day || "") < (b.day || "") ? -1 : 1;
+  });
+
+  const totalHours = worked.reduce((s, r) => s + Number(r.hours || 0), 0);
+  const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
+  summaryEl.innerHTML = `<div class="notice info" style="margin:0">
+    <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
+    <strong>${uniqueEmps}</strong> employee${uniqueEmps === 1 ? "" : "s"},
+    <strong>${totalHours.toFixed(1)}h</strong> total.
+  </div>`;
+
+  tableEl.innerHTML = `
+    <table class="small">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th>Employee</th>
+          <th>Department</th>
+          <th class="num">In</th>
+          <th class="num">Out</th>
+          <th class="num">Raw</th>
+          <th class="num">Break</th>
+          <th class="num">Hours</th>
+          <th>Flag</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${worked.map((r) => {
+          const f = r.flag ? flagLabel(r.flag) : null;
+          return `<tr>
+            <td class="small">${escapeHtml(r.day || "")}</td>
+            <td>${escapeHtml(r.name || "")}</td>
+            <td class="small muted">${escapeHtml(r.department || "")}</td>
+            <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
+            <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
+            <td class="num small">${r.raw_hours != null ? Number(r.raw_hours).toFixed(2) : "—"}</td>
+            <td class="num small">${r.break_minutes ? r.break_minutes + "m" : "—"}</td>
+            <td class="num"><strong>${r.hours != null ? Number(r.hours).toFixed(2) : "—"}</strong></td>
+            <td>${f ? `<span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span>` : ""}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ---------------------------------------------------------------- Off-site events */
+//
+// Reads Attendium's _offsite_report RPC — one row per off-site spell
+// (break, off-site job, or clocked-out-early). End date is exclusive
+// per the RPC's contract.
+
+let offsiteWeek = new Date(thisMonday);
+
+function updateOffsiteWeekLabel() {
+  const end = addDays(offsiteWeek, 6);
+  document.getElementById("offsite-week-label").textContent =
+    `${offsiteWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+updateOffsiteWeekLabel();
+
+const navLoadOffsiteReport = makeLatestOnly((signal) => loadOffsiteReport(signal));
+document.getElementById("offsite-prev").addEventListener("click", () => {
+  offsiteWeek = addDays(offsiteWeek, -7);
+  updateOffsiteWeekLabel();
+  navLoadOffsiteReport();
+});
+document.getElementById("offsite-next").addEventListener("click", () => {
+  offsiteWeek = addDays(offsiteWeek, 7);
+  updateOffsiteWeekLabel();
+  navLoadOffsiteReport();
+});
+
+function fmtMins(m) {
+  if (m == null) return "—";
+  const n = Number(m);
+  if (!Number.isFinite(n)) return "—";
+  if (n < 60) return `${Math.round(n)}m`;
+  const hrs = Math.floor(n / 60);
+  const rem = Math.round(n - hrs * 60);
+  return rem ? `${hrs}h ${rem}m` : `${hrs}h`;
+}
+
+async function loadOffsiteReport() {
+  if (!currentOrgId) return;
+  const tableEl   = document.getElementById("offsite-table");
+  const summaryEl = document.getElementById("offsite-summary");
+  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  summaryEl.innerHTML = "";
+
+  const start   = fmtDate(offsiteWeek);
+  const endExcl = fmtDate(addDays(offsiteWeek, 7));
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+  let rows = [];
+  try {
+    const { data, error } = await sb.rpc("_offsite_report", {
+      p_org_id:   currentOrgId,
+      p_start:    start,
+      p_end_excl: endExcl,
+      p_tz:       tz,
+    });
+    if (error) throw error;
+    rows = data || [];
+  } catch (err) {
+    tableEl.innerHTML = `
+      <div class="notice warn" style="margin:0">
+        Could not load off-site data.<br>
+        <span class="small">${escapeHtml(err.message || "")}</span>
+      </div>`;
+    return;
+  }
+
+  if (!rows.length) {
+    summaryEl.innerHTML = `<div class="notice info" style="margin:0">No off-site events this week.</div>`;
+    tableEl.innerHTML = "";
+    return;
+  }
+
+  // Headline counts.
+  let breaks = 0, jobs = 0, early = 0, lateBacks = 0;
+  for (const r of rows) {
+    if ((r.reason || "").startsWith("Break"))         breaks++;
+    else if ((r.reason || "") === "Off-site job")     jobs++;
+    else if ((r.reason || "") === "Clocked out early") early++;
+    if (r.late_back) lateBacks++;
+  }
+  summaryEl.innerHTML = `<div class="notice info" style="margin:0">
+    <strong>${rows.length}</strong> off-site event${rows.length === 1 ? "" : "s"}
+    (${breaks} break${breaks === 1 ? "" : "s"}, ${jobs} job${jobs === 1 ? "" : "s"}, ${early} early)
+    ${lateBacks ? ` · <strong>${lateBacks}</strong> returned late.` : ""}
+  </div>`;
+
+  rows.sort((a, b) => {
+    const aDay = a.day || ""; const bDay = b.day || "";
+    if (aDay !== bDay) return aDay < bDay ? -1 : 1;
+    const an = String(a.name || ""); const bn = String(b.name || "");
+    if (an !== bn) return an.localeCompare(bn);
+    return (a.started_at || "") < (b.started_at || "") ? -1 : 1;
+  });
+
+  tableEl.innerHTML = `
+    <table class="small">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th>Employee</th>
+          <th>Department</th>
+          <th>Reason</th>
+          <th class="num">Started</th>
+          <th class="num">Returned</th>
+          <th class="num">Actual</th>
+          <th class="num">Expected</th>
+          <th>Late back?</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r) => {
+          const stillOut = !r.returned_at && r.return_kind === "open";
+          const lateCls = r.late_back ? "cvt-danger" : "";
+          return `<tr>
+            <td class="small">${escapeHtml(r.day || "")}</td>
+            <td>${escapeHtml(r.name || "")}</td>
+            <td class="small muted">${escapeHtml(r.department || "")}</td>
+            <td class="small">${escapeHtml(r.reason || "")}${r.break_paid === true ? ' <span class="small muted">(paid)</span>' : ""}</td>
+            <td class="num small">${escapeHtml(fmtClockTime(r.started_at))}</td>
+            <td class="num small">${stillOut ? '<span class="small muted">still out</span>' : escapeHtml(fmtClockTime(r.returned_at))}</td>
+            <td class="num small">${escapeHtml(fmtMins(r.actual_minutes))}</td>
+            <td class="num small">${escapeHtml(fmtMins(r.expected_minutes))}</td>
+            <td>${r.late_back ? `<span class="cvt-cell ${lateCls}" style="padding:2px 8px;border-radius:999px;display:inline-block">Late back</span>` : ""}</td>
           </tr>`;
         }).join("")}
       </tbody>
