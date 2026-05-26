@@ -107,7 +107,7 @@ function liveStatusLabel(s, breakName) {
   switch ((s || "").toLowerCase()) {
     case "on_site":            return { label: "On site",                                               cls: "onsite"  };
     case "off_site_job":       return { label: "Off site (job)",                                        cls: "offsite" };
-    case "off_site_break":     return { label: breakName ? `On break (${breakName})` : "On break",      cls: "break"   };
+    case "off_site_break":     return { label: breakName ? `Off site break (${breakName})` : "Off site break", cls: "break"   };
     case "clocked_out_early":  return { label: "Clocked out early",                                     cls: "away"    };
     default:                   return { label: s || "—",                                                cls: "away"    };
   }
@@ -148,7 +148,7 @@ async function loadLivePresence() {
     countsEl.innerHTML = `
       <div class="tile onsite"><div class="num">${buckets.onsite || 0}</div><div class="lbl">On site</div></div>
       <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
-      <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">On break</div></div>
+      <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">Off site break</div></div>
       <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>`;
 
     if (!rows.length) {
