@@ -97,16 +97,15 @@ function startLivePresence() {
 
 document.getElementById("tc-live-refresh")?.addEventListener("click", () => loadLivePresence());
 
-function liveStatusLabel(s) {
+// Status values come from public.org_live_status (Attendium) and are
+// exhaustively: on_site | off_site_job | off_site_break | clocked_out_early.
+function liveStatusLabel(s, breakName) {
   switch ((s || "").toLowerCase()) {
-    case "on_site":
-    case "onsite":           return { label: "On site",        cls: "onsite"  };
-    case "off_site_job":
-    case "offsite_job":
-    case "off_site":         return { label: "Off site (job)", cls: "offsite" };
-    case "break":
-    case "on_break":         return { label: "On break",       cls: "break"   };
-    default:                 return { label: s || "Away",      cls: "away"    };
+    case "on_site":            return { label: "On site",                                               cls: "onsite"  };
+    case "off_site_job":       return { label: "Off site (job)",                                        cls: "offsite" };
+    case "off_site_break":     return { label: breakName ? `On break (${breakName})` : "On break",      cls: "break"   };
+    case "clocked_out_early":  return { label: "Clocked out early",                                     cls: "away"    };
+    default:                   return { label: s || "—",                                                cls: "away"    };
   }
 }
 
@@ -127,10 +126,11 @@ async function loadLivePresence() {
   const body = document.getElementById("tc-live-body");
   const countsEl = document.getElementById("tc-live-counts");
   try {
-    const { data, error } = await sb
-      .from("org_live_status")
-      .select("*")
-      .eq("organisation_id", currentOrgId);
+    // org_live_status is an RPC in Attendium, not a view. Takes p_org_id
+    // explicitly and doesn't gate server-side — anyone with a valid
+    // session can call it (our clock-viewer / admin UI permission is
+    // app-side via the topbar nav).
+    const { data, error } = await sb.rpc("org_live_status", { p_org_id: currentOrgId });
     if (error) throw error;
 
     const rows = (data || []).slice().sort((a, b) =>
@@ -138,39 +138,33 @@ async function loadLivePresence() {
 
     const buckets = { onsite: 0, offsite: 0, break: 0, away: 0 };
     for (const r of rows) {
-      const { cls } = liveStatusLabel(r.status);
+      const { cls } = liveStatusLabel(r.status, r.break_name);
       buckets[cls] = (buckets[cls] || 0) + 1;
     }
     countsEl.innerHTML = `
       <div class="tile onsite"><div class="num">${buckets.onsite || 0}</div><div class="lbl">On site</div></div>
       <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
       <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">On break</div></div>
-      <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Away</div></div>`;
+      <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>`;
 
     if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">No active employees.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="4" class="muted small" style="text-align:center">No active employees.</td></tr>`;
       return;
     }
 
     body.innerHTML = rows.map((r) => {
-      const { label, cls } = liveStatusLabel(r.status);
-      const since = r.since || r.status_since || r.last_event_at;
-      const dept = r.department || r.department_name || "";
-      const lastEvent = r.last_event_type
-        ? `${r.last_event_type}${r.last_event_at ? " · " + new Date(r.last_event_at).toLocaleString() : ""}`
-        : "";
+      const { label, cls } = liveStatusLabel(r.status, r.break_name);
       return `<tr>
         <td><span class="tc-live-pill ${cls}">${escapeHtml(label)}</span></td>
         <td>${escapeHtml(r.name || "")}</td>
-        <td class="small muted">${escapeHtml(dept)}</td>
-        <td class="small">${escapeHtml(fmtSince(since))}</td>
-        <td class="small muted">${escapeHtml(lastEvent)}</td>
+        <td class="small muted">${escapeHtml(r.department || "")}</td>
+        <td class="small">${escapeHtml(fmtSince(r.since))}</td>
       </tr>`;
     }).join("");
   } catch (err) {
     console.error("live presence load failed:", err);
     body.innerHTML = `
-      <tr><td colspan="5" class="muted small" style="text-align:center;padding:24px">
+      <tr><td colspan="4" class="muted small" style="text-align:center;padding:24px">
         Could not load presence data. ${escapeHtml(err.message || "")}
       </td></tr>`;
     countsEl.innerHTML = "";
