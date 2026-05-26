@@ -101,6 +101,17 @@ async function authenticateCaller(
         return { ok: false, status: 400, error: "org_id required for user-session calls" };
     }
 
+    // Developers are identified by is_developer() (Attendium-side table),
+    // which may not have a matching admins row. Honour that path before
+    // falling through to the admin-row check.
+    const userClient = createClient(SUPABASE_URL, SERVICE_KEY, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    try {
+        const { data: isDev } = await userClient.rpc("is_developer");
+        if (isDev === true) return { ok: true };
+    } catch { /* RPC missing in some envs — fall through */ }
+
     const { data: adminRow } = await supabase
         .from("admins")
         .select("role, organisation_id")
