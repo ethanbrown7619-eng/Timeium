@@ -409,7 +409,7 @@ export function renderTopbar(opts) {
     { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
     { key: "department", href: "/department.html",   label: "My Departments", show: !!opts.isManager || role === "developer" },
     { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
-    { key: "timeclock",  href: "/timeclock.html",    label: "TimeClock",      show: isAdminOrDev || !!opts.isClockViewer },
+    { key: "timeclock",  href: "/timeclock.html",    label: "Clock",          show: isAdminOrDev || !!opts.isClockViewer },
     { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
     { key: "configure",  href: "/configure.html",    label: "Configure",      show: isAdminOrDev },
     { key: "settings",   href: "/settings.html",     label: "Settings",       show: true },

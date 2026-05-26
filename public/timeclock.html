@@ -7,7 +7,7 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#c2ff00" />
-    <title>TimeClock · PTL Timesheet</title>
+    <title>Clock · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
   <body>
@@ -16,15 +16,16 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <h2 style="margin:0 0 4px">TimeClock</h2>
+      <h2 style="margin:0 0 4px">Clock</h2>
       <p class="muted mb-md">
-        Live presence + clock-vs-timesheet reconciliation. Pulls from the
-        shared PTL Clock In/Out kiosk database — read-only.
+        Live presence, clock-vs-timesheet reconciliation, and flag review.
+        Pulls from the shared PTL Clock In/Out kiosk database — read-only.
       </p>
 
       <div class="tabs sub" id="tc-sub-tabs">
         <button class="tab active" data-tc-view="live">Live</button>
-        <button class="tab" data-tc-view="clockvts">Timeclock vs Timesheet</button>
+        <button class="tab" data-tc-view="clockvts">Clock vs Timesheet</button>
+        <button class="tab" data-tc-view="flags">Flag report</button>
       </div>
 
       <!-- Live: who's on site / off site -->
@@ -56,7 +57,7 @@
         </div>
       </div>
 
-      <!-- Timeclock vs Timesheet weekly comparison -->
+      <!-- Clock vs Timesheet weekly comparison -->
       <div id="tc-clockvts" class="card" style="display:none">
         <div class="row-flex mb-md">
           <button class="ghost" id="cvt-prev">←</button>
@@ -68,6 +69,23 @@
 
         <div style="overflow-x:auto">
           <div id="cvt-table">
+            <p class="muted small" style="text-align:center">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flag report: shifts auto-closed / late / short, by employee + day. -->
+      <div id="tc-flags" class="card" style="display:none">
+        <div class="row-flex mb-md">
+          <button class="ghost" id="flag-prev">←</button>
+          <h3 id="flag-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+          <button class="ghost" id="flag-next">→</button>
+        </div>
+
+        <div id="flag-summary" class="mb-md"></div>
+
+        <div style="overflow-x:auto">
+          <div id="flag-table">
             <p class="muted small" style="text-align:center">Loading…</p>
           </div>
         </div>

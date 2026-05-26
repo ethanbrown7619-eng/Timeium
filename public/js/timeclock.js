@@ -56,11 +56,13 @@ function applySubView() {
   });
   document.getElementById("tc-live").style.display     = tcSubView === "live"     ? "" : "none";
   document.getElementById("tc-clockvts").style.display = tcSubView === "clockvts" ? "" : "none";
+  document.getElementById("tc-flags").style.display    = tcSubView === "flags"    ? "" : "none";
   if (tcSubView === "live") {
     startLivePresence();
   } else {
     stopLivePresence();
-    navLoadClockComparison();
+    if (tcSubView === "clockvts") navLoadClockComparison();
+    if (tcSubView === "flags")    navLoadFlagReport();
   }
 }
 
@@ -361,6 +363,133 @@ function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
             <td class="cvt-cell cvt-total ${cellClass(r.totalDiff)}"><strong>${fmtH(r.totalLogged)}</strong></td>
           </tr>
         `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ---------------------------------------------------------------- Flag report */
+//
+// The flag column on weekly_timesheet returns null / 'red' / 'yellow' /
+// 'orange' per (user, day). This sub-tab pulls the same RPC and lists
+// just the rows that came back with a flag set — one line per flagged
+// day with the in/out times so the reviewer can see why it was flagged.
+//
+//   red    = clocked under the org's standard shift length (short shift)
+//   yellow = day was auto-closed (forgot to clock out)
+//   orange = late vs standard_start + tolerance
+
+let flagWeek = new Date(thisMonday);
+
+function updateFlagWeekLabel() {
+  const end = addDays(flagWeek, 6);
+  document.getElementById("flag-week-label").textContent =
+    `${flagWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+updateFlagWeekLabel();
+
+const navLoadFlagReport = makeLatestOnly((signal) => loadFlagReport(signal));
+document.getElementById("flag-prev").addEventListener("click", () => {
+  flagWeek = addDays(flagWeek, -7);
+  updateFlagWeekLabel();
+  navLoadFlagReport();
+});
+document.getElementById("flag-next").addEventListener("click", () => {
+  flagWeek = addDays(flagWeek, 7);
+  updateFlagWeekLabel();
+  navLoadFlagReport();
+});
+
+function flagLabel(f) {
+  switch ((f || "").toLowerCase()) {
+    case "red":    return { label: "Short shift",  cls: "cvt-danger" };
+    case "yellow": return { label: "Auto-closed",  cls: "cvt-warn"   };
+    case "orange": return { label: "Late",         cls: "cvt-warn"   };
+    default:       return { label: f || "Flagged", cls: ""           };
+  }
+}
+
+function fmtClockTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+async function loadFlagReport() {
+  if (!currentOrgId) return;
+  const tableEl   = document.getElementById("flag-table");
+  const summaryEl = document.getElementById("flag-summary");
+  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  summaryEl.innerHTML = "";
+
+  const ws = fmtDate(flagWeek);
+  let rows = [];
+  try {
+    const { data, error } = await sb.rpc("weekly_timesheet", {
+      p_week_start: ws,
+      p_tz: null,
+      p_org_id: currentOrgId,
+    });
+    if (error) throw error;
+    rows = (data || []).filter((r) => r.flag);
+  } catch (err) {
+    tableEl.innerHTML = `
+      <div class="notice warn" style="margin:0">
+        Could not load flag data.<br>
+        <span class="small">${escapeHtml(err.message || "")}</span>
+      </div>`;
+    return;
+  }
+
+  if (!rows.length) {
+    summaryEl.innerHTML = `<div class="notice success" style="margin:0">No flagged shifts this week. Nice.</div>`;
+    tableEl.innerHTML = "";
+    return;
+  }
+
+  const byFlag = rows.reduce((m, r) => { m[r.flag] = (m[r.flag] || 0) + 1; return m; }, {});
+  const summaryParts = [];
+  if (byFlag.red)    summaryParts.push(`<strong>${byFlag.red}</strong> short`);
+  if (byFlag.yellow) summaryParts.push(`<strong>${byFlag.yellow}</strong> auto-closed`);
+  if (byFlag.orange) summaryParts.push(`<strong>${byFlag.orange}</strong> late`);
+  summaryEl.innerHTML = `<div class="notice warn" style="margin:0">
+    ${rows.length} flagged shift${rows.length === 1 ? "" : "s"} (${summaryParts.join(" · ")}).
+  </div>`;
+
+  rows.sort((a, b) => {
+    if (a.day !== b.day) return a.day < b.day ? -1 : 1;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+
+  tableEl.innerHTML = `
+    <table class="small">
+      <thead>
+        <tr>
+          <th>Flag</th>
+          <th>Day</th>
+          <th>Employee</th>
+          <th>Department</th>
+          <th class="num">First in</th>
+          <th class="num">Last out</th>
+          <th class="num">Raw h</th>
+          <th class="num">Hours</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r) => {
+          const f = flagLabel(r.flag);
+          return `<tr>
+            <td><span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span></td>
+            <td class="small">${escapeHtml(r.day || "")}</td>
+            <td>${escapeHtml(r.name || "")}</td>
+            <td class="small muted">${escapeHtml(r.department || "")}</td>
+            <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
+            <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
+            <td class="num small">${r.raw_hours != null ? Number(r.raw_hours).toFixed(2) : "—"}</td>
+            <td class="num"><strong>${r.hours != null ? Number(r.hours).toFixed(2) : "—"}</strong></td>
+          </tr>`;
+        }).join("")}
       </tbody>
     </table>
   `;
