@@ -18,7 +18,6 @@
 
       <div class="tabs" id="admin-tabs">
         <button class="tab active" data-tab="dashboard">Dashboard</button>
-        <button class="tab" data-tab="timeclock">TimeClock</button>
         <button class="tab" data-tab="infusion">Infusion Export</button>
         <button class="tab" data-tab="leavereport">Leave / Overtime</button>
       </div>
@@ -65,65 +64,6 @@
         </div>
       </section>
 
-      <!-- ==================== TimeClock ==================== -->
-      <section id="tab-timeclock" class="tab-panel" style="display:none">
-        <h2 style="margin:0 0 4px">TimeClock</h2>
-        <p class="muted mb-md">
-          Live presence + clock-vs-timesheet reconciliation. Pulls from the
-          shared PTL Clock In/Out kiosk database — read-only.
-        </p>
-
-        <div class="tabs sub" id="tc-sub-tabs">
-          <button class="tab active" data-tc-view="live">Live</button>
-          <button class="tab" data-tc-view="clockvts">Timeclock vs Timesheet</button>
-        </div>
-
-        <!-- Live: who's on-site / off-site -->
-        <div id="tc-live" class="card">
-          <div class="row-flex mb-md">
-            <h3 style="margin:0">Right now</h3>
-            <div class="grow"></div>
-            <span id="tc-live-clock" class="muted small"></span>
-            <button id="tc-live-refresh" class="ghost small">↻ Refresh</button>
-          </div>
-
-          <div class="tc-live-counts mb-md" id="tc-live-counts"></div>
-
-          <div style="overflow-x:auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Name</th>
-                  <th>Department</th>
-                  <th>Since</th>
-                  <th class="small muted">Last event</th>
-                </tr>
-              </thead>
-              <tbody id="tc-live-body">
-                <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Clock vs Timesheet (existing functionality, now a sub-tab) -->
-        <div id="tc-clockvts" class="card" style="display:none">
-          <div class="row-flex mb-md">
-            <button class="ghost" id="cvt-prev">←</button>
-            <h3 id="cvt-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
-            <button class="ghost" id="cvt-next">→</button>
-          </div>
-
-          <div id="cvt-summary" class="mb-md"></div>
-
-          <div style="overflow-x:auto">
-            <div id="cvt-table">
-              <p class="muted small" style="text-align:center">Loading…</p>
-            </div>
-          </div>
-        </div>
-      </section>
 
       <!-- ==================== Infusion Export ==================== -->
       <section id="tab-infusion" class="tab-panel" style="display:none">

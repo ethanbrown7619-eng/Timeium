@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#c2ff00" />
+    <title>TimeClock · PTL Timesheet</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <h2 style="margin:0 0 4px">TimeClock</h2>
+      <p class="muted mb-md">
+        Live presence + clock-vs-timesheet reconciliation. Pulls from the
+        shared PTL Clock In/Out kiosk database — read-only.
+      </p>
+
+      <div class="tabs sub" id="tc-sub-tabs">
+        <button class="tab active" data-tc-view="live">Live</button>
+        <button class="tab" data-tc-view="clockvts">Timeclock vs Timesheet</button>
+      </div>
+
+      <!-- Live: who's on site / off site -->
+      <div id="tc-live" class="card">
+        <div class="row-flex mb-md">
+          <h3 style="margin:0">Right now</h3>
+          <div class="grow"></div>
+          <span id="tc-live-clock" class="muted small"></span>
+          <button id="tc-live-refresh" class="ghost small">↻ Refresh</button>
+        </div>
+
+        <div class="tc-live-counts mb-md" id="tc-live-counts"></div>
+
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Since</th>
+                <th class="small muted">Last event</th>
+              </tr>
+            </thead>
+            <tbody id="tc-live-body">
+              <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Timeclock vs Timesheet weekly comparison -->
+      <div id="tc-clockvts" class="card" style="display:none">
+        <div class="row-flex mb-md">
+          <button class="ghost" id="cvt-prev">←</button>
+          <h3 id="cvt-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+          <button class="ghost" id="cvt-next">→</button>
+        </div>
+
+        <div id="cvt-summary" class="mb-md"></div>
+
+        <div style="overflow-x:auto">
+          <div id="cvt-table">
+            <p class="muted small" style="text-align:center">Loading…</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="/js/timeclock.js"></script>
+  </body>
+</html>
