@@ -89,10 +89,25 @@ async function syncOrg(
 }
 
 Deno.serve(async (req: Request) => {
+  // Service-role-only. The function runs upsert_projects_from_infusion
+  // with full RLS bypass, so accepting an org_id from an unauthenticated
+  // caller would let anyone overwrite any tenant's project list. The
+  // legitimate callers are cron / CLI, both of which can supply the
+  // service-role JWT. No browser invocation exists for this function.
+  const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (token !== SERVICE_KEY) {
+    return new Response(JSON.stringify({ ok: false, error: "Service role token required" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   try {
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      SERVICE_KEY,
     );
 
     const body: InvocationBody = req.body ? await req.json().catch(() => ({})) : {};

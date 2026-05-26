@@ -371,7 +371,11 @@ document.getElementById("back-to-hub").addEventListener("click", () => {
 
 /* ---------------------------------------------------------------- current week card */
 
-function getDeadline() {
+// Computes the deadline for the CURRENT week off the module-level
+// `thisMonday` constant. Not a generic "deadline for any week" helper —
+// don't call it from non-current-week code paths or you'll get the
+// wrong answer. Renaming to keep that obvious to future readers.
+function getCurrentWeekDeadline() {
   let targetDayIdx = DAY_NAMES.indexOf(orgDeadline.day);
   if (targetDayIdx === -1) targetDayIdx = 1; // fall back to Monday on bad config
 
@@ -486,7 +490,7 @@ async function loadCurrentWeekCard() {
       `;
     } else {
       card.classList.add("draft");
-      const deadline = getDeadline();
+      const deadline = getCurrentWeekDeadline();
       const urgencyClass = (deadline - Date.now()) < 24 * 60 * 60 * 1000 ? "urgent" : "";
       body.innerHTML = `
         <p style="margin:0"><strong>${weekStr}</strong></p>
@@ -780,28 +784,17 @@ async function loadWeek() {
 
   try {
     if (ADMIN_MODE) {
-      // get_or_create_timesheet keys on auth.uid(), so admins can't use it to
-      // touch someone else's timesheet. Look up directly, or create a draft
-      // shell row if none exists for this user+week.
-      const ws = fmtDate(weekStart);
-      const { data: existing, error: lookupErr } = await sb
-        .from("timesheets")
-        .select("id")
-        .eq("user_id", employee.id)
-        .eq("week_start", ws)
-        .maybeSingle();
-      if (lookupErr) throw lookupErr;
-      if (existing?.id) {
-        timesheetId = existing.id;
-      } else {
-        const { data: created, error: createErr } = await sb
-          .from("timesheets")
-          .insert({ organisation_id: currentOrgId, user_id: employee.id, week_start: ws })
-          .select("id")
-          .single();
-        if (createErr) throw createErr;
-        timesheetId = created.id;
-      }
+      // get_or_create_timesheet keys on auth.uid(), so admins can't use
+      // it to touch someone else's timesheet. The dedicated admin RPC
+      // (migration 110) wraps the same INSERT … ON CONFLICT pattern but
+      // takes user_id explicitly and gates on admin role — race-free,
+      // unlike a manual SELECT-then-INSERT.
+      const { data, error } = await sb.rpc("admin_get_or_create_timesheet", {
+        p_user_id: employee.id,
+        p_week_start: fmtDate(weekStart),
+      });
+      if (error) throw error;
+      timesheetId = data;
     } else {
       const { data, error } = await sb.rpc("get_or_create_timesheet", {
         p_week_start: fmtDate(weekStart),
@@ -1290,7 +1283,11 @@ document.getElementById("add-row-btn").addEventListener("click", async () => {
 
 document.getElementById("import-last-week").addEventListener("click", async () => {
   if (entries.length > 0) {
-    if (!await confirmDialog({ title: "Import last week's tasks", message: "This will only work if the current week has no tasks yet. Current entries will be kept. Continue?", confirmText: "Import" })) return;
+    if (!await confirmDialog({
+      title: "Import last week's tasks",
+      message: "Copy last week's task list (job/dept/task/description, no hours) into this week. Existing rows that match are skipped, so anything you've already added stays. Continue?",
+      confirmText: "Import",
+    })) return;
   }
   try {
     const { data, error } = await sb.rpc("import_last_week_tasks", {

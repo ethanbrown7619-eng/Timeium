@@ -71,6 +71,49 @@ const DEBUG_REDIRECT_EMAIL = Deno.env.get("DEBUG_REDIRECT_EMAIL");
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
+// Caller-authentication helper. Two acceptable shapes:
+//   1. Bearer <service-role-jwt>  — cron / server-to-server invocations.
+//      Allowed unconditionally; trusts the secret.
+//   2. Bearer <user-session-jwt>  — browser invocations from the
+//      Configure page. We verify the token via auth.getUser(), look up
+//      the caller's admin row, and require they be admin/developer of
+//      the org named in the request body (force_org_id).
+//
+// Anything else (anon, no token, expired token, non-admin user) is
+// rejected with 401/403. Previously this function trusted any caller —
+// the test_send_to / test_kind paths in particular were an open SMTP
+// relay for anyone who knew the URL.
+async function authenticateCaller(
+    req: Request,
+    requiredOrgId: number | null,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+    const authHeader = req.headers.get("Authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+    if (!token) return { ok: false, status: 401, error: "Missing Authorization header" };
+
+    // Service-role short-circuit — cron pings come through this path.
+    if (token === SERVICE_KEY) return { ok: true };
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return { ok: false, status: 401, error: "Invalid or expired session" };
+
+    if (requiredOrgId == null) {
+        return { ok: false, status: 400, error: "org_id required for user-session calls" };
+    }
+
+    const { data: adminRow } = await supabase
+        .from("admins")
+        .select("role, organisation_id")
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+    if (!adminRow) return { ok: false, status: 403, error: "Not authorised — admin role required" };
+    if (adminRow.role === "developer") return { ok: true };
+    if (adminRow.organisation_id !== requiredOrgId) {
+        return { ok: false, status: 403, error: "Not an admin of this organisation" };
+    }
+    return { ok: true };
+}
+
 // denomailer queues SMTP commands and rejects on a microtask tick AFTER
 // the awaited send() returns. If we don't capture the rejection globally
 // the Deno worker crashes (Supabase returns 503, browser sees no CORS
@@ -1047,6 +1090,16 @@ Deno.serve(async (req) => {
         } catch { /* empty body is fine */ }
     }
 
+    // Gate every code path beyond this point. force_org_id may be null
+    // only when called as service role (the cron fans out across orgs);
+    // any browser-initiated call must name a specific org and pass an
+    // admin/developer JWT for it.
+    const auth = await authenticateCaller(req, force_org_id);
+    if (!auth.ok) {
+        return new Response(JSON.stringify({ ok: false, error: auth.error }),
+            withCors({ status: auth.status, headers: { "content-type": "application/json" } }));
+    }
+
     // Test-notification preview mode: builds the requested notification
     // type's email body (using the same templates the scheduled cron
     // uses) and routes a single copy to test_redirect_to. No DB writes,
@@ -1179,7 +1232,11 @@ Deno.serve(async (req) => {
                 withCors({ status: 500, headers: { "content-type": "application/json" } }));
         }
         try {
-            const transcript = await rawSmtpSend(
+            // Transcript stays server-side only — console.log inside
+            // rawSmtpSend writes it to the function logs. Returning it
+            // in the response body would leak SMTP capabilities and
+            // confirm credential validity to the caller.
+            await rawSmtpSend(
                 cfg,
                 test_send_to,
                 "PTL Timesheet — SMTP test",
@@ -1187,7 +1244,7 @@ Deno.serve(async (req) => {
                 `If you're reading it, the SMTP relay configured for org ${org.id} is working.</p>` +
                 `<p style="color:#666;font-size:12px">Sent at ${new Date().toISOString()}</p>`,
             );
-            return new Response(JSON.stringify({ ok: true, sent_to: test_send_to, transcript }),
+            return new Response(JSON.stringify({ ok: true, sent_to: test_send_to }),
                 withCors({ headers: { "content-type": "application/json" } }));
         } catch (err) {
             return new Response(JSON.stringify({ ok: false, error: String((err as Error).message ?? err) }),

@@ -225,6 +225,7 @@ let infTotalEmps = 0;
 // Cached employees + timesheets for the current week so the approval list
 // can render and act without re-fetching.
 let infEmployees = [];
+let infDeptNameById = {};
 let infTsMap = {};
 let approvalWorkflow = "manager_then_admin";
 
@@ -300,6 +301,10 @@ async function loadInfusionStatus(signal) {
   // Stash for the approval list renderer.
   infEmployees = employees;
   infTsMap = tsMap;
+  // Department names keyed by id, so the approval list can show a
+  // dept name per row without re-querying. (infTsMap is the timesheet
+  // map by user_id — it has no department_name column.)
+  infDeptNameById = Object.fromEntries(allInfDepts.map((d) => [d.id, d.name]));
 
   const empPct = infTotalEmps === 0 ? 0 : Math.round((infSubmittedCount / infTotalEmps) * 100);
   const allSubmitted = infSubmittedCount === infTotalEmps && infTotalEmps > 0;
@@ -427,7 +432,9 @@ function renderInfusionApprovalList() {
       </thead>
       <tbody>
         ${pending.map((e) => {
-          const deptName = (infTsMap[e.id]?.department_name) || e.department || "";
+          // Resolve via the departments cache; the timesheets row doesn't
+          // carry the dept name and the employees row only carries the id.
+          const deptName = infDeptNameById[e.department_id] || "";
           const tsId = infTsMap[e.id].id;
           return `
             <tr>

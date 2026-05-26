@@ -61,6 +61,11 @@ export function fmtDMY(d) {
 export function addDays(d, n) {
   const r = new Date(d);
   r.setDate(r.getDate() + n);
+  // Re-floor to local midnight. Without this, crossing a DST boundary
+  // (NZ does observe DST) leaves the result at 23:00 or 01:00 of the
+  // intended date, which trips downstream date arithmetic that assumes
+  // these are pure date values.
+  r.setHours(0, 0, 0, 0);
   return r;
 }
 
