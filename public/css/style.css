@@ -1075,6 +1075,36 @@ details.card[open] > summary::before { content: "▾ "; }
 .dept-badge-exported { background: #d8eed8; color: #1e7a39; }
 .dept-badge-exported::before { background: #1e7a39; }
 
+/* -------- timeclock live counts -------- */
+.tc-live-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.tc-live-counts .tile {
+  padding: 12px 14px;
+  border-radius: var(--radius-box);
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+.tc-live-counts .tile .num { font-size: 22px; font-weight: 700; line-height: 1; }
+.tc-live-counts .tile .lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.tc-live-counts .tile.onsite  { background: var(--success-bg); border-color: #b6dcbf; }
+.tc-live-counts .tile.offsite { background: var(--info-blue-bg-alt); border-color: #b8cfef; }
+.tc-live-counts .tile.break   { background: #fdecd3; border-color: #f5d89a; }
+.tc-live-counts .tile.away    { background: var(--surface-alt); }
+.tc-live-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.tc-live-pill.onsite  { background: var(--success-bg); color: var(--success); }
+.tc-live-pill.offsite { background: var(--info-blue-bg-alt); color: var(--info-blue); }
+.tc-live-pill.break   { background: #fdecd3; color: #a56a10; }
+.tc-live-pill.away    { background: var(--surface-alt); color: var(--text-muted); }
+
 .dept-view-btn {
   display: inline-block;
   padding: 4px 14px;

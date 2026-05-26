@@ -24,14 +24,14 @@ const ctx = await requireAdmin(sb, { allowClockViewer: true });
 let currentOrgId = ctx.currentOrgId;
 
 // Clock-viewer-only users see the Admin tab in the nav but the page
-// itself collapses to just the Timesheet vs Clock sub-tab. Every other
-// tab button and panel is hidden, and dashboard / infusion / leave
-// loaders are short-circuited via this flag.
+// itself collapses to just the TimeClock sub-tabs (Live + Timeclock vs
+// Timesheet). Every other top-level tab button and panel is hidden,
+// and dashboard / infusion / leave loaders are short-circuited via
+// this flag.
 const IS_CLOCK_VIEWER_ONLY = !!ctx.isClockViewer && !ctx.isAdminOrHigher;
 if (IS_CLOCK_VIEWER_ONLY) {
-  // Hide every tab button except Timesheet vs Clock.
   for (const btn of document.querySelectorAll("#admin-tabs [data-tab]")) {
-    if (btn.dataset.tab !== "clockvts") btn.style.display = "none";
+    if (btn.dataset.tab !== "timeclock") btn.style.display = "none";
   }
 }
 
@@ -72,25 +72,32 @@ if (ctx.isDeveloper) {
   tabBar.appendChild(devBtn);
 }
 
-const VALID_TABS = new Set(["dashboard", "clockvts", "infusion", "leavereport", "devtools"]);
+const VALID_TABS = new Set(["dashboard", "timeclock", "infusion", "leavereport", "devtools"]);
+// Hoisted up here so tabFromHash() can flip it when an old #tab=clockvts
+// bookmark resolves into the new TimeClock parent + clockvts sub-view.
+let tcSubView = "live";
 function tabFromHash() {
   const m = /tab=([a-z]+)/.exec(location.hash);
-  const t = m?.[1];
+  let t = m?.[1];
+  // Old bookmarks for the standalone clockvts tab redirect into the new
+  // TimeClock parent tab and force the clockvts sub-view.
+  if (t === "clockvts") { t = "timeclock"; tcSubView = "clockvts"; }
   return VALID_TABS.has(t) ? t : null;
 }
-let activeTab = IS_CLOCK_VIEWER_ONLY ? "clockvts" : (tabFromHash() || "dashboard");
+let activeTab = IS_CLOCK_VIEWER_ONLY ? "timeclock" : (tabFromHash() || "dashboard");
 
 function applyActiveTab() {
   document.querySelectorAll("[data-tab]").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === activeTab);
   });
   document.getElementById("tab-dashboard").style.display    = activeTab === "dashboard"   ? "" : "none";
-  document.getElementById("tab-clockvts").style.display     = activeTab === "clockvts"    ? "" : "none";
+  document.getElementById("tab-timeclock").style.display    = activeTab === "timeclock"   ? "" : "none";
   document.getElementById("tab-infusion").style.display     = activeTab === "infusion"    ? "" : "none";
   document.getElementById("tab-leavereport").style.display  = activeTab === "leavereport" ? "" : "none";
   document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
   if (activeTab === "dashboard") navLoadDashboard();
-  if (activeTab === "clockvts") navLoadClockComparison();
+  if (activeTab === "timeclock") applyTimeclockSubView();
+  else if (typeof stopLivePresence === "function") stopLivePresence();
   if (activeTab === "infusion") navLoadInfusionStatus();
   if (activeTab === "leavereport") { if (lvSubView === "waged") loadWagedReport(); else loadSalariedReport(); }
   if (activeTab === "devtools") loadDevToolsForm();
@@ -219,8 +226,145 @@ async function loadDashboard(signal) {
 }
 
 /* ================================================================
- * Timesheet vs Clock tab
+ * TimeClock tab — Live + Timesheet vs Clock sub-tabs
  * ================================================================ */
+// tcSubView is hoisted at the top of the file (next to VALID_TABS) so
+// the hash-handler can flip it before applyTimeclockSubView runs.
+
+function applyTimeclockSubView() {
+  document.querySelectorAll("[data-tc-view]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tcView === tcSubView);
+  });
+  document.getElementById("tc-live").style.display     = tcSubView === "live"     ? "" : "none";
+  document.getElementById("tc-clockvts").style.display = tcSubView === "clockvts" ? "" : "none";
+  if (tcSubView === "live") {
+    startLivePresence();
+  } else {
+    stopLivePresence();
+    navLoadClockComparison();
+  }
+}
+
+document.querySelectorAll("[data-tc-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    tcSubView = btn.dataset.tcView;
+    applyTimeclockSubView();
+  });
+});
+
+/* ---------------- Live presence ---------------- */
+//
+// Reads Attendium's org_live_status view: returns one row per active
+// employee with their current presence state. Polls every 30 seconds
+// while the sub-tab is open and pauses when navigated away. Read-only
+// — Attendium owns writes to the underlying clock_events table.
+
+let liveTimer = null;
+let liveClockTimer = null;
+
+function stopLivePresence() {
+  if (liveTimer)      { clearInterval(liveTimer);      liveTimer = null; }
+  if (liveClockTimer) { clearInterval(liveClockTimer); liveClockTimer = null; }
+}
+
+function startLivePresence() {
+  stopLivePresence();
+  loadLivePresence();
+  liveTimer = setInterval(loadLivePresence, 30_000);
+  // Tick the wall clock once per second so the page feels live.
+  const tickClock = () => {
+    const el = document.getElementById("tc-live-clock");
+    if (el) el.textContent = new Date().toLocaleTimeString();
+  };
+  tickClock();
+  liveClockTimer = setInterval(tickClock, 1000);
+}
+
+document.getElementById("tc-live-refresh")?.addEventListener("click", () => loadLivePresence());
+
+function liveStatusLabel(s) {
+  switch ((s || "").toLowerCase()) {
+    case "on_site":
+    case "onsite":           return { label: "On site",        cls: "onsite"  };
+    case "off_site_job":
+    case "offsite_job":
+    case "off_site":         return { label: "Off site (job)", cls: "offsite" };
+    case "break":
+    case "on_break":         return { label: "On break",       cls: "break"   };
+    default:                 return { label: s || "Away",      cls: "away"    };
+  }
+}
+
+function fmtSince(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  const diffMs = Date.now() - d.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remMin = mins % 60;
+  return `${hrs}h ${remMin}m`;
+}
+
+async function loadLivePresence() {
+  if (!currentOrgId) return;
+  const body = document.getElementById("tc-live-body");
+  const countsEl = document.getElementById("tc-live-counts");
+  try {
+    const { data, error } = await sb
+      .from("org_live_status")
+      .select("*")
+      .eq("organisation_id", currentOrgId);
+    if (error) throw error;
+
+    const rows = (data || []).slice().sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || "")));
+
+    // Bucket for the count tiles. Falls back to whatever status string
+    // the view returns if it's something we don't have a tile for.
+    const buckets = { onsite: 0, offsite: 0, break: 0, away: 0 };
+    for (const r of rows) {
+      const { cls } = liveStatusLabel(r.status);
+      buckets[cls] = (buckets[cls] || 0) + 1;
+    }
+    countsEl.innerHTML = `
+      <div class="tile onsite"><div class="num">${buckets.onsite || 0}</div><div class="lbl">On site</div></div>
+      <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
+      <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">On break</div></div>
+      <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Away</div></div>`;
+
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">No active employees.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = rows.map((r) => {
+      const { label, cls } = liveStatusLabel(r.status);
+      const since = r.since || r.status_since || r.last_event_at;
+      const dept = r.department || r.department_name || "";
+      const lastEvent = r.last_event_type
+        ? `${r.last_event_type}${r.last_event_at ? " · " + new Date(r.last_event_at).toLocaleString() : ""}`
+        : "";
+      return `<tr>
+        <td><span class="tc-live-pill ${cls}">${escapeHtml(label)}</span></td>
+        <td>${escapeHtml(r.name || "")}</td>
+        <td class="small muted">${escapeHtml(dept)}</td>
+        <td class="small">${escapeHtml(fmtSince(since))}</td>
+        <td class="small muted">${escapeHtml(lastEvent)}</td>
+      </tr>`;
+    }).join("");
+  } catch (err) {
+    console.error("live presence load failed:", err);
+    body.innerHTML = `
+      <tr><td colspan="5" class="muted small" style="text-align:center;padding:24px">
+        Could not load presence data. ${escapeHtml(err.message || "")}
+      </td></tr>`;
+    countsEl.innerHTML = "";
+  }
+}
+
+/* ---------------- Timesheet vs Clock (existing) ---------------- */
 
 let cvtWeek = new Date(thisMonday);
 
