@@ -115,9 +115,8 @@
           return notice(error.message || "Failed to update password", "error");
         }
 
-        if (me?.id) {
-          await sb.from("users").update({ must_change_password: false }).eq("id", me.id);
-        }
+        // SECURITY DEFINER RPC — direct UPDATE is blocked by RLS.
+        await sb.rpc("clear_must_change_password");
 
         document.getElementById("current-pw").value = "";
         document.getElementById("new-pw").value = "";
