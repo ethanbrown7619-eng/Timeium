@@ -1169,6 +1169,14 @@ function wireRow(row, idx) {
   }
 
   row.querySelectorAll(".hours-input").forEach((inp) => {
+    // <input type="number"> ticks its value on mousewheel/trackpad scroll
+    // when focused. That makes it really easy to silently nudge an
+    // already-saved cell while scrolling the timesheet — disable it.
+    inp.addEventListener("wheel", (e) => {
+      if (document.activeElement === inp) {
+        inp.blur();
+      }
+    }, { passive: true });
     let timer;
     inp.addEventListener("input", () => {
       const day = inp.dataset.day;
