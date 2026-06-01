@@ -767,6 +767,12 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
   width: 44px !important;
+  -moz-appearance: textfield;
+}
+.ts-grid .hours-input::-webkit-inner-spin-button,
+.ts-grid .hours-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 .ts-grid .hours-input:focus {
   outline: none;
