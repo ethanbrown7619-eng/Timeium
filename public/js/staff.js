@@ -745,6 +745,12 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
       if (provErr) console.warn("provision_employee_login:", provErr.message);
     }
 
+    // If the operator just edited their own row (e.g. moved themselves
+    // into a new department), the cached user-context (5-min TTL) is
+    // now stale on this tab. Clear it so the next page load re-resolves
+    // the role and the timesheet page sees the new department.
+    maybeClearOwnContext(empId);
+
     notice("Saved", "success");
   } else {
     const { data: newEmp, error } = await sb.rpc("create_employee", {
