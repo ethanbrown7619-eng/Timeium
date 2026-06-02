@@ -1037,6 +1037,14 @@ details.card[open] > summary::before { content: "▾ "; }
   border-radius: 50%;
   display: inline-block;
 }
+.legend-dot-green { background: var(--ptl-lime); }
+.legend-dot-blue  { background: var(--info-blue); }
+.bar-legend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 
 .chip-dash {
   display: inline-block;
