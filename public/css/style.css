@@ -630,14 +630,15 @@ dialog::backdrop {
   background: var(--surface-alt);
   border-radius: 999px;
   overflow: hidden;
+  display: flex;
 }
 .ts-progress-fill {
   height: 100%;
   background: var(--ptl-lime);
-  border-radius: 999px;
   transition: width 0.4s ease;
 }
 .ts-progress-fill.submitted { background: var(--ptl-lime); }
+.ts-progress-fill.exported  { background: var(--info-blue); }
 .ts-progress-fill.rejected  { background: var(--danger); }
 
 /* countdown */

@@ -279,14 +279,23 @@ async function loadInfusionStatus(signal) {
   const tsMap = dash.timesheetsByUserId;
 
   infTotalEmps = employees.length;
+  // Exported timesheets advance the same bars as submitted/approved —
+  // exporting just means "this approved week was written to Excel".
+  // They render as a blue segment so admins can still see at a glance
+  // how much of the bar is post-export.
+  const infExportedCount = employees.filter((e) => {
+    const ts = tsMap[e.id];
+    return ts && ts.status === TS_STATUS.EXPORTED;
+  }).length;
   infSubmittedCount = employees.filter((e) => {
     const ts = tsMap[e.id];
-    return ts && (ts.status === "submitted" || ts.status === "approved");
+    return ts && (ts.status === "submitted" || ts.status === "approved" || ts.status === TS_STATUS.EXPORTED);
   }).length;
   // "Decided" = the admin has either approved or rejected the timesheet.
+  // Exported counts as decided (it was approved first).
   infDecidedCount = employees.filter((e) => {
     const ts = tsMap[e.id];
-    return ts && (ts.status === TS_STATUS.APPROVED || ts.status === TS_STATUS.REJECTED);
+    return ts && (ts.status === TS_STATUS.APPROVED || ts.status === TS_STATUS.REJECTED || ts.status === TS_STATUS.EXPORTED);
   }).length;
   // Pending = submitted but no decision yet. Blocks export hard.
   infPendingDecisionCount = employees.filter((e) => {
@@ -306,18 +315,25 @@ async function loadInfusionStatus(signal) {
   // map by user_id — it has no department_name column.)
   infDeptNameById = Object.fromEntries(allInfDepts.map((d) => [d.id, d.name]));
 
-  const empPct = infTotalEmps === 0 ? 0 : Math.round((infSubmittedCount / infTotalEmps) * 100);
+  // Split each bar into a green (non-exported) and blue (exported)
+  // segment. Green is the portion that's met the bar's criterion but
+  // hasn't been exported yet; blue is the portion that's been exported.
+  const greenSubmittedCount = infSubmittedCount - infExportedCount;
+  const greenSubmittedPct = infTotalEmps === 0 ? 0 : Math.round((greenSubmittedCount / infTotalEmps) * 100);
+  const exportedPct = infTotalEmps === 0 ? 0 : Math.round((infExportedCount / infTotalEmps) * 100);
   const allSubmitted = infSubmittedCount === infTotalEmps && infTotalEmps > 0;
 
   // "Approved" counters mirror the submitted ones but use a stricter rule
-  // - only status === approved counts. Rejected timesheets are decided but
-  // not approved, so they do NOT advance these bars.
+  // - only status === approved counts toward the green segment. Rejected
+  // timesheets are decided but not approved, so they do NOT advance the
+  // bar. Exported counts as approved+done (blue segment).
   const infApprovedCount = employees.filter((e) => {
     const ts = tsMap[e.id];
     return ts && ts.status === TS_STATUS.APPROVED;
   }).length;
   const empApprovedPct = infTotalEmps === 0 ? 0 : Math.round((infApprovedCount / infTotalEmps) * 100);
-  const allApproved = infApprovedCount === infTotalEmps && infTotalEmps > 0;
+  const allApproved = (infApprovedCount + infExportedCount) === infTotalEmps && infTotalEmps > 0;
+  const approvedTotal = infApprovedCount + infExportedCount;
 
   let html = `
     <div class="inf-bar-group">
@@ -327,17 +343,19 @@ async function loadInfusionStatus(signal) {
         <span class="small ${allSubmitted ? "" : "warn-text"}" style="font-weight:600">${infSubmittedCount} / ${infTotalEmps}</span>
       </div>
       <div class="ts-progress-bar">
-        <div class="ts-progress-fill ${allSubmitted ? "submitted" : ""}" style="width:${empPct}%"></div>
+        <div class="ts-progress-fill submitted" style="width:${greenSubmittedPct}%"></div>
+        <div class="ts-progress-fill exported"  style="width:${exportedPct}%"></div>
       </div>
     </div>
     <div class="inf-bar-group" style="margin-top:12px">
       <div class="row-flex" style="gap:8px;margin-bottom:4px">
         <span class="small" style="font-weight:600">Employees approved</span>
         <div class="grow"></div>
-        <span class="small ${allApproved ? "" : "warn-text"}" style="font-weight:600">${infApprovedCount} / ${infTotalEmps}</span>
+        <span class="small ${allApproved ? "" : "warn-text"}" style="font-weight:600">${approvedTotal} / ${infTotalEmps}</span>
       </div>
       <div class="ts-progress-bar">
-        <div class="ts-progress-fill ${allApproved ? "submitted" : ""}" style="width:${empApprovedPct}%"></div>
+        <div class="ts-progress-fill submitted" style="width:${empApprovedPct}%"></div>
+        <div class="ts-progress-fill exported"  style="width:${exportedPct}%"></div>
       </div>
     </div>
   `;
@@ -349,26 +367,40 @@ async function loadInfusionStatus(signal) {
       if (list) list.push(e);
       else empsByDept.set(e.department_id, [e]);
     }
-    const deptSubmitted = departments.filter((d) => {
+    // A dept is "fully exported" when every member's timesheet is exported.
+    // It counts toward the blue segment of both bars. Otherwise, if every
+    // member meets the bar's criterion, it counts toward the green segment.
+    const deptIsFullyExported = (d) => {
+      const members = empsByDept.get(d.id);
+      if (!members || !members.length) return false;
+      return members.every((e) => tsMap[e.id]?.status === TS_STATUS.EXPORTED);
+    };
+    const deptSubmittedAll = departments.filter((d) => {
       const members = empsByDept.get(d.id);
       if (!members || !members.length) return false;
       return members.every((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
     });
-    // Dept approved = every non-empty department where every member's
-    // timesheet has status approved. Strict - one rejected member fails.
-    const deptApproved = departments.filter((d) => {
+    // Dept approved = every member is approved or exported (exported is
+    // approved + done). Strict - one rejected/submitted member fails.
+    const deptApprovedAll = departments.filter((d) => {
       const members = empsByDept.get(d.id);
       if (!members || !members.length) return false;
-      return members.every((e) => tsMap[e.id]?.status === TS_STATUS.APPROVED);
+      return members.every((e) =>
+        tsMap[e.id]?.status === TS_STATUS.APPROVED ||
+        tsMap[e.id]?.status === TS_STATUS.EXPORTED);
     });
+    const deptExportedCount = departments.filter(deptIsFullyExported).length;
 
     const deptTotal = departments.length;
-    const deptCount = deptSubmitted.length;
-    const deptPct = deptTotal === 0 ? 0 : Math.round((deptCount / deptTotal) * 100);
-    const allDepts = deptCount === deptTotal && deptTotal > 0;
+    const deptSubmittedCount = deptSubmittedAll.length;
+    const deptSubmittedGreen = deptSubmittedCount - deptExportedCount;
+    const deptSubmittedGreenPct = deptTotal === 0 ? 0 : Math.round((deptSubmittedGreen / deptTotal) * 100);
+    const deptExportedPct = deptTotal === 0 ? 0 : Math.round((deptExportedCount / deptTotal) * 100);
+    const allDepts = deptSubmittedCount === deptTotal && deptTotal > 0;
 
-    const deptApprovedCount = deptApproved.length;
-    const deptApprovedPct   = deptTotal === 0 ? 0 : Math.round((deptApprovedCount / deptTotal) * 100);
+    const deptApprovedCount = deptApprovedAll.length;
+    const deptApprovedGreen = deptApprovedCount - deptExportedCount;
+    const deptApprovedGreenPct = deptTotal === 0 ? 0 : Math.round((deptApprovedGreen / deptTotal) * 100);
     const allDeptsApproved  = deptApprovedCount === deptTotal && deptTotal > 0;
 
     html += `
@@ -376,10 +408,11 @@ async function loadInfusionStatus(signal) {
         <div class="row-flex" style="gap:8px;margin-bottom:4px">
           <span class="small" style="font-weight:600">Departments submitted</span>
           <div class="grow"></div>
-          <span class="small ${allDepts ? "" : "warn-text"}" style="font-weight:600">${deptCount} / ${deptTotal}</span>
+          <span class="small ${allDepts ? "" : "warn-text"}" style="font-weight:600">${deptSubmittedCount} / ${deptTotal}</span>
         </div>
         <div class="ts-progress-bar">
-          <div class="ts-progress-fill ${allDepts ? "submitted" : ""}" style="width:${deptPct}%"></div>
+          <div class="ts-progress-fill submitted" style="width:${deptSubmittedGreenPct}%"></div>
+          <div class="ts-progress-fill exported"  style="width:${deptExportedPct}%"></div>
         </div>
       </div>
       <div class="inf-bar-group" style="margin-top:12px">
@@ -389,7 +422,8 @@ async function loadInfusionStatus(signal) {
           <span class="small ${allDeptsApproved ? "" : "warn-text"}" style="font-weight:600">${deptApprovedCount} / ${deptTotal}</span>
         </div>
         <div class="ts-progress-bar">
-          <div class="ts-progress-fill ${allDeptsApproved ? "submitted" : ""}" style="width:${deptApprovedPct}%"></div>
+          <div class="ts-progress-fill submitted" style="width:${deptApprovedGreenPct}%"></div>
+          <div class="ts-progress-fill exported"  style="width:${deptExportedPct}%"></div>
         </div>
       </div>
     `;
