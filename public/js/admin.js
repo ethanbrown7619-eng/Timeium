@@ -826,10 +826,15 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     .select("id, name")
     .eq("organisation_id", currentOrgId);
 
+  // Only fetch leave-flagged jobs. Orgs with thousands of synced
+  // Infusion jobs would otherwise blow past Supabase's default 1000-row
+  // limit and silently drop the (much rarer) leave jobs from the set,
+  // making leave entries invisible in the report.
   const { data: allJobs } = await sb
     .from("jobs")
     .select("id, job_code, description, is_leave")
-    .eq("organisation_id", currentOrgId);
+    .eq("organisation_id", currentOrgId)
+    .eq("is_leave", true);
 
   const leaveJobIds = new Set((allJobs || []).filter((j) => j.is_leave).map((j) => j.id));
   const jobMap = {};
