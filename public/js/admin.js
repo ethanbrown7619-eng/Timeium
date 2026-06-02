@@ -841,7 +841,10 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     .eq("organisation_id", currentOrgId)
     .in("week_start", weekStarts);
   if (!includeDrafts) {
-    tsQuery = tsQuery.in("status", ["submitted", "approved"]);
+    // Include 'exported' too — once a week is exported (admin pressed
+    // Export to Excel) the status flips off 'approved', and we still
+    // want that leave to appear in the leave report.
+    tsQuery = tsQuery.in("status", ["submitted", "approved", "exported"]);
   }
   const { data: timesheets } = await tsQuery;
   if (!timesheets?.length) return [];
