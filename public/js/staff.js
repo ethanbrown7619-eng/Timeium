@@ -59,11 +59,30 @@ let deptById = new Map();
 function rebuildDeptById() {
   deptById = new Map(departments.map((d) => [d.id, d]));
 }
+function populateDepartmentFilter() {
+  const sel = document.getElementById("filter-department");
+  if (!sel) return;
+  const previous = sel.value;
+  const options = ['<option value="">All departments</option>']
+    .concat(
+      departments
+        .filter((d) => d.active)
+        .map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`),
+    )
+    .concat('<option value="__none">No department</option>');
+  sel.innerHTML = options.join("");
+  if (previous && [...sel.options].some((o) => o.value === previous)) {
+    sel.value = previous;
+  }
+}
 let adminUserIds = new Set();
 let filter = {
   search: "",
   showInactive: false,
   onlyIncomplete: false,
+  departmentId: "",
+  employmentType: "",
+  role: "",
 };
 let activeTab = "employees";
 let activeOrgView = "columns";
@@ -118,6 +137,33 @@ document.getElementById("only-incomplete").addEventListener("change", (e) => {
   filter.onlyIncomplete = e.target.checked;
   renderEmployees();
 });
+document.getElementById("filter-department").addEventListener("change", (e) => {
+  filter.departmentId = e.target.value;
+  renderEmployees();
+});
+document.getElementById("filter-type").addEventListener("change", (e) => {
+  filter.employmentType = e.target.value;
+  renderEmployees();
+});
+document.getElementById("filter-role").addEventListener("change", (e) => {
+  filter.role = e.target.value;
+  renderEmployees();
+});
+document.getElementById("clear-filters-btn").addEventListener("click", () => {
+  filter.search = "";
+  filter.showInactive = false;
+  filter.onlyIncomplete = false;
+  filter.departmentId = "";
+  filter.employmentType = "";
+  filter.role = "";
+  document.getElementById("search-input").value = "";
+  document.getElementById("show-inactive").checked = false;
+  document.getElementById("only-incomplete").checked = false;
+  document.getElementById("filter-department").value = "";
+  document.getElementById("filter-type").value = "";
+  document.getElementById("filter-role").value = "";
+  renderEmployees();
+});
 
 document.getElementById("add-employee-btn").addEventListener("click", () => {
   if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
@@ -167,6 +213,7 @@ if (ctx.isDeveloper) {
 async function reloadAll() {
   if (!currentOrgId) return;
   await Promise.all([loadDepartments(), loadEmployees(), loadAdmins()]);
+  populateDepartmentFilter();
   renderEmployees();
   if (activeTab === "departments") renderDepartments();
   if (activeTab === "org") renderOrg();
@@ -277,7 +324,21 @@ function renderEmployees() {
       const hay = [e.name, e.email, e.employee_code].filter(Boolean).join(" ").toLowerCase();
       return hay.includes(filter.search);
     })
-    .filter((e) => (filter.onlyIncomplete ? missingFields(e).length > 0 : true));
+    .filter((e) => (filter.onlyIncomplete ? missingFields(e).length > 0 : true))
+    .filter((e) => {
+      if (!filter.departmentId) return true;
+      if (filter.departmentId === "__none") return !e.department_id;
+      return String(e.department_id) === filter.departmentId;
+    })
+    .filter((e) => !filter.employmentType || e.employment_type === filter.employmentType)
+    .filter((e) => {
+      if (!filter.role) return true;
+      if (filter.role === "manager")      return !!e.is_manager;
+      if (filter.role === "admin")        return e.auth_user_id && adminUserIds.has(e.auth_user_id);
+      if (filter.role === "receives_ot")  return !!e.receives_overtime;
+      if (filter.role === "clock_viewer") return !!e.can_view_clock_comparison;
+      return true;
+    });
 
   const incompleteCount = employees.filter(
     (e) => e.active && missingFields(e).length > 0

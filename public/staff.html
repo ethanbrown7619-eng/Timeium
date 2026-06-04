@@ -30,13 +30,30 @@
         <div class="card">
           <div class="row-flex mb-md">
             <button id="add-employee-btn">+ Add employee</button>
-            <input id="search-input" placeholder="Search name, email, code…" style="width:260px" />
+            <input id="search-input" placeholder="Search name, email, code…" style="width:240px" />
+            <select id="filter-department" style="min-width:140px">
+              <option value="">All departments</option>
+            </select>
+            <select id="filter-type" style="min-width:120px">
+              <option value="">All types</option>
+              <option value="waged">Waged</option>
+              <option value="salaried">Salaried</option>
+              <option value="contractor">Contractor</option>
+            </select>
+            <select id="filter-role" style="min-width:120px">
+              <option value="">All roles</option>
+              <option value="manager">Managers</option>
+              <option value="admin">Admins</option>
+              <option value="receives_ot">Receives OT</option>
+              <option value="clock_viewer">Timeclock viewers</option>
+            </select>
             <label class="row-flex small muted" style="gap:4px">
               <input type="checkbox" id="show-inactive" /> Show inactive
             </label>
             <label class="row-flex small muted" style="gap:4px">
               <input type="checkbox" id="only-incomplete" /> Only incomplete
             </label>
+            <button id="clear-filters-btn" class="ghost small">Clear</button>
             <div class="grow"></div>
             <button id="delete-test-btn" class="danger small hidden">Delete all test staff</button>
             <span id="staff-summary" class="muted small"></span>
