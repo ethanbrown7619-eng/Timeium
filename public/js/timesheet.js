@@ -42,7 +42,7 @@ if (ADMIN_MODE) {
   }
   const { data: target, error: targetErr } = await sb
     .from("users")
-    .select("id, name, organisation_id, department_id, auth_user_id")
+    .select("id, name, organisation_id, department_id, auth_user_id, employment_type")
     .eq("id", ADMIN_TARGET_USER_ID)
     .maybeSingle();
   if (targetErr || !target) {
@@ -121,6 +121,27 @@ let orgDeadline = { week: "following_week", day: "monday", time: "08:00" };
 let orgAutofillPH = false;
 let orgPHHours = 8;
 let orgPHJobId = null;
+let orgEmpTypeSettings = null;
+// Map leave-type id → entitlement flag key ('annual_leave' | 'sick_leave' | 'public_holidays').
+// Built from public.leave_types.code. Anything outside ANNUAL / SICK /
+// PUBLIC_HOLIDAY is left out — those types aren't gated by the per-staff-type
+// toggles, so picking them never warns.
+let leaveTypeFlagById = new Map();
+const LEAVE_CODE_TO_FLAG = {
+  ANNUAL: "annual_leave",
+  SICK: "sick_leave",
+  PUBLIC_HOLIDAY: "public_holidays",
+};
+const FLAG_LABEL = {
+  annual_leave: "annual leave",
+  sick_leave: "sick leave",
+  public_holidays: "public holidays",
+};
+const TYPE_LABEL = {
+  waged: "waged",
+  salaried: "salaried",
+  contractor: "a contractor",
+};
 
 function weekLabel() {
   const end = addDays(weekStart, 6);
@@ -720,11 +741,17 @@ async function loadLookups() {
   // referencing archived tasks / dept-codes still render their codes.
   // Filter ACTIVE-only when building the autocomplete suggestion lists so
   // users can't pick archived ones for new rows.
-  const [jobsResult, tasksResult, deptResult] = await Promise.all([
-    fetchAllPaged("jobs", "id, job_code, description, status, is_leave", "job_code"),
+  const [jobsResult, tasksResult, deptResult, leaveTypesResult] = await Promise.all([
+    fetchAllPaged("jobs", "id, job_code, description, status, is_leave, leave_type_id", "job_code"),
     fetchAllPaged("tasks", "id, task_code, description, status", "task_code"),
     fetchAllPaged("department_codes", "id, code, description, status", "code"),
+    sb.from("leave_types").select("id, code").eq("organisation_id", currentOrgId),
   ]);
+  leaveTypeFlagById = new Map(
+    (leaveTypesResult?.data || [])
+      .map((lt) => [lt.id, LEAVE_CODE_TO_FLAG[lt.code]])
+      .filter(([, flag]) => !!flag),
+  );
 
   jobs = jobsResult;
   tasks = tasksResult;
@@ -933,8 +960,37 @@ function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
 
 /* ---------------------------------------------------------------- autofill public holidays */
 
+// Returns false if the org's employment_type_settings explicitly disables
+// the given flag for this employee's type. Missing settings / missing type
+// → defaults to true (no restriction), which matches the seed defaults
+// shipped in migration 050.
+function employeeReceives(flagKey) {
+  const type = employee?.employment_type;
+  if (!type || !orgEmpTypeSettings) return true;
+  const typeCfg = orgEmpTypeSettings[type];
+  if (!typeCfg) return true;
+  return typeCfg[flagKey] !== false;
+}
+
+// Warning toast when an entry is set to a leave job that the current
+// employee's type isn't entitled to. Not a hard block — admins may still
+// want to record an exception, and the org may revisit the setting.
+function warnIfLeaveNotEntitled(job) {
+  if (!job?.is_leave || !job.leave_type_id) return;
+  const flagKey = leaveTypeFlagById.get(job.leave_type_id);
+  if (!flagKey) return;
+  if (employeeReceives(flagKey)) return;
+  const typeLabel = TYPE_LABEL[employee?.employment_type] || employee?.employment_type || "this staff type";
+  const flagLabel = FLAG_LABEL[flagKey];
+  const msg = ADMIN_MODE
+    ? `${employee?.name || "This employee"} is ${typeLabel} and does not receive ${flagLabel} — check before submitting.`
+    : `You are ${typeLabel} and do not receive ${flagLabel} — check before submitting.`;
+  notice(msg, "warn");
+}
+
 async function autofillPublicHolidays() {
   if (!timesheetId || !weekStart || !orgPHJobId) return;
+  if (!employeeReceives("public_holidays")) return;
 
   const phJob = jobsById.get(orgPHJobId);
   if (!phJob) return;
@@ -1120,6 +1176,7 @@ function wireRow(row, idx) {
         entries[idx].dept_code_id = null;
         entries[idx].task_id = null;
         fields.push("dept_code_id", "task_id");
+        warnIfLeaveNotEntitled(it);
       }
       saveEntry(entries[idx], fields);
       // Only the status badge cell needs refreshing when is_leave didn't
@@ -1421,7 +1478,7 @@ async function loadOrgDeadline() {
   try {
     const { data } = await sb
       .from("organisations")
-      .select("deadline_week, deadline_day, deadline_time, autofill_public_holidays, public_holiday_hours, public_holiday_job_id")
+      .select("deadline_week, deadline_day, deadline_time, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, employment_type_settings")
       .eq("id", currentOrgId)
       .maybeSingle();
     if (data) {
@@ -1431,6 +1488,7 @@ async function loadOrgDeadline() {
       orgAutofillPH = !!data.autofill_public_holidays;
       orgPHHours = Number(data.public_holiday_hours) || 8;
       orgPHJobId = data.public_holiday_job_id || null;
+      orgEmpTypeSettings = data.employment_type_settings || null;
     }
   } catch (err) {
     console.warn("org deadline settings load failed:", err);

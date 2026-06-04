@@ -561,7 +561,7 @@ export async function getUserContext(sb, session, { force = false } = {}) {
   const [devRes, adminRes, meRes] = await Promise.allSettled([
     sb.rpc("is_developer"),
     sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
-    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison, cost_rate, sell_rate, rate_source_department_id").eq("auth_user_id", session.user.id).maybeSingle(),
+    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison, cost_rate, sell_rate, rate_source_department_id, employment_type").eq("auth_user_id", session.user.id).maybeSingle(),
   ]);
 
   if (devRes.status === "rejected") console.warn("is_developer failed:", devRes.reason);
