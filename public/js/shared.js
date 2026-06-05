@@ -466,21 +466,71 @@ export function renderTopbar(opts) {
 
   document.getElementById("signout-link").addEventListener("click", async (e) => {
     e.preventDefault();
-    clearUserContextCache();
-    // Wipe the dashboard data cache too. If a different operator signs in
-    // on the same browser before the 30s TTL elapses, they'd otherwise see
-    // the previous user's cached dashboard rendered against their own
-    // (potentially different-scope) view.
-    invalidateWeekDashboard();
-    if (opts.sb) {
-      await opts.sb.auth.signOut();
+    await signOutAndRedirect({ sb: opts.sb });
+  });
+
+  // Shared-computer safety: if nobody touches the page for IDLE_TIMEOUT_MS,
+  // sign out automatically so the next person at the keyboard can't act as
+  // the previous user. The "no linked employee record" error on Todd's
+  // account was caused by inheriting another user's leftover session.
+  startIdleTimeout({ sb: opts.sb });
+}
+
+const IDLE_TIMEOUT_MS = 30 * 60_000;
+const IDLE_ACTIVITY_EVENTS = ["mousedown", "keydown", "scroll", "touchstart"];
+let idleTimer = null;
+let idleListenersAttached = false;
+let idleLastReset = 0;
+
+export function startIdleTimeout({ sb, ms = IDLE_TIMEOUT_MS } = {}) {
+  // Idempotent — every authenticated page calls renderTopbar, which calls
+  // this. Multiple init's would just stack listeners; bail if we've wired
+  // it already.
+  if (idleListenersAttached) return;
+  idleListenersAttached = true;
+
+  const reset = () => {
+    const now = Date.now();
+    // Throttle: mousedown etc. can fire many times per second. One reset
+    // per 5s is plenty.
+    if (now - idleLastReset < 5000) return;
+    idleLastReset = now;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(async () => {
+      // Use sessionStorage so the message survives the signin.html
+      // redirect and gets surfaced there.
+      try {
+        sessionStorage.setItem("ptl-signout-reason", "idle");
+      } catch { /* ignore */ }
+      await signOutAndRedirect({ sb });
+    }, ms);
+  };
+
+  for (const evt of IDLE_ACTIVITY_EVENTS) {
+    window.addEventListener(evt, reset, { passive: true });
+  }
+  reset();
+}
+
+export async function signOutAndRedirect({ sb } = {}) {
+  clearUserContextCache();
+  // Wipe the dashboard data cache too. If a different operator signs in
+  // on the same browser before the 30s TTL elapses, they'd otherwise see
+  // the previous user's cached dashboard rendered against their own
+  // (potentially different-scope) view.
+  invalidateWeekDashboard();
+  try {
+    if (sb) {
+      await sb.auth.signOut();
     } else {
       const { getSupabase } = await import("/js/supabase-client.js");
-      const sb = await getSupabase();
-      await sb.auth.signOut();
+      const fresh = await getSupabase();
+      await fresh.auth.signOut();
     }
-    location.replace("/signin.html");
-  });
+  } catch (err) {
+    console.warn("signOut failed, redirecting anyway:", err);
+  }
+  location.replace("/signin.html");
 }
 
 /* ---------------------------------------------------------------- router */
@@ -572,6 +622,21 @@ export async function getUserContext(sb, session, { force = false } = {}) {
   const adminRow = adminRes.status === "fulfilled" ? (adminRes.value?.data || null) : null;
   const employee = meRes.status === "fulfilled" ? (meRes.value?.data || null) : null;
   const role = adminRow?.role || (isDeveloper ? "developer" : null);
+
+  // Shared-computer guard: a session that resolves to neither an admin
+  // row nor an employee row is an inherited / stale login (e.g. the
+  // previous person closed the tab without signing out, and the new
+  // person at the keyboard now holds their JWT). Without this, every
+  // RPC keyed on auth.uid() — get_or_create_timesheet, current_user_employee
+  // — fails with "no linked employee record" and the user thinks the app
+  // is broken. Sign them out and surface a clear message on the signin page.
+  if (!isDeveloper && !adminRow && !employee) {
+    try {
+      sessionStorage.setItem("ptl-signout-reason", "orphan");
+    } catch { /* ignore */ }
+    await signOutAndRedirect({ sb });
+    return null;
+  }
 
   const data = {
     isDeveloper,

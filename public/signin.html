@@ -57,6 +57,19 @@
       const sb = await getSupabase();
       const turnstile = await mountTurnstile(document.getElementById("turnstile-container"));
 
+      // Surface the reason for an automatic sign-out (currently only the
+      // 30-minute idle timeout from shared.js) so the next person doesn't
+      // wonder why they're back at the login screen.
+      try {
+        const reason = sessionStorage.getItem("ptl-signout-reason");
+        if (reason === "idle") {
+          notice("Signed out automatically after 30 minutes of inactivity. Sign in again to continue.", "info");
+        } else if (reason === "orphan") {
+          notice("Your previous sign-in is no longer linked to an employee record. Please sign in with your own account.", "warn");
+        }
+        sessionStorage.removeItem("ptl-signout-reason");
+      } catch { /* sessionStorage may be unavailable in private mode */ }
+
       // Show / hide password toggle. The button's aria-pressed state and
       // label flip in sync with the input type so screen readers stay
       // accurate.
