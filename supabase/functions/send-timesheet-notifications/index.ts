@@ -46,7 +46,6 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SMTPClient }   from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 // SMTP defaults pulled from env. Each org row may override these by
 // populating organisations.smtp_* — when present those win, otherwise
@@ -125,16 +124,15 @@ async function authenticateCaller(
     return { ok: true };
 }
 
-// denomailer queues SMTP commands and rejects on a microtask tick AFTER
-// the awaited send() returns. If we don't capture the rejection globally
-// the Deno worker crashes (Supabase returns 503, browser sees no CORS
-// header). Stash the latest async SMTP error so the test-send branch can
-// surface it in the response body instead of dying silently.
-let lastAsyncSmtpError: string | null = null;
+// Every send path now goes through rawSmtpSend, which awaits the SMTP
+// transaction to completion and either throws (caught by the per-recipient
+// try/catch in fire*) or returns the transcript. The handler below is
+// kept as a safety net so any stray async rejection (timer, RPC, etc.)
+// gets logged instead of crashing the Deno worker — which would otherwise
+// surface as a 503 with no CORS header.
 addEventListener("unhandledrejection", (e: PromiseRejectionEvent) => {
     const msg = String((e.reason as { message?: string } | undefined)?.message ?? e.reason);
-    console.error("unhandled rejection (likely denomailer):", msg);
-    lastAsyncSmtpError = msg;
+    console.error("unhandled rejection:", msg);
     e.preventDefault();
 });
 
@@ -215,17 +213,18 @@ function escapeHtml(s: any): string {
 }
 
 // ---------------------------------------------------------------------------
-// SMTP sender (denomailer over SMTP relay)
+// SMTP sender (hand-rolled raw SMTP over TCP+STARTTLS)
 // ---------------------------------------------------------------------------
-// One client per HTTP invocation: we open at the start of the handler, send
-// every email through it (re-using the TCP/TLS connection), then close at
-// the end. Closing isn't optional - leaving the socket open will keep the
-// Deno process alive past the response and time out the function.
+// Every send opens its own TCP+TLS+AUTH session and tears it down on QUIT.
+// This is slower per-message than connection pooling, but the previous
+// denomailer-based path queued commands and resolved its awaited send()
+// before the SMTP transaction completed, so reminder/overdue/discrepancy
+// runs reported "sent" while delivering nothing. The raw path waits for
+// each server response and throws a full transcript on failure.
 
 // SMTP config is resolved per-org: organisations.smtp_* overrides the
 // env-secret fallback. processOrg() calls openSmtpFor(org) before firing
-// any sends and closeSmtpClient() in finally — that way each tenant uses
-// its own credentials and the TCP socket is released between orgs.
+// any sends so each tenant uses its own credentials and debug-redirect.
 //
 // State is module-level (rather than threaded through every fire* and
 // sendEmail call) purely to keep the diff narrow. Don't call sendEmail
@@ -235,7 +234,12 @@ interface SmtpConfig {
     host: string; port: number; user: string; pass: string; from: string;
 }
 
-let smtpClient: SMTPClient | null = null;
+// Per-org SMTP config, populated by openSmtpFor() at the top of processOrg.
+// Every sendEmail() call inside the org's fire* functions reads this. We no
+// longer hold an open socket between sends — rawSmtpSend opens, transacts,
+// and closes per message. That trades a little throughput for the guarantee
+// that each await actually waited for the server's 250 response.
+let currentSmtpCfg: SmtpConfig | null = null;
 let smtpFrom: string = NOTIFY_FROM;
 // Per-invocation debug redirect — populated from organisations.debug_redirect_email
 // at the top of processOrg. Falls back to DEBUG_REDIRECT_EMAIL env var when null.
@@ -257,41 +261,24 @@ function resolveSmtpConfig(org: any): SmtpConfig {
     return { host, port, user, pass, from };
 }
 
-async function openSmtpFor(org: any): Promise<void> {
-    await closeSmtpClient();
+function openSmtpFor(org: any): void {
     currentDebugRedirect = (org?.debug_redirect_email as string) || null;
-    const cfg = resolveSmtpConfig(org);
-    smtpClient = new SMTPClient({
-        connection: {
-            hostname: cfg.host,
-            port:     cfg.port,
-            tls:      false,        // STARTTLS auto-negotiated on 2525/587
-            auth:     { username: cfg.user, password: cfg.pass },
-        },
-        // Log every SMTP command + response so we can see what the server
-        // actually said when denomailer throws its generic "invalid cmd".
-        // Verbose, but the Supabase function logs are the only window we
-        // have into the SMTP conversation.
-        debug: {
-            log:           true,
-            allowUnsecure: true,
-            encodeLB:      false,
-            noStartTLS:    false,
-        },
-    });
-    smtpFrom = cfg.from;
+    currentSmtpCfg = resolveSmtpConfig(org);
+    smtpFrom = currentSmtpCfg.from;
 }
 
-async function closeSmtpClient(): Promise<void> {
-    if (!smtpClient) return;
-    try { await smtpClient.close(); } catch { /* swallow on shutdown */ }
-    smtpClient = null;
+// Kept as a no-op for any lingering caller in the handler's outer finally —
+// the new raw-SMTP path opens and closes a fresh socket per send, so there
+// is nothing to release here. Safe to delete once you confirm no other path
+// in this file calls it.
+function closeSmtpClient(): void {
+    currentSmtpCfg = null;
 }
 
-// Hand-rolled SMTP send used by the test-send path. We bypass denomailer
-// entirely because denomailer's error wrapping reduces every server
-// rejection to a generic "invalid cmd" string with no visibility into
-// which command failed or what the server actually said.
+// Hand-rolled SMTP send used by every email path (production and test).
+// We don't use a library because denomailer's error wrapping reduced every
+// server rejection to a generic "invalid cmd" string, and its send() would
+// resolve before the SMTP transaction completed — masking failures.
 //
 // Returns a transcript of the entire conversation. On failure throws an
 // Error with the full transcript in .message so the caller can surface
@@ -408,29 +395,12 @@ async function rawSmtpSend(
 }
 
 async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-    if (!smtpClient) throw new Error("SMTP client not initialised — call openSmtpFor(org) first");
-    let actualTo      = to;
-    let actualSubject = subject;
-    let actualHtml    = html;
-    // Per-org debug redirect wins over the global env var. Either one
-    // pulls every send into a single inbox so admins can verify the
-    // automation without spamming staff.
-    const redirect = currentDebugRedirect ?? DEBUG_REDIRECT_EMAIL;
-    if (redirect) {
-        actualTo      = redirect;
-        actualSubject = `[DEBUG -> ${to}] ${subject}`;
-        actualHtml    = `<div style="background:#fef08a;padding:12px;` +
-            `font-family:sans-serif;border-bottom:2px solid #ca8a04">` +
-            `<b>[DEBUG]</b> redirected from <b>${to}</b>. Clear the debug ` +
-            `redirect (Configure &rarr; SMTP) to send for real.</div>` + html;
-    }
-    await smtpClient.send({
-        from:    smtpFrom,
-        to:      actualTo,
-        subject: actualSubject,
-        content: "auto",
-        html:    actualHtml,
-    });
+    if (!currentSmtpCfg) throw new Error("SMTP config not initialised — call openSmtpFor(org) first");
+    // rawSmtpSend already honours currentDebugRedirect + DEBUG_REDIRECT_EMAIL
+    // internally (see top of that function), so we don't double-wrap here.
+    // It throws with a full SMTP transcript on failure; the per-recipient
+    // try/catch in fire* will log it and move on.
+    await rawSmtpSend(currentSmtpCfg, to, subject, html);
 }
 
 // ---------------------------------------------------------------------------
@@ -1000,7 +970,7 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
     }
 
     // At least one slot fires → open SMTP now.
-    await openSmtpFor(org);
+    openSmtpFor(org);
 
     const result: Record<string, any> = {};
 
@@ -1233,8 +1203,9 @@ Deno.serve(async (req) => {
             return new Response(JSON.stringify({ error: "Org not found" }),
                 withCors({ status: 404, headers: { "content-type": "application/json" } }));
         }
-        // Test-send goes through rawSmtpSend (not denomailer) so any
-        // server-side rejection is surfaced verbatim with full transcript.
+        // Test-send goes through rawSmtpSend directly so the response body
+        // can include the full SMTP transcript verbatim, including any
+        // server-side rejection.
         let cfg: SmtpConfig;
         try {
             cfg = resolveSmtpConfig(org);
@@ -1293,9 +1264,10 @@ Deno.serve(async (req) => {
             }
         }
     } finally {
-        // Must close the SMTP connection or the Deno process stays alive
-        // and the function times out instead of returning.
-        await closeSmtpClient();
+        // rawSmtpSend opens and closes its own socket per message, so there
+        // is no persistent client to release here. Resetting the in-memory
+        // config keeps state clean between worker invocations.
+        closeSmtpClient();
     }
 
     return new Response(JSON.stringify(results, null, 2),
