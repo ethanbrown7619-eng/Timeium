@@ -850,7 +850,7 @@ async function loadWeek() {
   // Status and entries don't depend on each other — fetch in parallel.
   const [statusRes, entriesRes] = await Promise.allSettled([
     sb.from("timesheets")
-      .select("status, submitted_at")
+      .select("status, submitted_at, notes")
       .eq("id", timesheetId)
       .maybeSingle(),
     sb.from("timesheet_entries")
@@ -865,6 +865,7 @@ async function loadWeek() {
     tsStatus = data?.status || "draft";
     tsSubmittedAt = data?.submitted_at || null;
     renderStatusBadge();
+    renderRejectionBanner(data?.notes);
   } else {
     console.warn("status badge refresh failed:", statusRes.reason);
   }
@@ -1038,6 +1039,22 @@ async function autofillPublicHolidays() {
 
   if (!error && newEntry) {
     entries.push(newEntry);
+  }
+}
+
+/* ---------------------------------------------------------------- rejection banner */
+
+// Surfaces the manager's rejection reason to the user. Without this the
+// user sees a "Resubmit" button and a "Rejected" badge but no clue
+// what to fix — they have to message the manager to ask.
+function renderRejectionBanner(notes) {
+  const banner = document.getElementById("rejection-banner");
+  if (!banner) return;
+  if (tsStatus === "rejected" && notes && notes.trim()) {
+    document.getElementById("rejection-banner-note").textContent = notes.trim();
+    banner.hidden = false;
+  } else {
+    banner.hidden = true;
   }
 }
 

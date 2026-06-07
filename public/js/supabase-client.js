@@ -1,5 +1,5 @@
 // Supabase client bootstrap.
-// Loads supabase-js from jsDelivr (no build step) and reads Supabase URL/anon
+// Loads supabase-js from esm.sh (no build step) and reads Supabase URL/anon
 // key from /config.json (served by the Cloudflare Worker).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";

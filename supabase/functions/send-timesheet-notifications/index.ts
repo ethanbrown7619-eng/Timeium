@@ -41,8 +41,8 @@
 //        -H "Content-Type: application/json" \
 //        -d '{"force_org_id": 1, "force_kind": "reminder"}'
 //
-// force_kind ∈ ('reminder','reminder_2','overdue','discrepancy') bypasses
-// the day/time check and dedup for that org+kind. Useful for smoke tests.
+// force_kind ∈ ('reminder','reminder_2','overdue','discrepancy','manager_approval')
+// bypasses the day/time check and dedup for that org+kind. Useful for smoke tests.
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
