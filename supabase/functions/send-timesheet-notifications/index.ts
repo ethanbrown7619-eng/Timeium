@@ -984,9 +984,18 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
 
     const result: Record<string, any> = {};
 
+    // Reminders chase the week that's currently due for submission. For
+    // orgs with deadline_week='following_week' (the default), that's the
+    // *previous* week — by the time we're sending reminders, the current
+    // week isn't even over yet, so nobody could have submitted it. For
+    // orgs with deadline_week='this_week' (timesheets due during the same
+    // week they cover), it's the current week.
+    const reminderWeekStart = org.deadline_week === "this_week" ? thisMonday : lastMonday;
+    const reminderWeekEnd   = org.deadline_week === "this_week" ? thisSunday : lastSunday;
+
     if (fireR1) {
         try {
-            const sent = await fireReminder(org, 1, thisMonday, thisSunday, tz, orgName);
+            const sent = await fireReminder(org, 1, reminderWeekStart, reminderWeekEnd, tz, orgName);
             result.reminder = { sent };
         } catch (err) {
             console.error(`reminder failed (org ${org.id})`, err);
@@ -996,7 +1005,7 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
 
     if (fireR2) {
         try {
-            const sent = await fireReminder(org, 2, thisMonday, thisSunday, tz, orgName);
+            const sent = await fireReminder(org, 2, reminderWeekStart, reminderWeekEnd, tz, orgName);
             result.reminder_2 = { sent };
         } catch (err) {
             console.error(`reminder_2 failed (org ${org.id})`, err);
