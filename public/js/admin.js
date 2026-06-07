@@ -19,7 +19,10 @@ function getXLSX() {
   return _xlsxPromise;
 }
 // jsPDF + autotable for the printable Leave/Overtime report. Same lazy-load
-// pattern as XLSX — only pulled when the PDF button is clicked.
+// pattern as XLSX — only pulled when the PDF button is clicked. The plugin
+// is invoked as a function (autoTable(doc, opts)) rather than as a method
+// (doc.autoTable(opts)) because the esm.sh build of jspdf-autotable doesn't
+// reliably attach to the jsPDF prototype across module instances.
 let _pdfPromise = null;
 function getPdf() {
   if (!_pdfPromise) {
@@ -28,10 +31,7 @@ function getPdf() {
         import("https://esm.sh/jspdf@2.5.1"),
         import("https://esm.sh/jspdf-autotable@3.8.2"),
       ]);
-      // autotable attaches itself to jsPDF.prototype on import side-effect.
-      // Touch the default export so esm.sh tree-shaker keeps it.
-      void autotableMod.default;
-      return jspdfMod.jsPDF;
+      return { jsPDF: jspdfMod.jsPDF, autoTable: autotableMod.default };
     })();
   }
   return _pdfPromise;
@@ -1169,7 +1169,7 @@ async function lvExportToExcel(rows, filename) {
 // salaried-monthly views.
 async function lvExportToPdf(rows, filename, { title, periodLabel }) {
   const sorted = sortLvRows(rows);
-  const jsPDF = await getPdf();
+  const { jsPDF, autoTable } = await getPdf();
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const generatedAt = new Date().toLocaleString("en-NZ", {
@@ -1205,7 +1205,7 @@ async function lvExportToPdf(rows, filename, { title, periodLabel }) {
     String(r.hours ?? ""),
   ]);
 
-  doc.autoTable({
+  autoTable(doc, {
     head,
     body,
     startY: 92,
