@@ -1314,6 +1314,13 @@ function updateTotals() {
 
 /* ---------------------------------------------------------------- save entry */
 
+// Per-row write chain. Each saveEntry queues behind the previous save
+// for the same row so two requests for the same row can't arrive at the
+// DB out of order (network reordering would otherwise leave the earlier,
+// stale value persisted while the UI shows the later one). Different
+// rows save in parallel — the chain is scoped per entry.id.
+const saveChains = new Map();
+
 async function saveEntry(entry, changedFields) {
   if (!Array.isArray(changedFields) || !changedFields.length) return;
   const update = {};
@@ -1327,14 +1334,21 @@ async function saveEntry(entry, changedFields) {
       update[f] = entry[f];
     }
   }
-  try {
-    const { error } = await sb.from("timesheet_entries").update(update).eq("id", entry.id);
-    if (error) throw error;
-    invalidateCalCache();
-  } catch (err) {
-    console.error("Save failed", err);
-    notice(err.message || "Failed to save", "error");
-  }
+  const prev = saveChains.get(entry.id) || Promise.resolve();
+  const next = prev.then(async () => {
+    try {
+      const { error } = await sb.from("timesheet_entries").update(update).eq("id", entry.id);
+      if (error) throw error;
+      invalidateCalCache();
+    } catch (err) {
+      console.error("Save failed", err);
+      notice(err.message || "Failed to save", "error");
+    }
+  });
+  saveChains.set(entry.id, next);
+  next.finally(() => {
+    if (saveChains.get(entry.id) === next) saveChains.delete(entry.id);
+  });
 }
 
 /* ---------------------------------------------------------------- add row */

@@ -1,0 +1,25 @@
+# Make the static PWA deploy-coherent.
+#
+# Without explicit headers, the browser/edge can serve a stale cached
+# module (e.g. /js/shared.js) against a freshly-deployed page module,
+# leaving the two out of contract and surfacing as "X is not a function"
+# until the user hard-refreshes. `no-cache` keeps the cached copy but
+# forces an ETag revalidation on every load — one cheap 304 round-trip
+# in the steady state, no stale modules across deploys. `/config.json`
+# is served by the worker, not the assets binding, so its cache-control
+# is set in worker.js instead and is unaffected by this file.
+
+/
+  Cache-Control: no-cache
+
+/*.html
+  Cache-Control: no-cache
+
+/js/*
+  Cache-Control: no-cache
+
+/css/*
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache

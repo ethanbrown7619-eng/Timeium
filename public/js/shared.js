@@ -537,7 +537,14 @@ export async function routeAfterAuth(sb) {
 // Pages that just need the basic role context call getUserContext().
 // Admin/staff pages that also need org switching call requireAdmin().
 
-const USER_CONTEXT_TTL_MS = 5 * 60_000;
+// Short TTL so permission changes made by an admin (manager flag,
+// clock-comparison access, department move) propagate to the affected
+// user's browser within ~1 minute on their next page navigation. The
+// previous 5-minute value made permission flips feel sticky. Note: the
+// cache lives in sessionStorage, so a tab that's left open and never
+// navigated will still hold the stale context until the TTL expires —
+// the bound matters most for active users clicking between pages.
+const USER_CONTEXT_TTL_MS = 60_000;
 
 function userContextKey(session) {
   return `ptl-ctx:${session?.user?.id || "anon"}`;

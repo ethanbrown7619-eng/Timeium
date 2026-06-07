@@ -23,6 +23,7 @@ import {
   getActiveMonday,
   fmtDate,
   clearUserContextCache,
+  invalidateWeekDashboard,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -924,6 +925,7 @@ async function resetEmployeeWeek(id, name) {
   })) return;
   const { data: count, error } = await sb.rpc("reset_user_week", { p_user_id: id, p_week_start: weekStart });
   if (error) return notice(error.message, "error");
+  invalidateWeekDashboard(currentOrgId, weekStart);
   if (!count) {
     notice(`No timesheet existed for ${name} the week of ${weekStart}`, "info");
   } else {
@@ -965,6 +967,7 @@ async function revertExportedWeek(id, name) {
   })) return;
   const { error } = await sb.rpc("reset_to_approved", { p_timesheet_id: ts.id });
   if (error) return notice(error.message, "error");
+  invalidateWeekDashboard(currentOrgId, weekStart);
   notice(`Reverted ${name}'s timesheet for the week of ${weekStart}`, "success");
 }
 
