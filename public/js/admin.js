@@ -1073,19 +1073,38 @@ function getLvSortState(previewId) {
   return s;
 }
 
+// Sort key for the Employee column: take everything after the first
+// space as the surname. Per PTL convention, double first names are
+// hyphenated ("Jean-Paul Smith") so the first-space split still finds
+// the surname correctly. Also handles compound surnames ("Jean van
+// Dyk" → "van Dyk") and suffixes ("John Smith Jr" → "Smith Jr") in
+// the natural way.
+function getSurname(name) {
+  const parts = String(name || "").trim().split(/\s+/);
+  if (parts.length <= 1) return parts[0] || "";
+  return parts.slice(1).join(" ");
+}
+
 function sortLvRows(rows, previewId) {
   const { col, asc } = getLvSortState(previewId);
   const dir = asc ? 1 : -1;
   return [...rows].sort((a, b) => {
     let cmp = 0;
     const av = a[col], bv = b[col];
-    if (typeof av === "number" && typeof bv === "number") {
+    if (col === "employee") {
+      cmp = getSurname(av).localeCompare(getSurname(bv));
+      if (cmp === 0) cmp = String(av || "").localeCompare(String(bv || ""));
+    } else if (typeof av === "number" && typeof bv === "number") {
       cmp = av - bv;
     } else {
       cmp = String(av || "").localeCompare(String(bv || ""));
     }
     if (cmp !== 0) return cmp * dir;
     if (col !== "employee") {
+      // Tiebreaker: still group rows for the same person together,
+      // ordered by surname for consistency with the primary employee sort.
+      cmp = getSurname(a.employee).localeCompare(getSurname(b.employee));
+      if (cmp !== 0) return cmp;
       cmp = (a.employee || "").localeCompare(b.employee || "");
       if (cmp !== 0) return cmp;
     }
