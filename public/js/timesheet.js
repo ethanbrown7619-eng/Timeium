@@ -53,8 +53,20 @@ if (ADMIN_MODE) {
 }
 
 if (!employee) {
-  location.replace("/welcome.html");
-  throw new Error("no employee record");
+  // The cached user context may be stale — e.g. the user signed in
+  // before their employee row existed, an admin then added them, and
+  // the 5-minute sessionStorage cache is still serving "no employee".
+  // Force one fresh fetch before sending them to welcome.html;
+  // otherwise welcome bounces them straight back here on its own
+  // fresh query and we loop. If the live fetch still finds nothing
+  // they're genuinely unlinked, fall through to welcome as before.
+  const freshCtx = await getUserContext(sb, session, { force: true });
+  if (freshCtx?.employee) {
+    employee = freshCtx.employee;
+  } else {
+    location.replace("/welcome.html");
+    throw new Error("no employee record");
+  }
 }
 
 const currentOrgId = employee.organisation_id;
