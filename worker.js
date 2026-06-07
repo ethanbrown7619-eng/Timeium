@@ -94,15 +94,18 @@ function addSecurityHeaders(response) {
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   // CSP allows esm.sh because supabase-js and xlsx are loaded from there.
-  // 'unsafe-inline' for scripts is required by the inline <script type="module">
-  // blocks on signin/signup/forgot/reset/welcome/settings/change-password pages.
-  // It can be tightened once those move to external files (see audit 3.6).
+  // All page scripts live in external /js/*.js files so script-src can
+  // refuse 'unsafe-inline' — meaningful XSS containment, since an
+  // injected <script>…</script> would now be blocked by the browser.
+  // style-src still allows 'unsafe-inline' because the templates use
+  // inline style="…" attributes throughout; tightening that would
+  // require a much larger refactor.
   headers.set(
     "Content-Security-Policy",
     [
       "default-src 'self'",
       // challenges.cloudflare.com hosts the Turnstile widget script.
-      "script-src 'self' https://esm.sh https://challenges.cloudflare.com 'unsafe-inline'",
+      "script-src 'self' https://esm.sh https://challenges.cloudflare.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
