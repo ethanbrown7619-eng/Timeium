@@ -826,8 +826,6 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
  * Leave / Overtime Report tab
  * ================================================================ */
 
-const LV_STANDARD_HOURS = 8;
-
 /* ---------- sub-tab switching ---------- */
 
 let lvSubView = "waged";
@@ -851,7 +849,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
 
   const { data: employees } = await sb
     .from("users")
-    .select("id, name, employee_code, department_id, employment_type, receives_overtime, active")
+    .select("id, name, employee_code, department_id, employment_type, receives_overtime, overtime_threshold_hours, active")
     .eq("organisation_id", currentOrgId)
     .eq("active", true);
 
@@ -957,6 +955,16 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     }
   }
 
+  // Overtime rule (per PTL policy):
+  //   1. Every hour worked on Saturday or Sunday is overtime, regardless
+  //      of count. Weekend penalty rates apply.
+  //   2. On top of that, any weekday hours (Mon–Fri sum) above the
+  //      employee's overtime_threshold_hours setting (default 40) are
+  //      also overtime — the "you exceeded your contracted week" case.
+  //   3. Weekend and weekly-excess are disjoint sources, so we just add
+  //      them. Leave hours count toward the weekly total, matching
+  //      typical NZ payroll treatment of paid leave as "hours worked"
+  //      for the purpose of standard-week calculations.
   for (const { userId, wsDate, days } of Object.values(empDayTotals)) {
     const emp = empMap[userId];
     if (!emp) continue;
@@ -964,9 +972,12 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     // still log to the timesheet but they don't appear on the report.
     if (emp.receives_overtime === false) continue;
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
-    for (let i = 0; i < 7; i++) {
-      const excess = Math.max(0, (days[i] || 0) - LV_STANDARD_HOURS);
-      if (excess === 0) continue;
+    const threshold = Number(emp.overtime_threshold_hours) || 40;
+
+    // 1. Weekend hours → all OT, one row per weekend day with hours.
+    for (const i of [5, 6]) {
+      const h = days[i] || 0;
+      if (h <= 0) continue;
       const dayDate = addDays(wsDate, i);
       rows.push({
         employee: emp.name || "",
@@ -977,9 +988,38 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
         date_display: dayDate.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" }),
         event: "Overtime",
         event_detail: "OT",
-        event_description: `Hours exceeding ${LV_STANDARD_HOURS}h/day`,
+        event_description: "Weekend hours",
         note: "",
-        hours: excess,
+        hours: Number(h.toFixed(2)),
+      });
+    }
+
+    // 2. Weekday excess → one OT row attributed to the last weekday
+    //    with hours (or Friday if none — though in that case excess
+    //    would be 0 anyway). Single row keeps the payroll report tidy;
+    //    splitting daily would require deciding which day "tipped"
+    //    over the threshold.
+    let weekdayTotal = 0;
+    for (let i = 0; i < 5; i++) weekdayTotal += days[i] || 0;
+    const weekdayExcess = Math.max(0, weekdayTotal - threshold);
+    if (weekdayExcess > 0) {
+      let attribDayIdx = 4;
+      for (let i = 4; i >= 0; i--) {
+        if ((days[i] || 0) > 0) { attribDayIdx = i; break; }
+      }
+      const dayDate = addDays(wsDate, attribDayIdx);
+      rows.push({
+        employee: emp.name || "",
+        employee_code: emp.employee_code || "",
+        department: dept?.name || "",
+        employment_type: emp.employment_type || "",
+        date: fmtDate(dayDate),
+        date_display: dayDate.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" }),
+        event: "Overtime",
+        event_detail: "OT",
+        event_description: `Hours over ${threshold}/week`,
+        note: "",
+        hours: Number(weekdayExcess.toFixed(2)),
       });
     }
   }
