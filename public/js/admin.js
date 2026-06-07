@@ -185,19 +185,23 @@ async function loadDashboard(signal) {
 
   const body = document.getElementById("emp-body");
   if (!employees.length) {
-    body.innerHTML = `<tr><td colspan="4" class="muted small" style="text-align:center">No active employees.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">No active employees.</td></tr>`;
     return;
   }
 
   const deptNameById = new Map(departments.map((d) => [d.id, d.name]));
   const deptName = (id) => deptNameById.get(id) || "";
 
+  const wsIso = fmtDate(dashWeek);
   body.innerHTML = employees.map((e) => {
     const ts = tsMap[e.id];
     const hours = ts ? (hoursMap[ts.id] || 0) : 0;
 
     let badge, badgeClass;
-    if (ts?.status === "approved") {
+    if (ts?.status === "exported") {
+      badge = "Exported";
+      badgeClass = "dept-badge dept-badge-exported";
+    } else if (ts?.status === "approved") {
       badge = "Approved";
       badgeClass = "dept-badge dept-badge-approved";
     } else if (ts?.status === "submitted") {
@@ -211,12 +215,19 @@ async function loadDashboard(signal) {
       badgeClass = "dept-badge dept-badge-none";
     }
 
+    // Only render a View link if a timesheet row actually exists for this
+    // employee & week — there's nothing to view otherwise.
+    const viewCell = ts
+      ? `<a href="/timesheet-view.html?user=${e.id}&week=${wsIso}&return=admin" class="ghost small" style="padding:3px 10px;border-radius:999px;border:1px solid var(--border);text-decoration:none">View</a>`
+      : `<span class="muted small">—</span>`;
+
     return `
       <tr>
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptName(e.department_id))}</td>
         <td><span class="${badgeClass}">${badge}</span></td>
         <td class="small">${hours ? hours + "h" : ""}</td>
+        <td>${viewCell}</td>
       </tr>`;
   }).join("");
 }
