@@ -78,7 +78,7 @@ function populateDepartmentFilter() {
 let adminUserIds = new Set();
 let filter = {
   search: "",
-  showInactive: false,
+  showInactive: true,
   onlyIncomplete: false,
   departmentId: "",
   employmentType: "",
@@ -151,13 +151,13 @@ document.getElementById("filter-role").addEventListener("change", (e) => {
 });
 document.getElementById("clear-filters-btn").addEventListener("click", () => {
   filter.search = "";
-  filter.showInactive = false;
+  filter.showInactive = true;
   filter.onlyIncomplete = false;
   filter.departmentId = "";
   filter.employmentType = "";
   filter.role = "";
   document.getElementById("search-input").value = "";
-  document.getElementById("show-inactive").checked = false;
+  document.getElementById("show-inactive").checked = true;
   document.getElementById("only-incomplete").checked = false;
   document.getElementById("filter-department").value = "";
   document.getElementById("filter-type").value = "";

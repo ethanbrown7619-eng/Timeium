@@ -18,6 +18,24 @@ function getXLSX() {
   if (!_xlsxPromise) _xlsxPromise = import("https://esm.sh/xlsx@0.18.5");
   return _xlsxPromise;
 }
+// jsPDF + autotable for the printable Leave/Overtime report. Same lazy-load
+// pattern as XLSX — only pulled when the PDF button is clicked.
+let _pdfPromise = null;
+function getPdf() {
+  if (!_pdfPromise) {
+    _pdfPromise = (async () => {
+      const [jspdfMod, autotableMod] = await Promise.all([
+        import("https://esm.sh/jspdf@2.5.1"),
+        import("https://esm.sh/jspdf-autotable@3.8.2"),
+      ]);
+      // autotable attaches itself to jsPDF.prototype on import side-effect.
+      // Touch the default export so esm.sh tree-shaker keeps it.
+      void autotableMod.default;
+      return jspdfMod.jsPDF;
+    })();
+  }
+  return _pdfPromise;
+}
 
 const sb = await getSupabase();
 const ctx = await requireAdmin(sb);
@@ -1134,6 +1152,91 @@ async function lvExportToExcel(rows, filename) {
   XLSX.writeFile(wb, filename);
 }
 
+// Printable leave/overtime report. Adds a "Logged" tick column so the admin
+// can mark off each row as they enter it into payroll. Title and period
+// label come from the caller so the same function serves waged-weekly and
+// salaried-monthly views.
+async function lvExportToPdf(rows, filename, { title, periodLabel }) {
+  const sorted = sortLvRows(rows);
+  const jsPDF = await getPdf();
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generatedAt = new Date().toLocaleString("en-NZ", {
+    day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+
+  doc.setFontSize(16);
+  doc.setFont(undefined, "bold");
+  doc.text(title, 40, 40);
+  doc.setFontSize(11);
+  doc.setFont(undefined, "normal");
+  doc.text(periodLabel, 40, 60);
+
+  const leaveCount = sorted.filter((r) => r.event === "Leave").length;
+  const otCount    = sorted.filter((r) => r.event === "Overtime").length;
+  const totalHours = sorted.reduce((s, r) => s + Number(r.hours || 0), 0);
+  const summary    = `${leaveCount} leave entries · ${otCount} overtime entries · ${totalHours.toFixed(2)} total hours`;
+  doc.setFontSize(10);
+  doc.setTextColor(90);
+  doc.text(summary, 40, 76);
+  doc.setTextColor(0);
+
+  const head = [["Logged", "Employee", "Code", "Department", "Date", "Event", "Detail", "Note", "Hours"]];
+  const body = sorted.map((r) => [
+    "",  // empty cell to tick by hand; checkbox glyph drawn via didDrawCell
+    r.employee || "",
+    r.employee_code || "",
+    r.department || "",
+    r.date_display || r.date || "",
+    r.event || "",
+    r.event_detail || "",
+    r.note || "",
+    String(r.hours ?? ""),
+  ]);
+
+  doc.autoTable({
+    head,
+    body,
+    startY: 92,
+    margin: { left: 40, right: 40 },
+    styles: { fontSize: 9, cellPadding: 4, lineColor: [220, 220, 220], lineWidth: 0.5 },
+    headStyles: { fillColor: [194, 255, 0], textColor: [10, 10, 10], fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
+    columnStyles: {
+      0: { cellWidth: 40, halign: "center" },   // Logged checkbox
+      1: { cellWidth: 110 },                    // Employee
+      2: { cellWidth: 50 },                     // Code
+      3: { cellWidth: 90 },                     // Department
+      4: { cellWidth: 80 },                     // Date
+      5: { cellWidth: 60 },                     // Event
+      6: { cellWidth: 50 },                     // Detail
+      7: { cellWidth: "auto" },                 // Note
+      8: { cellWidth: 50, halign: "right", fontStyle: "bold" },  // Hours
+    },
+    // Draw an empty square in the Logged column so admins can tick by hand
+    // (printed copy) or via a PDF annotator (digital copy).
+    didDrawCell: (data) => {
+      if (data.section === "body" && data.column.index === 0) {
+        const size = 10;
+        const x = data.cell.x + (data.cell.width - size) / 2;
+        const y = data.cell.y + (data.cell.height - size) / 2;
+        doc.setDrawColor(120);
+        doc.setLineWidth(0.7);
+        doc.rect(x, y, size, size);
+      }
+    },
+    didDrawPage: (data) => {
+      const str = `Generated ${generatedAt} · Page ${doc.internal.getNumberOfPages()}`;
+      doc.setFontSize(8);
+      doc.setTextColor(140);
+      doc.text(str, pageWidth - 40, doc.internal.pageSize.getHeight() - 20, { align: "right" });
+      doc.setTextColor(0);
+    },
+  });
+
+  doc.save(filename);
+}
+
 function lvSummaryText(rows) {
   const leaveCount = rows.filter((r) => r.event === "Leave").length;
   const otCount = rows.filter((r) => r.event === "Overtime").length;
@@ -1185,6 +1288,24 @@ document.getElementById("lv-export-btn").addEventListener("click", async () => {
     if (!lvWagedRows.length) lvWagedRows = await buildLeaveRowsForWeeks([fmtDate(lvWeek)], "waged", document.getElementById("lv-include-drafts").checked);
     if (!lvWagedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
     await lvExportToExcel(lvWagedRows, `leave-overtime-waged-${fmtDate(lvWeek)}.xlsx`);
+    statusEl.textContent = "Done";
+    notice(`Exported ${lvWagedRows.length} entries`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
+});
+
+document.getElementById("lv-export-pdf-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("lv-status");
+  statusEl.textContent = "Generating…";
+  try {
+    if (!lvWagedRows.length) lvWagedRows = await buildLeaveRowsForWeeks([fmtDate(lvWeek)], "waged", document.getElementById("lv-include-drafts").checked);
+    if (!lvWagedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
+    const end = addDays(lvWeek, 6);
+    const periodLabel = `Week ${lvWeek.toLocaleDateString("en-NZ", { day: "numeric", month: "short" })} — ${end.toLocaleDateString("en-NZ", { day: "numeric", month: "short", year: "numeric" })}`;
+    await lvExportToPdf(lvWagedRows, `leave-overtime-waged-${fmtDate(lvWeek)}.pdf`, {
+      title: "PTL — Leave / Overtime Report (Waged)",
+      periodLabel,
+    });
     statusEl.textContent = "Done";
     notice(`Exported ${lvWagedRows.length} entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
@@ -1249,6 +1370,27 @@ document.getElementById("lv-sal-export-btn").addEventListener("click", async () 
     if (!lvSalariedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
     const monthStr = `${lvMonth.getFullYear()}-${String(lvMonth.getMonth() + 1).padStart(2, "0")}`;
     await lvExportToExcel(lvSalariedRows, `leave-overtime-salaried-${monthStr}.xlsx`);
+    statusEl.textContent = "Done";
+    notice(`Exported ${lvSalariedRows.length} entries`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
+});
+
+document.getElementById("lv-sal-export-pdf-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("lv-sal-status");
+  statusEl.textContent = "Generating…";
+  try {
+    if (!lvSalariedRows.length) {
+      const weeks = getMondaysInMonth(lvMonth.getFullYear(), lvMonth.getMonth());
+      lvSalariedRows = await buildLeaveRowsForWeeks(weeks, "salaried", document.getElementById("lv-sal-include-drafts").checked);
+    }
+    if (!lvSalariedRows.length) { notice("No data to export", "warn"); statusEl.textContent = ""; return; }
+    const monthStr = `${lvMonth.getFullYear()}-${String(lvMonth.getMonth() + 1).padStart(2, "0")}`;
+    const periodLabel = lvMonth.toLocaleDateString("en-NZ", { month: "long", year: "numeric" });
+    await lvExportToPdf(lvSalariedRows, `leave-overtime-salaried-${monthStr}.pdf`, {
+      title: "PTL — Leave / Overtime Report (Salaried)",
+      periodLabel,
+    });
     statusEl.textContent = "Done";
     notice(`Exported ${lvSalariedRows.length} entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
