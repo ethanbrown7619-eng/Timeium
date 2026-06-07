@@ -60,6 +60,13 @@ const SMTP_PASS    = Deno.env.get("SMTP_PASS");
 const NOTIFY_FROM  = Deno.env.get("NOTIFY_FROM") ?? "PTL Time Sheet <clockapp@ptlmachinery.com>";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Independent shared secret the cron uses to call this function. Set this
+// manually via Edge Functions → Secrets. We can't rely on
+// SUPABASE_SERVICE_ROLE_KEY for the cron's bearer because Supabase rotates
+// it during key-format migrations (new "sb_secret_*" rollout), and the
+// pg_cron command can't auto-refresh. A self-managed token keeps the cron
+// working through any Supabase auth churn.
+const CRON_AUTH_TOKEN = Deno.env.get("CRON_AUTH_TOKEN") ?? null;
 const APP_BASE_URL = Deno.env.get("APP_BASE_URL") ?? "https://ptl-timesheet.workers.dev";
 
 // When set, every email is redirected to this address regardless of who
@@ -92,6 +99,9 @@ async function authenticateCaller(
 
     // Service-role short-circuit — cron pings come through this path.
     if (token === SERVICE_KEY) return { ok: true };
+    // Self-managed cron secret. Configured via CRON_AUTH_TOKEN env var so
+    // we're not coupled to Supabase's rotation of SUPABASE_SERVICE_ROLE_KEY.
+    if (CRON_AUTH_TOKEN && token === CRON_AUTH_TOKEN) return { ok: true };
 
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) return { ok: false, status: 401, error: "Invalid or expired session" };
