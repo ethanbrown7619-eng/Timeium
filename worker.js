@@ -193,10 +193,14 @@ async function handleXero(url, request, env) {
       });
     case "/xero/api/leave-types":
       return xeroProxyAdmin(request, env, async (conn) => {
-        // Pay items live under /PayItems and the response wraps leave types
-        // in payItems.leaveTypes (NZ Payroll API shape).
-        const data = await xeroFetch(env, conn, "/payroll.xro/2.0/PayItems");
-        const types = data?.payItems?.leaveTypes || data?.leaveTypes || [];
+        // Xero Payroll NZ exposes leave types via /Settings. Response shape
+        // varies slightly between regions — check both nesting patterns.
+        const data = await xeroFetch(env, conn, "/payroll.xro/2.0/Settings");
+        const types =
+          data?.settings?.leaveTypes ||
+          data?.settings?.payItems?.leaveTypes ||
+          data?.leaveTypes ||
+          [];
         return types.map((t) => ({
           id: t.leaveTypeID,
           name: t.name,

@@ -1363,36 +1363,36 @@ async function loadXeroMapping() {
   empBody.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
   ltBody.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
 
-  try {
-    const [usersResp, typesResp, xeroEmps, xeroTypes] = await Promise.all([
-      sb.from("users")
-        .select("id, name, xero_employee_id")
-        .eq("organisation_id", currentOrgId)
-        .eq("active", true)
-        .order("name"),
-      sb.from("leave_types")
-        .select("id, name, code, xero_leave_type_id")
-        .eq("organisation_id", currentOrgId)
-        .eq("active", true)
-        .order("sort_order"),
-      xeroApi("/xero/api/employees"),
-      xeroApi("/xero/api/leave-types"),
-    ]);
-
+  // Fetch each half independently so one failure doesn't blank the other.
+  const empPromise = (async () => {
+    const usersResp = await sb.from("users")
+      .select("id, name, xero_employee_id")
+      .eq("organisation_id", currentOrgId)
+      .eq("active", true)
+      .order("name");
     if (usersResp.error) throw usersResp.error;
-    if (typesResp.error) throw typesResp.error;
-
     _ptlUsers = usersResp.data || [];
-    _ptlLeaveTypes = typesResp.data || [];
-    _xeroEmployees = xeroEmps;
-    _xeroLeaveTypes = xeroTypes;
-
+    _xeroEmployees = await xeroApi("/xero/api/employees");
     renderXeroEmployeesTable();
-    renderXeroLeaveTypesTable();
-  } catch (err) {
+  })().catch((err) => {
     empBody.innerHTML = `<tr><td colspan="3" class="muted small" style="color:#c00">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
+  });
+
+  const ltPromise = (async () => {
+    const typesResp = await sb.from("leave_types")
+      .select("id, name, code, xero_leave_type_id")
+      .eq("organisation_id", currentOrgId)
+      .eq("active", true)
+      .order("sort_order");
+    if (typesResp.error) throw typesResp.error;
+    _ptlLeaveTypes = typesResp.data || [];
+    _xeroLeaveTypes = await xeroApi("/xero/api/leave-types");
+    renderXeroLeaveTypesTable();
+  })().catch((err) => {
     ltBody.innerHTML = `<tr><td colspan="3" class="muted small" style="color:#c00">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
-  }
+  });
+
+  await Promise.all([empPromise, ltPromise]);
 }
 
 async function xeroApi(path) {
