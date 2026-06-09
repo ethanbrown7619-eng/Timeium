@@ -1050,19 +1050,20 @@
 
         <div class="card" style="max-width:920px">
           <div class="row-flex mb-md">
-            <h2 style="margin:0">Leave Type Mapping</h2>
+            <h2 style="margin:0">Leave Job Mapping</h2>
             <div class="grow"></div>
             <button id="xero-leavetypes-automatch" type="button" class="ghost">Auto-match by name</button>
           </div>
           <p class="muted small" style="margin:0 0 12px">
-            Match each local leave type to a Xero leave type. Unmapped types
-            can't be filed to payroll on approve.
+            Match each job ticked as "Leave" to a Xero leave type. When a
+            timesheet is approved, hours against a mapped leave job get
+            filed as leave applications in Xero payroll.
           </p>
           <div style="overflow-x:auto">
             <table>
               <thead>
                 <tr>
-                  <th>Local leave type</th>
+                  <th>Leave job</th>
                   <th>Xero leave type</th>
                   <th>Status</th>
                 </tr>

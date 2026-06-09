@@ -1354,7 +1354,7 @@ async function loadXeroStatus() {
 let _xeroEmployees = [];   // [{id, firstName, lastName, email}]
 let _xeroLeaveTypes = [];  // [{id, name}]
 let _ptlUsers = [];        // [{id, name, xero_employee_id}]
-let _ptlLeaveTypes = [];   // [{id, name, code, xero_leave_type_id}]
+let _ptlLeaveJobs = [];    // [{id, code, description, xero_leave_type_id}] — jobs with is_leave=true
 
 async function loadXeroMapping() {
   if (!currentOrgId) return;
@@ -1379,13 +1379,13 @@ async function loadXeroMapping() {
   });
 
   const ltPromise = (async () => {
-    const typesResp = await sb.from("leave_types")
-      .select("id, name, code, xero_leave_type_id")
+    const jobsResp = await sb.from("jobs")
+      .select("id, code, description, xero_leave_type_id")
       .eq("organisation_id", currentOrgId)
-      .eq("active", true)
-      .order("sort_order");
-    if (typesResp.error) throw typesResp.error;
-    _ptlLeaveTypes = typesResp.data || [];
+      .eq("is_leave", true)
+      .order("code");
+    if (jobsResp.error) throw jobsResp.error;
+    _ptlLeaveJobs = jobsResp.data || [];
     _xeroLeaveTypes = await xeroApi("/xero/api/leave-types");
     renderXeroLeaveTypesTable();
   })().catch((err) => {
@@ -1444,10 +1444,14 @@ function renderXeroEmployeesTable() {
   }).join("");
 }
 
+function leaveJobLabel(j) {
+  return j.description ? `${j.code} — ${j.description}` : j.code;
+}
+
 function renderXeroLeaveTypesTable() {
   const body = document.getElementById("xero-leavetypes-body");
-  if (_ptlLeaveTypes.length === 0) {
-    body.innerHTML = `<tr><td colspan="3" class="muted small">No active leave types. Seed them in the database.</td></tr>`;
+  if (_ptlLeaveJobs.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small">No jobs flagged "Leave". Tick the Leave checkbox on a job in the Jobs tab to make it mappable.</td></tr>`;
     return;
   }
   const options = ['<option value="">— not mapped —</option>']
@@ -1456,8 +1460,8 @@ function renderXeroLeaveTypesTable() {
     ))
     .join("");
 
-  body.innerHTML = _ptlLeaveTypes.map((t) => {
-    const sel = t.xero_leave_type_id || "";
+  body.innerHTML = _ptlLeaveJobs.map((j) => {
+    const sel = j.xero_leave_type_id || "";
     const mapped = _xeroLeaveTypes.find((x) => x.id === sel);
     const status = !sel
       ? `<span class="muted small">unmapped</span>`
@@ -1466,9 +1470,9 @@ function renderXeroLeaveTypesTable() {
         : `<span style="color:#c00" class="small">stale id</span>`;
     return `
       <tr>
-        <td>${escapeHtml(t.name)}</td>
+        <td>${escapeHtml(leaveJobLabel(j))}</td>
         <td>
-          <select data-leave-type-id="${t.id}" class="xero-lt-select" style="width:100%">
+          <select data-job-id="${j.id}" class="xero-lt-select" style="width:100%">
             ${options.replace(`value="${escapeHtml(sel)}"`, `value="${escapeHtml(sel)}" selected`)}
           </select>
         </td>
@@ -1510,16 +1514,21 @@ function autoMatchLeaveTypes() {
   let matched = 0;
   for (const sel of document.querySelectorAll(".xero-lt-select")) {
     if (sel.value) continue;
-    const ltId = Number(sel.dataset.leaveTypeId);
-    const t = _ptlLeaveTypes.find((x) => x.id === ltId);
-    if (!t) continue;
-    const candidate = byName.get(normaliseName(t.name));
+    const jobId = Number(sel.dataset.jobId);
+    const j = _ptlLeaveJobs.find((x) => x.id === jobId);
+    if (!j) continue;
+    // Try matching the job description first (e.g. "Annual Leave"), then
+    // fall back to the code. Leave jobs tend to have human names in the
+    // description and short codes like "AL".
+    const candidate =
+      byName.get(normaliseName(j.description)) ||
+      byName.get(normaliseName(j.code));
     if (candidate) {
       sel.value = candidate;
       matched++;
     }
   }
-  notice(`Matched ${matched} leave type${matched === 1 ? "" : "s"} by name. Click Save to persist.`, "success");
+  notice(`Matched ${matched} leave job${matched === 1 ? "" : "s"} by name. Click Save to persist.`, "success");
 }
 
 async function saveEmployeeMappings() {
@@ -1552,19 +1561,19 @@ async function saveLeaveTypeMappings() {
   status.textContent = "Saving…";
   let saved = 0, errors = 0;
   for (const sel of document.querySelectorAll(".xero-lt-select")) {
-    const ltId = Number(sel.dataset.leaveTypeId);
-    const original = _ptlLeaveTypes.find((t) => t.id === ltId)?.xero_leave_type_id || "";
+    const jobId = Number(sel.dataset.jobId);
+    const original = _ptlLeaveJobs.find((j) => j.id === jobId)?.xero_leave_type_id || "";
     if (sel.value === original) continue;
     try {
-      const { error } = await sb.rpc("xero_set_leave_type_mapping", {
-        p_leave_type_id: ltId,
+      const { error } = await sb.rpc("xero_set_job_leave_type_mapping", {
+        p_job_id: jobId,
         p_xero_leave_type_id: sel.value || null,
       });
       if (error) throw error;
       saved++;
     } catch (err) {
       errors++;
-      console.error("Mapping save failed for leave_type", ltId, err);
+      console.error("Mapping save failed for job", jobId, err);
     }
   }
   status.textContent = errors ? `Saved ${saved}, ${errors} failed.` : `Saved ${saved}.`;
