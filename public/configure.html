@@ -22,6 +22,7 @@
         <button class="tab" data-tab="deptcodes">Dept Codes</button>
         <button class="tab" data-tab="stafftypes">Staff Types</button>
         <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab" data-tab="xero" id="tab-btn-xero" style="display:none">Xero</button>
       </div>
 
       <!-- ============================================================ -->
@@ -1005,6 +1006,75 @@
             <button id="xero-connect-btn" type="button">Connect Xero</button>
             <button id="xero-disconnect-btn" type="button" class="ghost" style="display:none">Disconnect</button>
             <span id="xero-action-status" class="muted small"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Xero Mapping tab                                              -->
+      <!-- Shown only when an active Xero connection exists. Maps PTL    -->
+      <!-- employees ↔ Xero employees and our leave types ↔ Xero types.  -->
+      <!-- ============================================================ -->
+
+      <section id="tab-xero" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:920px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Employee Mapping</h2>
+            <div class="grow"></div>
+            <button id="xero-employees-automatch" type="button" class="ghost">Auto-match by name</button>
+            <button id="xero-employees-refresh" type="button" class="ghost">Refresh from Xero</button>
+          </div>
+          <p class="muted small" style="margin:0 0 12px">
+            Link each PTL employee to the matching person in Xero. Only mapped
+            users will have leave requests filed into payroll.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>PTL employee</th>
+                  <th>Xero employee</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="xero-employees-body">
+                <tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-md row-flex" style="gap:8px;align-items:center">
+            <button id="xero-employees-save" type="button">Save mappings</button>
+            <span id="xero-employees-status" class="muted small"></span>
+          </div>
+        </div>
+
+        <div class="card" style="max-width:920px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Leave Type Mapping</h2>
+            <div class="grow"></div>
+            <button id="xero-leavetypes-automatch" type="button" class="ghost">Auto-match by name</button>
+          </div>
+          <p class="muted small" style="margin:0 0 12px">
+            Match each local leave type to a Xero leave type. Unmapped types
+            can't be filed to payroll on approve.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Local leave type</th>
+                  <th>Xero leave type</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="xero-leavetypes-body">
+                <tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-md row-flex" style="gap:8px;align-items:center">
+            <button id="xero-leavetypes-save" type="button">Save mappings</button>
+            <span id="xero-leavetypes-status" class="muted small"></span>
           </div>
         </div>
       </section>

@@ -57,8 +57,10 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-deptcodes").style.display  = activeTab === "deptcodes"  ? "" : "none";
     document.getElementById("tab-stafftypes").style.display = activeTab === "stafftypes" ? "" : "none";
     document.getElementById("tab-settings").style.display   = activeTab === "settings"   ? "" : "none";
+    document.getElementById("tab-xero").style.display       = activeTab === "xero"       ? "" : "none";
     if (activeTab === "stafftypes") loadSettings();
     if (activeTab === "settings") { loadSettings(); loadHolidays(); loadXeroStatus(); }
+    if (activeTab === "xero") loadXeroMapping();
   });
 });
 
@@ -1316,10 +1318,13 @@ async function loadXeroStatus() {
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : null;
 
+    const tabBtn = document.getElementById("tab-btn-xero");
+
     if (!row) {
       statusEl.textContent = "Not connected.";
       connectBtn.textContent = "Connect Xero";
       disconnectBtn.style.display = "none";
+      if (tabBtn) tabBtn.style.display = "none";
       return;
     }
 
@@ -1335,10 +1340,243 @@ async function loadXeroStatus() {
     `;
     connectBtn.textContent = "Reconnect";
     disconnectBtn.style.display = "";
+    if (tabBtn) tabBtn.style.display = "";
   } catch (err) {
     statusEl.textContent = err.message || "Failed to load Xero status";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Xero Mapping tab — employees + leave types
+// ---------------------------------------------------------------------------
+
+// Local copies of the most recent fetch, used to compute saves.
+let _xeroEmployees = [];   // [{id, firstName, lastName, email}]
+let _xeroLeaveTypes = [];  // [{id, name}]
+let _ptlUsers = [];        // [{id, name, xero_employee_id}]
+let _ptlLeaveTypes = [];   // [{id, name, code, xero_leave_type_id}]
+
+async function loadXeroMapping() {
+  if (!currentOrgId) return;
+  const empBody = document.getElementById("xero-employees-body");
+  const ltBody = document.getElementById("xero-leavetypes-body");
+  empBody.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
+  ltBody.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
+
+  try {
+    const [usersResp, typesResp, xeroEmps, xeroTypes] = await Promise.all([
+      sb.from("users")
+        .select("id, name, xero_employee_id")
+        .eq("organisation_id", currentOrgId)
+        .eq("active", true)
+        .order("name"),
+      sb.from("leave_types")
+        .select("id, name, code, xero_leave_type_id")
+        .eq("organisation_id", currentOrgId)
+        .eq("active", true)
+        .order("sort_order"),
+      xeroApi("/xero/api/employees"),
+      xeroApi("/xero/api/leave-types"),
+    ]);
+
+    if (usersResp.error) throw usersResp.error;
+    if (typesResp.error) throw typesResp.error;
+
+    _ptlUsers = usersResp.data || [];
+    _ptlLeaveTypes = typesResp.data || [];
+    _xeroEmployees = xeroEmps;
+    _xeroLeaveTypes = xeroTypes;
+
+    renderXeroEmployeesTable();
+    renderXeroLeaveTypesTable();
+  } catch (err) {
+    empBody.innerHTML = `<tr><td colspan="3" class="muted small" style="color:#c00">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
+    ltBody.innerHTML = `<tr><td colspan="3" class="muted small" style="color:#c00">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
+  }
+}
+
+async function xeroApi(path) {
+  const { data: { session } } = await sb.auth.getSession();
+  const jwt = session?.access_token;
+  if (!jwt) throw new Error("Not signed in");
+  const url = `${path}?org_id=${currentOrgId}`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
+  const json = await resp.json();
+  if (!resp.ok) throw new Error(json.error || `HTTP ${resp.status}`);
+  return json;
+}
+
+function xeroEmpLabel(e) {
+  return `${e.firstName || ""} ${e.lastName || ""}`.trim() || e.id;
+}
+
+function renderXeroEmployeesTable() {
+  const body = document.getElementById("xero-employees-body");
+  if (_ptlUsers.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small">No active users in this org.</td></tr>`;
+    return;
+  }
+  const options = ['<option value="">— not mapped —</option>']
+    .concat(_xeroEmployees.map((e) =>
+      `<option value="${escapeHtml(e.id)}">${escapeHtml(xeroEmpLabel(e))}</option>`
+    ))
+    .join("");
+
+  body.innerHTML = _ptlUsers.map((u) => {
+    const sel = u.xero_employee_id || "";
+    const mapped = _xeroEmployees.find((e) => e.id === sel);
+    const status = !sel
+      ? `<span class="muted small">unmapped</span>`
+      : mapped
+        ? `<span style="color:#080" class="small">linked</span>`
+        : `<span style="color:#c00" class="small">stale id</span>`;
+    return `
+      <tr>
+        <td>${escapeHtml(u.name)}</td>
+        <td>
+          <select data-user-id="${u.id}" class="xero-emp-select" style="width:100%">
+            ${options.replace(`value="${escapeHtml(sel)}"`, `value="${escapeHtml(sel)}" selected`)}
+          </select>
+        </td>
+        <td>${status}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function renderXeroLeaveTypesTable() {
+  const body = document.getElementById("xero-leavetypes-body");
+  if (_ptlLeaveTypes.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small">No active leave types. Seed them in the database.</td></tr>`;
+    return;
+  }
+  const options = ['<option value="">— not mapped —</option>']
+    .concat(_xeroLeaveTypes.map((t) =>
+      `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`
+    ))
+    .join("");
+
+  body.innerHTML = _ptlLeaveTypes.map((t) => {
+    const sel = t.xero_leave_type_id || "";
+    const mapped = _xeroLeaveTypes.find((x) => x.id === sel);
+    const status = !sel
+      ? `<span class="muted small">unmapped</span>`
+      : mapped
+        ? `<span style="color:#080" class="small">linked</span>`
+        : `<span style="color:#c00" class="small">stale id</span>`;
+    return `
+      <tr>
+        <td>${escapeHtml(t.name)}</td>
+        <td>
+          <select data-leave-type-id="${t.id}" class="xero-lt-select" style="width:100%">
+            ${options.replace(`value="${escapeHtml(sel)}"`, `value="${escapeHtml(sel)}" selected`)}
+          </select>
+        </td>
+        <td>${status}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function normaliseName(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function autoMatchEmployees() {
+  const byName = new Map();
+  for (const e of _xeroEmployees) {
+    byName.set(normaliseName(xeroEmpLabel(e)), e.id);
+  }
+  let matched = 0;
+  for (const sel of document.querySelectorAll(".xero-emp-select")) {
+    if (sel.value) continue;
+    const userId = Number(sel.dataset.userId);
+    const u = _ptlUsers.find((x) => x.id === userId);
+    if (!u) continue;
+    const candidate = byName.get(normaliseName(u.name));
+    if (candidate) {
+      sel.value = candidate;
+      matched++;
+    }
+  }
+  notice(`Matched ${matched} employee${matched === 1 ? "" : "s"} by name. Click Save to persist.`, "success");
+}
+
+function autoMatchLeaveTypes() {
+  const byName = new Map();
+  for (const t of _xeroLeaveTypes) {
+    byName.set(normaliseName(t.name), t.id);
+  }
+  let matched = 0;
+  for (const sel of document.querySelectorAll(".xero-lt-select")) {
+    if (sel.value) continue;
+    const ltId = Number(sel.dataset.leaveTypeId);
+    const t = _ptlLeaveTypes.find((x) => x.id === ltId);
+    if (!t) continue;
+    const candidate = byName.get(normaliseName(t.name));
+    if (candidate) {
+      sel.value = candidate;
+      matched++;
+    }
+  }
+  notice(`Matched ${matched} leave type${matched === 1 ? "" : "s"} by name. Click Save to persist.`, "success");
+}
+
+async function saveEmployeeMappings() {
+  const status = document.getElementById("xero-employees-status");
+  status.textContent = "Saving…";
+  let saved = 0, errors = 0;
+  for (const sel of document.querySelectorAll(".xero-emp-select")) {
+    const userId = Number(sel.dataset.userId);
+    const original = _ptlUsers.find((u) => u.id === userId)?.xero_employee_id || "";
+    if (sel.value === original) continue;
+    try {
+      const { error } = await sb.rpc("xero_set_employee_mapping", {
+        p_user_id: userId,
+        p_xero_employee_id: sel.value || null,
+      });
+      if (error) throw error;
+      saved++;
+    } catch (err) {
+      errors++;
+      console.error("Mapping save failed for user", userId, err);
+    }
+  }
+  status.textContent = errors ? `Saved ${saved}, ${errors} failed.` : `Saved ${saved}.`;
+  notice(errors ? `${errors} mapping(s) failed — see console` : `Saved ${saved} mapping(s)`, errors ? "error" : "success");
+  await loadXeroMapping();
+}
+
+async function saveLeaveTypeMappings() {
+  const status = document.getElementById("xero-leavetypes-status");
+  status.textContent = "Saving…";
+  let saved = 0, errors = 0;
+  for (const sel of document.querySelectorAll(".xero-lt-select")) {
+    const ltId = Number(sel.dataset.leaveTypeId);
+    const original = _ptlLeaveTypes.find((t) => t.id === ltId)?.xero_leave_type_id || "";
+    if (sel.value === original) continue;
+    try {
+      const { error } = await sb.rpc("xero_set_leave_type_mapping", {
+        p_leave_type_id: ltId,
+        p_xero_leave_type_id: sel.value || null,
+      });
+      if (error) throw error;
+      saved++;
+    } catch (err) {
+      errors++;
+      console.error("Mapping save failed for leave_type", ltId, err);
+    }
+  }
+  status.textContent = errors ? `Saved ${saved}, ${errors} failed.` : `Saved ${saved}.`;
+  notice(errors ? `${errors} mapping(s) failed — see console` : `Saved ${saved} mapping(s)`, errors ? "error" : "success");
+  await loadXeroMapping();
+}
+
+document.getElementById("xero-employees-automatch")?.addEventListener("click", autoMatchEmployees);
+document.getElementById("xero-leavetypes-automatch")?.addEventListener("click", autoMatchLeaveTypes);
+document.getElementById("xero-employees-save")?.addEventListener("click", saveEmployeeMappings);
+document.getElementById("xero-leavetypes-save")?.addEventListener("click", saveLeaveTypeMappings);
+document.getElementById("xero-employees-refresh")?.addEventListener("click", loadXeroMapping);
 
 async function connectXero() {
   if (!currentOrgId) return notice("No organisation selected", "warn");

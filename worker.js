@@ -180,8 +180,63 @@ async function handleXero(url, request, env) {
       return xeroConnect(request, url, env);
     case "/xero/callback":
       return xeroCallback(request, url, env);
+    case "/xero/api/employees":
+      return xeroProxyAdmin(request, env, async (conn) => {
+        const data = await xeroFetch(env, conn, "/payroll.xro/2.0/Employees");
+        return (data?.employees || []).map((e) => ({
+          id: e.employeeID,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          email: e.email,
+          status: e.endDate ? "ended" : "active",
+        }));
+      });
+    case "/xero/api/leave-types":
+      return xeroProxyAdmin(request, env, async (conn) => {
+        // Pay items live under /PayItems and the response wraps leave types
+        // in payItems.leaveTypes (NZ Payroll API shape).
+        const data = await xeroFetch(env, conn, "/payroll.xro/2.0/PayItems");
+        const types = data?.payItems?.leaveTypes || data?.leaveTypes || [];
+        return types.map((t) => ({
+          id: t.leaveTypeID,
+          name: t.name,
+        }));
+      });
     default:
       return new Response("Not found", { status: 404 });
+  }
+}
+
+// Common wrapper for /xero/api/* admin routes: verify JWT, verify admin,
+// resolve connection, run handler with the connection, JSON-serialise.
+async function xeroProxyAdmin(request, env, handler) {
+  if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+
+  const auth = request.headers.get("Authorization") || "";
+  const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!jwt) return jsonError(401, "Missing bearer token");
+
+  const url = new URL(request.url);
+  const orgId = Number(url.searchParams.get("org_id"));
+  if (!Number.isInteger(orgId) || orgId <= 0) return jsonError(400, "org_id required");
+
+  const userInfo = await supabaseUser(env, jwt);
+  if (!userInfo) return jsonError(401, "Invalid session");
+
+  const isAdmin = await supabaseRpc(env, jwt, "is_admin_of", { p_org_id: orgId });
+  if (isAdmin !== true) return jsonError(403, "Not an admin of this organisation");
+
+  const conn = await loadConnection(env, orgId);
+  if (!conn) return jsonError(404, "Xero not connected for this organisation");
+
+  try {
+    const result = await handler(conn);
+    return new Response(JSON.stringify(result), {
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  } catch (err) {
+    await recordError(env, orgId, err.message || String(err));
+    return jsonError(502, err.message || "Xero request failed");
   }
 }
 
@@ -472,4 +527,146 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
   ));
+}
+
+// ---------------------------------------------------------------------------
+// xeroFetch / connection management
+//
+// All Xero API calls funnel through xeroFetch so token refresh + 401 retry
+// are handled once. The Worker is the only place that ever holds tokens —
+// the browser proxies through /xero/api/*.
+// ---------------------------------------------------------------------------
+
+async function loadConnection(env, orgId) {
+  const resp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/xero_connections?organisation_id=eq.${orgId}&limit=1`,
+    {
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    }
+  );
+  if (!resp.ok) throw new Error(`Load connection failed: ${await resp.text()}`);
+  const rows = await resp.json();
+  return rows[0] || null;
+}
+
+async function xeroFetch(env, conn, path, init = {}) {
+  let access = await ensureFreshToken(env, conn);
+
+  const call = (token) =>
+    fetch(`https://api.xero.com${path}`, {
+      ...init,
+      headers: {
+        ...(init.headers || {}),
+        Authorization: `Bearer ${token}`,
+        "Xero-Tenant-Id": conn.tenant_id,
+        Accept: "application/json",
+      },
+    });
+
+  let resp = await call(access);
+
+  // 401 → token revoked or stale despite expires_at. Force-refresh once.
+  if (resp.status === 401) {
+    access = await refreshConnection(env, conn);
+    resp = await call(access);
+  }
+
+  if (!resp.ok) {
+    throw new Error(`Xero ${path} (${resp.status}): ${(await resp.text()).slice(0, 500)}`);
+  }
+  return resp.json();
+}
+
+// If the stored access token has < 60s left, refresh before use. Avoids the
+// race where we make a call right as the token expires.
+async function ensureFreshToken(env, conn) {
+  const expiresAt = new Date(conn.token_expires_at).getTime();
+  if (expiresAt - Date.now() > 60_000) return conn.access_token;
+  return refreshConnection(env, conn);
+}
+
+// Refresh the access token. Xero rotates the refresh token on every call,
+// so we MUST persist the new refresh_token immediately — the old one is
+// invalidated and a second refresh attempt with it would break the
+// connection permanently.
+async function refreshConnection(env, conn) {
+  const basic = btoa(`${env.XERO_CLIENT_ID}:${env.XERO_CLIENT_SECRET}`);
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: conn.refresh_token,
+  });
+  const resp = await fetch("https://identity.xero.com/connect/token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    await recordError(env, conn.organisation_id, `Refresh failed: ${text.slice(0, 400)}`);
+    throw new Error(`Token refresh failed (${resp.status}): ${text}`);
+  }
+  const tokens = await resp.json();
+
+  // Persist before returning — if persistence fails we'd rather throw than
+  // hand back tokens we can't replay later.
+  await persistRefresh(env, conn.organisation_id, tokens);
+  conn.access_token = tokens.access_token;
+  conn.refresh_token = tokens.refresh_token;
+  conn.token_expires_at = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+  return tokens.access_token;
+}
+
+async function persistRefresh(env, orgId, tokens) {
+  const resp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/xero_connections?organisation_id=eq.${orgId}`,
+    {
+      method: "PATCH",
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+        last_refreshed_at: new Date().toISOString(),
+        last_error: null,
+        last_error_at: null,
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  );
+  if (!resp.ok) throw new Error(`Refresh persist failed: ${await resp.text()}`);
+}
+
+async function recordError(env, orgId, message) {
+  try {
+    await fetch(
+      `${env.SUPABASE_URL}/rest/v1/xero_connections?organisation_id=eq.${orgId}`,
+      {
+        method: "PATCH",
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          last_error: message.slice(0, 1000),
+          last_error_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+  } catch {
+    // Best-effort: a failure to log shouldn't mask the real error.
+  }
 }
