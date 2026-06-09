@@ -989,6 +989,24 @@
             <span id="preview-status" class="muted small"></span>
           </div>
         </div>
+
+        <!-- Xero Payroll integration -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Xero Payroll Integration</h2>
+          <p class="muted">
+            Connect this organisation to Xero so leave requests file straight
+            into payroll. Approval still happens here; on approve we POST the
+            leave to Xero. Connection requires admin access on the Xero org.
+          </p>
+
+          <div id="xero-status" class="muted small" style="margin-bottom:12px">Loading…</div>
+
+          <div class="row-flex" style="gap:8px;align-items:center">
+            <button id="xero-connect-btn" type="button">Connect Xero</button>
+            <button id="xero-disconnect-btn" type="button" class="ghost" style="display:none">Disconnect</button>
+            <span id="xero-action-status" class="muted small"></span>
+          </div>
+        </div>
       </section>
     </main>
 

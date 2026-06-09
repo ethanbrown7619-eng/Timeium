@@ -16,3 +16,17 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 # public-facing identifier; the matching secret key lives in Supabase
 # Auth's CAPTCHA settings. Leave blank to disable the widget.
 TURNSTILE_SITE_KEY = ""
+
+# Secrets (set via `wrangler secret put NAME`, never committed):
+#
+#   SUPABASE_SERVICE_ROLE_KEY
+#     Used only by the Xero integration routes (/xero/*) to read/write the
+#     xero_connections table, which is locked down to service_role by RLS.
+#     All other Supabase queries from the Worker still use the anon key +
+#     user JWT.
+#
+#   XERO_CLIENT_ID
+#     From the Xero developer portal app — "PTL Timesheet Integration".
+#
+#   XERO_CLIENT_SECRET
+#     The matching secret. Rotate via the Xero dev portal if compromised.

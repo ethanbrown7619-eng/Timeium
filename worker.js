@@ -25,6 +25,20 @@ export default {
 
     const url = new URL(request.url);
 
+    // Xero Payroll NZ OAuth flow. Tokens live server-side in
+    // public.xero_connections; the browser never sees them.
+    if (url.pathname.startsWith("/xero/")) {
+      try {
+        return await handleXero(url, request, env);
+      } catch (err) {
+        console.error("Xero handler error:", err);
+        return new Response(
+          JSON.stringify({ error: err.message || "Xero handler failed" }),
+          { status: 500, headers: { "content-type": "application/json" } }
+        );
+      }
+    }
+
     if (url.pathname === "/config.json") {
       if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
         return new Response(
@@ -123,4 +137,334 @@ function addSecurityHeaders(response) {
     statusText: response.statusText,
     headers,
   });
+}
+
+// ----------------------------------------------------------------------------
+// Xero Payroll NZ integration
+//
+// Flow:
+//   1. Admin clicks "Connect Xero" in the UI → frontend POSTs to
+//      /xero/connect with Authorization: Bearer <supabase JWT> and the
+//      org_id they want to link. We verify they're an admin of that org,
+//      sign a state token, return the Xero authorize URL.
+//   2. Frontend redirects window.location to that URL.
+//   3. Xero shows the consent screen, user picks a tenant, clicks Allow.
+//   4. Xero redirects to /xero/callback?code=...&state=<signed>. We
+//      verify the state signature, exchange the code for tokens, look up
+//      the connecting user, persist via the service role, and redirect
+//      back to the admin Settings page with ?xero=connected.
+// ----------------------------------------------------------------------------
+
+const XERO_SCOPES = [
+  "offline_access",
+  "openid",
+  "profile",
+  "email",
+  "accounting.settings.read",
+  "payroll.employees",
+  "payroll.leaveapplications",
+  "payroll.payitems",
+].join(" ");
+
+const XERO_REDIRECT_PATH = "/xero/callback";
+const STATE_TTL_SECONDS = 600;
+
+async function handleXero(url, request, env) {
+  switch (url.pathname) {
+    case "/xero/connect":
+      return xeroConnect(request, url, env);
+    case "/xero/callback":
+      return xeroCallback(request, url, env);
+    default:
+      return new Response("Not found", { status: 404 });
+  }
+}
+
+async function xeroConnect(request, url, env) {
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+  if (!env.XERO_CLIENT_ID || !env.XERO_CLIENT_SECRET) {
+    return jsonError(500, "XERO_CLIENT_ID / XERO_CLIENT_SECRET not configured");
+  }
+
+  const auth = request.headers.get("Authorization") || "";
+  const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!jwt) return jsonError(401, "Missing bearer token");
+
+  const body = await readJson(request);
+  const orgId = Number(body?.org_id);
+  if (!Number.isInteger(orgId) || orgId <= 0) {
+    return jsonError(400, "org_id required");
+  }
+
+  // Verify the caller is an admin of org_id by calling is_admin_of() with
+  // their JWT. The RPC respects RLS — if they're not an admin, it returns
+  // false and we refuse.
+  const userInfo = await supabaseUser(env, jwt);
+  if (!userInfo) return jsonError(401, "Invalid Supabase session");
+
+  const isAdmin = await supabaseRpc(env, jwt, "is_admin_of", { p_org_id: orgId });
+  if (isAdmin !== true) return jsonError(403, "Not an admin of this organisation");
+
+  const stateToken = await signState(env, {
+    org_id: orgId,
+    sub: userInfo.sub,
+    exp: Math.floor(Date.now() / 1000) + STATE_TTL_SECONDS,
+    nonce: crypto.randomUUID(),
+  });
+
+  const redirectUri = `${url.origin}${XERO_REDIRECT_PATH}`;
+  const authorizeUrl = new URL("https://login.xero.com/identity/connect/authorize");
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("client_id", env.XERO_CLIENT_ID);
+  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+  authorizeUrl.searchParams.set("scope", XERO_SCOPES);
+  authorizeUrl.searchParams.set("state", stateToken);
+
+  return new Response(
+    JSON.stringify({ authorize_url: authorizeUrl.toString() }),
+    { headers: { "content-type": "application/json", "cache-control": "no-store" } }
+  );
+}
+
+async function xeroCallback(request, url, env) {
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const oauthError = url.searchParams.get("error");
+
+  if (oauthError) {
+    return htmlMessage(`Xero declined the connection: ${oauthError}`, 400);
+  }
+  if (!code || !state) {
+    return htmlMessage("Missing code or state on Xero callback.", 400);
+  }
+
+  const claims = await verifyState(env, state);
+  if (!claims) {
+    return htmlMessage("OAuth state invalid or expired. Please retry the connection.", 400);
+  }
+
+  const redirectUri = `${url.origin}${XERO_REDIRECT_PATH}`;
+  const tokens = await exchangeCodeForTokens(env, code, redirectUri);
+  const connections = await fetchConnections(tokens.access_token);
+  if (!connections.length) {
+    return htmlMessage("Xero returned no tenants. The connection was not saved.", 400);
+  }
+
+  // PTL is single-tenant; if the admin authorised multiple tenants, pick
+  // the first ORGANISATION (skip practice/portal entries). Document this
+  // edge case for later — for now first-org wins is fine.
+  const tenant =
+    connections.find((c) => c.tenantType === "ORGANISATION") || connections[0];
+
+  await persistConnection(env, {
+    org_id: claims.org_id,
+    sub: claims.sub,
+    tenant_id: tenant.tenantId,
+    tenant_name: tenant.tenantName,
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+    scopes: tokens.scope || XERO_SCOPES,
+  });
+
+  return Response.redirect(new URL("/configure.html?xero=connected", url), 302);
+}
+
+async function exchangeCodeForTokens(env, code, redirectUri) {
+  const basic = btoa(`${env.XERO_CLIENT_ID}:${env.XERO_CLIENT_SECRET}`);
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+  });
+  const resp = await fetch("https://identity.xero.com/connect/token", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+  if (!resp.ok) {
+    throw new Error(`Token exchange failed (${resp.status}): ${await resp.text()}`);
+  }
+  return resp.json();
+}
+
+async function fetchConnections(accessToken) {
+  const resp = await fetch("https://api.xero.com/connections", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!resp.ok) {
+    throw new Error(`/connections failed (${resp.status}): ${await resp.text()}`);
+  }
+  return resp.json();
+}
+
+// Service-role write — bypasses RLS on xero_connections. The Worker is the
+// only place we use the service key.
+async function persistConnection(env, row) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
+  }
+
+  // Look up the connecting user's id (bigint) from their auth.uid (sub).
+  const userResp = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/users?select=id&auth_user_id=eq.${encodeURIComponent(row.sub)}&limit=1`,
+    {
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+    }
+  );
+  if (!userResp.ok) {
+    throw new Error(`User lookup failed: ${await userResp.text()}`);
+  }
+  const userRows = await userResp.json();
+  const connectedBy = userRows[0]?.id ?? null;
+
+  // Upsert on organisation_id (which is UNIQUE on xero_connections).
+  const upsert = await fetch(
+    `${env.SUPABASE_URL}/rest/v1/xero_connections?on_conflict=organisation_id`,
+    {
+      method: "POST",
+      headers: {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      },
+      body: JSON.stringify({
+        organisation_id: row.org_id,
+        tenant_id: row.tenant_id,
+        tenant_name: row.tenant_name,
+        access_token: row.access_token,
+        refresh_token: row.refresh_token,
+        token_expires_at: row.token_expires_at,
+        scopes: row.scopes,
+        connected_by: connectedBy,
+        connected_at: new Date().toISOString(),
+        last_refreshed_at: new Date().toISOString(),
+        last_error: null,
+        last_error_at: null,
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  );
+  if (!upsert.ok) {
+    throw new Error(`Connection upsert failed (${upsert.status}): ${await upsert.text()}`);
+  }
+}
+
+// State token: { org_id, sub, exp, nonce } signed with HMAC-SHA256 over
+// the XERO_CLIENT_SECRET. Compact: base64url(payload).base64url(sig).
+async function signState(env, payload) {
+  const payloadB64 = b64url(new TextEncoder().encode(JSON.stringify(payload)));
+  const sig = await hmac(env.XERO_CLIENT_SECRET, payloadB64);
+  return `${payloadB64}.${sig}`;
+}
+
+async function verifyState(env, token) {
+  const [payloadB64, sig] = token.split(".");
+  if (!payloadB64 || !sig) return null;
+  const expectedSig = await hmac(env.XERO_CLIENT_SECRET, payloadB64);
+  if (!constantTimeEqual(sig, expectedSig)) return null;
+  let claims;
+  try {
+    claims = JSON.parse(new TextDecoder().decode(b64urlDecode(payloadB64)));
+  } catch {
+    return null;
+  }
+  if (typeof claims.exp !== "number" || claims.exp * 1000 < Date.now()) return null;
+  if (typeof claims.org_id !== "number" || !claims.sub) return null;
+  return claims;
+}
+
+async function hmac(secret, message) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return b64url(new Uint8Array(sig));
+}
+
+function b64url(bytes) {
+  let s = btoa(String.fromCharCode(...bytes));
+  return s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64urlDecode(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function constantTimeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// Verify a Supabase JWT by calling /auth/v1/user. Returns the decoded
+// user object (with .sub = auth.uid) or null. Doing it this way means we
+// don't have to verify signatures locally — Supabase enforces it.
+async function supabaseUser(env, jwt) {
+  const resp = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${jwt}` },
+  });
+  if (!resp.ok) return null;
+  const user = await resp.json();
+  return user?.id ? { sub: user.id, email: user.email } : null;
+}
+
+async function supabaseRpc(env, jwt, fn, args) {
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(args),
+  });
+  if (!resp.ok) throw new Error(`RPC ${fn} failed (${resp.status}): ${await resp.text()}`);
+  return resp.json();
+}
+
+async function readJson(request) {
+  try { return await request.json(); } catch { return null; }
+}
+
+function jsonError(status, message) {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  });
+}
+
+function htmlMessage(message, status = 200) {
+  return new Response(
+    `<!doctype html><html><body style="font-family:system-ui;padding:32px">
+      <h1>Xero Connection</h1><p>${escapeHtml(message)}</p>
+      <p><a href="/configure.html">Back to settings</a></p>
+    </body></html>`,
+    { status, headers: { "content-type": "text/html", "cache-control": "no-store" } }
+  );
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
 }

@@ -58,7 +58,7 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-stafftypes").style.display = activeTab === "stafftypes" ? "" : "none";
     document.getElementById("tab-settings").style.display   = activeTab === "settings"   ? "" : "none";
     if (activeTab === "stafftypes") loadSettings();
-    if (activeTab === "settings") { loadSettings(); loadHolidays(); }
+    if (activeTab === "settings") { loadSettings(); loadHolidays(); loadXeroStatus(); }
   });
 });
 
@@ -1297,6 +1297,110 @@ document.querySelectorAll("[data-copy]").forEach((btn) => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Xero Payroll integration — admin Settings card. Tokens live in the Worker;
+// this page only reads sanitised status (tenant name, last refresh, errors)
+// via the xero_connection_status() RPC and triggers connect/disconnect.
+// ---------------------------------------------------------------------------
+
+async function loadXeroStatus() {
+  if (!currentOrgId) return;
+  const statusEl = document.getElementById("xero-status");
+  const connectBtn = document.getElementById("xero-connect-btn");
+  const disconnectBtn = document.getElementById("xero-disconnect-btn");
+  if (!statusEl) return;
+
+  try {
+    const { data, error } = await sb.rpc("xero_connection_status", { p_org_id: currentOrgId });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : null;
+
+    if (!row) {
+      statusEl.textContent = "Not connected.";
+      connectBtn.textContent = "Connect Xero";
+      disconnectBtn.style.display = "none";
+      return;
+    }
+
+    const when = row.connected_at ? new Date(row.connected_at).toLocaleString() : "unknown";
+    const lastRefresh = row.last_refreshed_at
+      ? new Date(row.last_refreshed_at).toLocaleString()
+      : "never";
+    statusEl.innerHTML = `
+      Connected to <strong>${escapeHtml(row.tenant_name || row.tenant_id)}</strong>
+      by ${escapeHtml(row.connected_by_name || "—")} on ${escapeHtml(when)}.
+      <br>Last token refresh: ${escapeHtml(lastRefresh)}.
+      ${row.last_error ? `<br><span style="color:#c00">Last error: ${escapeHtml(row.last_error)}</span>` : ""}
+    `;
+    connectBtn.textContent = "Reconnect";
+    disconnectBtn.style.display = "";
+  } catch (err) {
+    statusEl.textContent = err.message || "Failed to load Xero status";
+  }
+}
+
+async function connectXero() {
+  if (!currentOrgId) return notice("No organisation selected", "warn");
+  const action = document.getElementById("xero-action-status");
+  action.textContent = "Redirecting to Xero…";
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    const jwt = session?.access_token;
+    if (!jwt) throw new Error("Not signed in");
+
+    const resp = await fetch("/xero/connect", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ org_id: currentOrgId }),
+    });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error || `HTTP ${resp.status}`);
+    window.location.href = json.authorize_url;
+  } catch (err) {
+    action.textContent = "";
+    notice(err.message || "Could not start Xero connection", "error");
+  }
+}
+
+async function disconnectXero() {
+  if (!currentOrgId) return;
+  const ok = await confirmDialog({
+    title: "Disconnect Xero?",
+    message: "Future leave requests will not file to Xero until you reconnect. Existing approved leave already in Xero is unaffected.",
+    confirmText: "Disconnect",
+  });
+  if (!ok) return;
+
+  const action = document.getElementById("xero-action-status");
+  action.textContent = "Disconnecting…";
+  try {
+    const { error } = await sb.rpc("xero_disconnect", { p_org_id: currentOrgId });
+    if (error) throw error;
+    action.textContent = "Disconnected.";
+    notice("Xero disconnected", "success");
+    await loadXeroStatus();
+  } catch (err) {
+    action.textContent = "";
+    notice(err.message || "Disconnect failed", "error");
+  }
+}
+
+document.getElementById("xero-connect-btn")?.addEventListener("click", connectXero);
+document.getElementById("xero-disconnect-btn")?.addEventListener("click", disconnectXero);
+
+// Banner on return from the OAuth callback. The Worker redirects here with
+// ?xero=connected on success; strip the query param so a refresh doesn't
+// re-trigger the notice.
+(function checkXeroReturn() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("xero") === "connected") {
+    notice("Xero connected successfully", "success");
+    params.delete("xero");
+    const qs = params.toString();
+    history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }
+})();
 
 function reloadAll() {
   jobsCtl.load();
