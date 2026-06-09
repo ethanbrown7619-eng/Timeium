@@ -155,15 +155,20 @@ function addSecurityHeaders(response) {
 //      back to the admin Settings page with ?xero=connected.
 // ----------------------------------------------------------------------------
 
+// Xero Payroll NZ scopes:
+//   payroll.employees  — read/write employees, leave balances, leave applications
+//                        (LeaveApplications are nested under /Employees/{id}/Leave)
+//   payroll.settings   — read pay items (incl. LeaveTypes for mapping)
+// openid/profile/email are OIDC scopes used to identify the connecting Xero
+// user. offline_access gives us the refresh token (without it, the connection
+// dies after 30 min and there's no way to recover).
 const XERO_SCOPES = [
   "offline_access",
   "openid",
   "profile",
   "email",
-  "accounting.settings.read",
   "payroll.employees",
-  "payroll.leaveapplications",
-  "payroll.payitems",
+  "payroll.settings",
 ].join(" ");
 
 const XERO_REDIRECT_PATH = "/xero/callback";
