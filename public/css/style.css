@@ -1085,6 +1085,8 @@ details.card[open] > summary::before { content: "▾ "; }
 .dept-badge-submitted::before { background: var(--info-blue); }
 .dept-badge-draft { background: var(--surface-alt); color: var(--text-muted); }
 .dept-badge-draft::before { background: var(--text-muted); }
+.dept-badge-rejected { background: var(--danger-bg); color: var(--danger); }
+.dept-badge-rejected::before { background: var(--danger); }
 .dept-badge-none { background: var(--warn-bg); color: var(--warn-text-dark); }
 .dept-badge-none::before { background: var(--warn-text-dark); }
 .dept-badge-exported { background: #d8eed8; color: #1e7a39; }

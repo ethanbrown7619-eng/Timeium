@@ -207,6 +207,9 @@ async function loadDashboard(signal) {
     } else if (ts?.status === "submitted") {
       badge = "Submitted";
       badgeClass = "dept-badge dept-badge-submitted";
+    } else if (ts?.status === "rejected") {
+      badge = "Rejected";
+      badgeClass = "dept-badge dept-badge-rejected";
     } else if (ts?.status === "draft") {
       badge = "Draft";
       badgeClass = "dept-badge dept-badge-draft";
