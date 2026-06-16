@@ -15,16 +15,60 @@ export function getMonday(d) {
   return dt;
 }
 
-// The "active" week the UI should focus on for the current moment. Mondays
-// still show last week (so employees finishing up and managers/admins
-// approving have an extra day of runway); Tue–Sun shows the current week.
+// The "active" week the UI should focus on for the current moment.
+//
+// Two rollover schedules, distinguished by role:
+//
+//   Admins (admin/developer):
+//     Monday all day still shows last week (extra runway for approvals);
+//     Tuesday onwards shows the current week.
+//
+//   Everyone else (staff, managers):
+//     Last week shown until 11:00 Monday local time; from 11:00 Monday
+//     onwards shows the current week. Gives staff a few hours buffer on
+//     Monday morning to finish off the previous week before the UI flips.
+//
+// Role is inferred from the most recent cached user context in
+// sessionStorage (written by requireAuthed). If no cache exists (first
+// page load after sign-in / cache clear), defaults to staff behavior;
+// requireAuthed writes the cache early on every page so subsequent
+// navigations resolve correctly.
+//
 // `now` is parameterised so tests/tools can probe specific dates.
-export function getActiveMonday(now = new Date()) {
+// `opts.earlyRollover` lets callers force one branch — useful where the
+// role is known explicitly (e.g. an admin-only page can pass `false` to
+// suppress the cache lookup).
+export function getActiveMonday(now = new Date(), opts = {}) {
   const m = getMonday(now);
-  if (now.getDay() === 1) {
+  if (now.getDay() !== 1) return m;
+
+  const earlyRollover =
+    opts.earlyRollover === undefined ? !cachedRoleIsAdmin() : !!opts.earlyRollover;
+
+  // On Monday: stay on last week unless we're past the staff rollover.
+  if (!earlyRollover || now.getHours() < 11) {
     m.setDate(m.getDate() - 7);
   }
   return m;
+}
+
+// Reads any ptl-ctx:<auth_uid> entry written by requireAuthed and returns
+// the most recent admin-role flag. Returns false if no cache exists.
+function cachedRoleIsAdmin() {
+  try {
+    let best = null;
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (!k || !k.startsWith("ptl-ctx:")) continue;
+      const raw = sessionStorage.getItem(k);
+      if (!raw) continue;
+      const entry = JSON.parse(raw);
+      if (entry?.ts && (!best || entry.ts > best.ts)) best = entry;
+    }
+    return best?.data?.isAdminOrHigher === true;
+  } catch {
+    return false;
+  }
 }
 
 export function fmtDate(d) {
