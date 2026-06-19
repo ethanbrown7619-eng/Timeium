@@ -495,7 +495,14 @@ async function getUnsubmittedEmployees(orgId: number, weekStart: string)
 
     const submittedUserIds = new Set(
         (tsRows || [])
-            .filter((t: any) => t.status === "submitted" || t.status === "approved")
+            // 'exported' is past 'approved' — payroll has the hours, no
+            // reminder needed. 'rejected' deliberately not here: the
+            // employee still has to resubmit, so they should be chased.
+            .filter((t: any) =>
+                t.status === "submitted" ||
+                t.status === "approved" ||
+                t.status === "exported"
+            )
             .map((t: any) => t.user_id)
     );
     return billing
@@ -899,9 +906,10 @@ async function buildManagerRollup(
         const bucket = byDept.get(e.department_id as number);
         if (!bucket) continue;
         const status = tsByUser.get(e.id as number);
-        if (status === "submitted")        bucket.submitted.push(e.name || `Employee ${e.id}`);
-        else if (status === "approved")    bucket.approvedCount++;
-        else                                bucket.notSubmitted.push(e.name || `Employee ${e.id}`);
+        if (status === "submitted")              bucket.submitted.push(e.name || `Employee ${e.id}`);
+        else if (status === "approved" ||
+                 status === "exported")          bucket.approvedCount++;
+        else                                     bucket.notSubmitted.push(e.name || `Employee ${e.id}`);
     }
     return [...byDept.values()];
 }
