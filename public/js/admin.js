@@ -881,7 +881,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
 
   const { data: employees } = await sb
     .from("users")
-    .select("id, name, employee_code, department_id, employment_type, receives_overtime, overtime_threshold_hours, active")
+    .select("id, name, employee_code, department_id, employment_type, receives_overtime, overtime_threshold_hours, overtime_daily_threshold_hours, active")
     .eq("organisation_id", currentOrgId)
     .eq("active", true);
 
@@ -973,9 +973,12 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     }
   }
 
-  // Overtime rows — per employee per day
+  // Overtime accumulation — worked hours only, leave entries excluded.
+  // Leave is paid at OWP/AWE under NZ payroll convention and doesn't
+  // contribute to the daily threshold that triggers OT.
   const empDayTotals = {};
   for (const entry of entries) {
+    if (leaveJobIds.has(entry.job_id)) continue;
     const ts = tsMap[entry.timesheet_id];
     if (!ts) continue;
     if (!filteredEmpIds.has(ts.user_id)) continue;
@@ -988,15 +991,11 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
   }
 
   // Overtime rule (per PTL policy):
-  //   1. Every hour worked on Saturday or Sunday is overtime, regardless
+  //   1. Every worked hour on Saturday or Sunday is overtime, regardless
   //      of count. Weekend penalty rates apply.
-  //   2. On top of that, any weekday hours (Mon–Fri sum) above the
-  //      employee's overtime_threshold_hours setting (default 40) are
-  //      also overtime — the "you exceeded your contracted week" case.
-  //   3. Weekend and weekly-excess are disjoint sources, so we just add
-  //      them. Leave hours count toward the weekly total, matching
-  //      typical NZ payroll treatment of paid leave as "hours worked"
-  //      for the purpose of standard-week calculations.
+  //   2. Any weekday with worked hours above the employee's daily
+  //      threshold (default 8) is overtime for that day — one row per
+  //      day with excess, attributed to that day.
   for (const { userId, wsDate, days } of Object.values(empDayTotals)) {
     const emp = empMap[userId];
     if (!emp) continue;
@@ -1004,7 +1003,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     // still log to the timesheet but they don't appear on the report.
     if (emp.receives_overtime === false) continue;
     const dept = emp.department_id ? deptMap[emp.department_id] : null;
-    const threshold = Number(emp.overtime_threshold_hours) || 40;
+    const dailyThreshold = Number(emp.overtime_daily_threshold_hours) || 8;
 
     // 1. Weekend hours → all OT, one row per weekend day with hours.
     for (const i of [5, 6]) {
@@ -1026,20 +1025,12 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
       });
     }
 
-    // 2. Weekday excess → one OT row attributed to the last weekday
-    //    with hours (or Friday if none — though in that case excess
-    //    would be 0 anyway). Single row keeps the payroll report tidy;
-    //    splitting daily would require deciding which day "tipped"
-    //    over the threshold.
-    let weekdayTotal = 0;
-    for (let i = 0; i < 5; i++) weekdayTotal += days[i] || 0;
-    const weekdayExcess = Math.max(0, weekdayTotal - threshold);
-    if (weekdayExcess > 0) {
-      let attribDayIdx = 4;
-      for (let i = 4; i >= 0; i--) {
-        if ((days[i] || 0) > 0) { attribDayIdx = i; break; }
-      }
-      const dayDate = addDays(wsDate, attribDayIdx);
+    // 2. Per-weekday excess → one OT row per weekday that exceeded the
+    //    daily threshold, attributed to that day.
+    for (let i = 0; i < 5; i++) {
+      const dailyExcess = Math.max(0, (days[i] || 0) - dailyThreshold);
+      if (dailyExcess <= 0) continue;
+      const dayDate = addDays(wsDate, i);
       rows.push({
         employee: emp.name || "",
         employee_code: emp.employee_code || "",
@@ -1049,9 +1040,9 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
         date_display: dayDate.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" }),
         event: "Overtime",
         event_detail: "OT",
-        event_description: `Hours over ${threshold}/week`,
+        event_description: `Hours over ${dailyThreshold}/day`,
         note: "",
-        hours: Number(weekdayExcess.toFixed(2)),
+        hours: Number(dailyExcess.toFixed(2)),
       });
     }
   }

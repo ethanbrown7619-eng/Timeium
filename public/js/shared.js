@@ -79,6 +79,24 @@ export function fmtHours(n) {
   return String(Number(v.toFixed(2)));
 }
 
+// Per PTL policy:
+//   - All weekend hours (Sat index 5, Sun index 6) are overtime.
+//   - Weekday hours above the daily threshold are overtime for that day.
+// `workedByDay` is an array of 7 numbers covering Mon..Sun. Leave hours
+// should already be excluded by the caller — paid leave doesn't accrue
+// OT under NZ payroll convention. Returns `{ otByDay, otTotal }`.
+export function computeOvertime(workedByDay, dailyThreshold = 8) {
+  const otByDay = [0, 0, 0, 0, 0, 0, 0];
+  let otTotal = 0;
+  for (let i = 0; i < 7; i++) {
+    const h = Number(workedByDay[i]) || 0;
+    const ot = i >= 5 ? h : Math.max(0, h - dailyThreshold);
+    otByDay[i] = ot;
+    otTotal += ot;
+  }
+  return { otByDay, otTotal };
+}
+
 export function fmtDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");

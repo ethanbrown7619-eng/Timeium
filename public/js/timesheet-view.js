@@ -4,7 +4,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
-  DAYS, addDays, fmtShortDate,
+  DAYS, addDays, fmtShortDate, fmtHours, computeOvertime,
   confirmDialog, promptDialog,
   invalidateWeekDashboard,
 } from "/js/shared.js";
@@ -53,9 +53,10 @@ if (returnTo.startsWith("/admin.html")) {
 /* ---------------------------------------------------------------- load */
 
 async function load() {
-  // Load employee
+  // Load employee (incl. OT flags so we can render the overtime row).
   const { data: emp } = await sb.from("users")
-    .select("id, name, email, department_id").eq("id", viewUserId).maybeSingle();
+    .select("id, name, email, department_id, receives_overtime, overtime_daily_threshold_hours")
+    .eq("id", viewUserId).maybeSingle();
   if (!emp) { notice("Employee not found", "error"); return; }
 
   document.getElementById("view-title").textContent = `${emp.name}'s Timesheet`;
@@ -106,7 +107,7 @@ async function load() {
   const deptIds = [...new Set((entries || []).map((e) => e.dept_code_id).filter(Boolean))];
 
   const [jobs, tasks, deptCodes] = await Promise.all([
-    jobIds.length ? sb.from("jobs").select("id, job_code, status").in("id", jobIds) : Promise.resolve({ data: [] }),
+    jobIds.length ? sb.from("jobs").select("id, job_code, status, is_leave").in("id", jobIds) : Promise.resolve({ data: [] }),
     taskIds.length ? sb.from("tasks").select("id, task_code").in("id", taskIds) : Promise.resolve({ data: [] }),
     deptIds.length ? sb.from("department_codes").select("id, code").in("id", deptIds) : Promise.resolve({ data: [] }),
   ]);
@@ -140,12 +141,37 @@ async function load() {
 
   // Totals footer
   let weekTotal = 0;
-  for (const d of DAYS) {
-    const dayTotal = (entries || []).reduce((s, e) => s + Number(e[`${d}_hours`] || 0), 0);
-    document.getElementById(`total-${d}`).textContent = dayTotal || "";
+  const workedByDay = [0, 0, 0, 0, 0, 0, 0]; // non-leave only, for OT calc
+  for (let i = 0; i < DAYS.length; i++) {
+    const d = DAYS[i];
+    let dayTotal = 0;
+    let workedTotal = 0;
+    for (const e of entries || []) {
+      const h = Number(e[`${d}_hours`] || 0);
+      dayTotal += h;
+      const job = jobMap[e.job_id];
+      if (!job?.is_leave) workedTotal += h;
+    }
+    document.getElementById(`total-${d}`).textContent = dayTotal ? fmtHours(dayTotal) : "";
     weekTotal += dayTotal;
+    workedByDay[i] = workedTotal;
   }
-  document.getElementById("total-week").innerHTML = `<strong>${weekTotal}</strong>`;
+  document.getElementById("total-week").innerHTML = `<strong>${fmtHours(weekTotal)}</strong>`;
+
+  // Overtime row — only for employees flagged receives_overtime. Computed
+  // from worked (non-leave) hours: weekend = all OT, weekday = anything
+  // above daily threshold (default 8).
+  if (emp.receives_overtime) {
+    const threshold = Number(emp.overtime_daily_threshold_hours) || 8;
+    const { otByDay, otTotal } = computeOvertime(workedByDay, threshold);
+    document.getElementById("overtime-row").style.display = "";
+    for (let i = 0; i < DAYS.length; i++) {
+      document.getElementById(`ot-${DAYS[i]}`).textContent =
+        otByDay[i] ? fmtHours(otByDay[i]) : "";
+    }
+    document.getElementById("ot-week").innerHTML =
+      `<strong>${otTotal ? fmtHours(otTotal) : "0"}</strong>`;
+  }
 
   // Show approve/reject only for submitted timesheets, and only to users
   // who actually have authority under the org's approval_workflow setting.
