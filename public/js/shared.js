@@ -460,7 +460,7 @@ export function renderTopbar(opts) {
     { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
     { key: "timeclock",  href: "/timeclock.html",    label: "Clock",          show: isAdminOrDev || !!opts.isClockViewer },
     { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
-    { key: "configure",  href: "/configure.html",    label: "Configure",      show: isAdminOrDev },
+    { key: "configure",  href: "/configure.html",    label: "Configure",      show: role === "developer" },
     { key: "settings",   href: "/settings.html",     label: "Settings",       show: true },
   ];
 
@@ -712,4 +712,17 @@ export async function requireAdmin(sb, { allowManager = true, allowClockViewer =
     orgs,
     currentOrgId,
   };
+}
+
+// Stricter than requireAdmin — refuses admin and manager accounts and only
+// admits the developer role. Use on pages that hold settings the operator
+// should not be able to change themselves (the Configure page being the
+// motivating case).
+export async function requireDeveloper(sb) {
+  const result = await requireAdmin(sb);
+  if (!result.isDeveloper) {
+    location.replace("/welcome.html");
+    throw new Error("not developer");
+  }
+  return result;
 }

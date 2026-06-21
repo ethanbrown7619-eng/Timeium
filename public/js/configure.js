@@ -6,7 +6,7 @@ import {
   notice,
   escapeHtml,
   renderTopbar,
-  requireAdmin,
+  requireDeveloper,
   confirmDialog,
 } from "/js/shared.js";
 
@@ -19,7 +19,7 @@ function getXLSX() {
 
 const sb  = await getSupabase();
 const cfg = await getConfig();
-const ctx = await requireAdmin(sb);
+const ctx = await requireDeveloper(sb);
 let currentOrgId = ctx.currentOrgId;
 
 renderTopbar({
