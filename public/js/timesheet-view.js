@@ -230,12 +230,11 @@ async function load() {
     document.getElementById("ts-view-status").textContent = "Already approved";
   }
 
-  // Admin-only escape hatch: submit a draft or rejected timesheet on
-  // behalf of the employee (e.g. they forgot, or a manager rejected it
-  // and the admin corrected the issue themselves). Goes through the
-  // SECURITY DEFINER RPC because RLS restricts the status flip to the
-  // owner.
-  if ((ts.status === "draft" || ts.status === "rejected") && isAdminOrDev) {
+  // Submit-on-behalf escape hatch: admins always, managers if they
+  // manage the target user. Same gate as the Edit button — canEdit was
+  // computed earlier. Goes through the SECURITY DEFINER RPC which
+  // accepts either role (migration 119).
+  if ((ts.status === "draft" || ts.status === "rejected") && canEdit) {
     const submitBar = document.getElementById("admin-submit-bar");
     submitBar.style.display = "";
     const isRejected = ts.status === "rejected";
