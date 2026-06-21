@@ -71,6 +71,14 @@ function cachedRoleIsAdmin() {
   }
 }
 
+// Round a number to at most 2 decimal places and strip trailing zeros.
+// Cleans up float-summation noise like 40.00000000000001 → "40", 40.5 → "40.5".
+export function fmtHours(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  return String(Number(v.toFixed(2)));
+}
+
 export function fmtDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");

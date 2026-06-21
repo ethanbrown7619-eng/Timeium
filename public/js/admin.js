@@ -4,7 +4,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, requireAdmin,
-  DAYS, DAY_LABELS, getMonday, getActiveMonday, fmtDate, addDays, fmtDMY,
+  DAYS, DAY_LABELS, getMonday, getActiveMonday, fmtDate, addDays, fmtDMY, fmtHours,
   donutSvg, makeLatestOnly,
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
@@ -229,7 +229,7 @@ async function loadDashboard(signal) {
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptName(e.department_id))}</td>
         <td><span class="${badgeClass}">${badge}</span></td>
-        <td class="small">${hours ? hours + "h" : ""}</td>
+        <td class="small">${hours ? fmtHours(hours) + "h" : ""}</td>
         <td>${viewCell}</td>
       </tr>`;
   }).join("");
