@@ -197,23 +197,30 @@ async function load() {
     document.getElementById("ts-view-status").textContent = "Already approved";
   }
 
-  // Admin-only escape hatch: submit a draft on behalf of the employee
-  // (e.g. they forgot or are off sick). Goes through the SECURITY DEFINER
-  // RPC because RLS otherwise restricts draft → submitted to the owner.
-  if (ts.status === "draft" && isAdminOrDev) {
+  // Admin-only escape hatch: submit a draft or rejected timesheet on
+  // behalf of the employee (e.g. they forgot, or a manager rejected it
+  // and the admin corrected the issue themselves). Goes through the
+  // SECURITY DEFINER RPC because RLS restricts the status flip to the
+  // owner.
+  if ((ts.status === "draft" || ts.status === "rejected") && isAdminOrDev) {
     const submitBar = document.getElementById("admin-submit-bar");
     submitBar.style.display = "";
+    const isRejected = ts.status === "rejected";
+    document.getElementById("admin-submit-btn").textContent =
+      isRejected ? "Resubmit on behalf" : "Submit on behalf";
     document.getElementById("admin-submit-btn").onclick = async () => {
       const ok = await confirmDialog({
-        title: "Submit on behalf",
-        message: "Submit this draft timesheet for the employee? It will move to 'submitted' as if they had clicked Submit themselves.",
-        confirmText: "Submit on behalf",
+        title: isRejected ? "Resubmit on behalf" : "Submit on behalf",
+        message: isRejected
+          ? "Resubmit this rejected timesheet for the employee? It will move back to 'submitted' for re-review."
+          : "Submit this draft timesheet for the employee? It will move to 'submitted' as if they had clicked Submit themselves.",
+        confirmText: isRejected ? "Resubmit on behalf" : "Submit on behalf",
       });
       if (!ok) return;
       const { error } = await sb.rpc("admin_submit_timesheet", { p_timesheet_id: ts.id });
       if (error) return notice(error.message, "error");
       invalidateWeekDashboard(currentOrgId, weekStart);
-      notice("Timesheet submitted", "success");
+      notice(isRejected ? "Timesheet resubmitted" : "Timesheet submitted", "success");
       setTimeout(() => location.href = returnTo, 600);
     };
   }
