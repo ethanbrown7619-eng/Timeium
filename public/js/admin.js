@@ -218,11 +218,13 @@ async function loadDashboard(signal) {
       badgeClass = "dept-badge dept-badge-none";
     }
 
-    // Only render a View link if a timesheet row actually exists for this
-    // employee & week — there's nothing to view otherwise.
+    // View if a timesheet exists, otherwise let the admin create one.
+    // The "Create" link opens the timesheet editor in admin-override
+    // mode, which calls admin_get_or_create_timesheet to materialise
+    // a draft on first save.
     const viewCell = ts
       ? `<a href="/timesheet-view.html?user=${e.id}&week=${wsIso}&return=admin" class="ghost small" style="padding:3px 10px;border-radius:999px;border:1px solid var(--border);text-decoration:none">View</a>`
-      : `<span class="muted small">—</span>`;
+      : `<a href="/timesheet.html?user=${e.id}&week=${wsIso}&admin=1&return=${encodeURIComponent("/admin.html#tab=infusion")}" class="ghost small" style="padding:3px 10px;border-radius:999px;border:1px solid var(--border);text-decoration:none">Create</a>`;
 
     return `
       <tr>

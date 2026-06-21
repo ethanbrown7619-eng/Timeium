@@ -221,6 +221,11 @@ async function loadDashboard(signal) {
     let actions = "";
     if (ts) {
       actions += `<a href="/timesheet-view.html?user=${e.id}&week=${ws}" class="dept-view-btn">View</a>`;
+    } else {
+      // Manager can create a draft on behalf of someone in their dept
+      // via the same admin-override URL; timesheet.js validates
+      // manager-of-target and calls manager_get_or_create_timesheet.
+      actions += `<a href="/timesheet.html?user=${e.id}&week=${ws}&admin=1&return=${encodeURIComponent("/department.html")}" class="dept-view-btn">Create</a>`;
     }
     if (sub && ts.status === "submitted" && canApproveInline) {
       actions += `<button class="dept-approve-btn approve-btn" data-ts-id="${ts.id}">Approve</button>`;

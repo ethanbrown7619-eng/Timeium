@@ -66,11 +66,18 @@ async function load() {
     .select("id, status, submitted_at, notes")
     .eq("user_id", viewUserId).eq("week_start", weekStart).maybeSingle();
 
-  // Admins can edit any timesheet (existing or not). The Edit button routes
-  // to the regular timesheet editor in admin-override mode.
-  if (isAdminOrDev) {
+  // Admins always see Edit. Managers see Edit if they manage the target
+  // user. Check via the user_manages_target_user RPC (security definer)
+  // rather than hand-rolling the dept lookup client-side.
+  let canEdit = isAdminOrDev;
+  if (!canEdit && isManager) {
+    const { data: managesTarget } = await sb.rpc("user_manages_target_user", { p_user_id: viewUserId });
+    canEdit = managesTarget === true;
+  }
+  if (canEdit) {
     const editBtn = document.getElementById("admin-edit-btn");
     editBtn.classList.remove("hidden");
+    editBtn.textContent = "Edit";
     editBtn.onclick = () => {
       const ret = encodeURIComponent(returnTo);
       location.href = `/timesheet.html?user=${viewUserId}&week=${weekStart}&admin=1&return=${ret}`;

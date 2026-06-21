@@ -34,11 +34,26 @@ const ADMIN_RETURN = decodeURIComponent(_adminParams.get("return") || "") || "/a
 const ADMIN_TARGET_USER_ID = ADMIN_MODE ? Number(_adminParams.get("user")) : null;
 const ADMIN_TARGET_WEEK = ADMIN_MODE ? _adminParams.get("week") : null;
 
+// In ADMIN_MODE: admins always allowed; managers allowed if they manage
+// the target user (validated via the user_manages_target_user RPC).
+// IS_MANAGER_OVERRIDE governs which RPC is called to materialise the
+// timesheet row downstream.
+let IS_MANAGER_OVERRIDE = false;
+
 if (ADMIN_MODE) {
   const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
   if (!isAdminOrDev) {
-    location.replace("/timesheet.html");
-    throw new Error("admin mode requires admin role");
+    if (isManager) {
+      const { data: managesTarget } = await sb.rpc("user_manages_target_user", { p_user_id: ADMIN_TARGET_USER_ID });
+      if (managesTarget !== true) {
+        location.replace("/timesheet.html");
+        throw new Error("manager does not manage target user");
+      }
+      IS_MANAGER_OVERRIDE = true;
+    } else {
+      location.replace("/timesheet.html");
+      throw new Error("admin mode requires admin or manager role");
+    }
   }
   const { data: target, error: targetErr } = await sb
     .from("users")
@@ -824,11 +839,13 @@ async function loadWeek() {
   try {
     if (ADMIN_MODE) {
       // get_or_create_timesheet keys on auth.uid(), so admins can't use
-      // it to touch someone else's timesheet. The dedicated admin RPC
-      // (migration 110) wraps the same INSERT … ON CONFLICT pattern but
-      // takes user_id explicitly and gates on admin role — race-free,
-      // unlike a manual SELECT-then-INSERT.
-      const { data, error } = await sb.rpc("admin_get_or_create_timesheet", {
+      // it to touch someone else's timesheet. Dedicated RPCs wrap the
+      // same INSERT … ON CONFLICT pattern but take user_id explicitly
+      // and gate on role — race-free, unlike a manual SELECT-then-INSERT.
+      // Managers use a different RPC (migration 118) that checks dept
+      // management rather than admin role.
+      const fn = IS_MANAGER_OVERRIDE ? "manager_get_or_create_timesheet" : "admin_get_or_create_timesheet";
+      const { data, error } = await sb.rpc(fn, {
         p_user_id: employee.id,
         p_week_start: fmtDate(weekStart),
       });
