@@ -273,7 +273,10 @@ async function loadClockComparison() {
     if (dayIdx >= 0 && dayIdx < 7) {
       const dayKey = DAYS[dayIdx];
       clockedMap[uid] = clockedMap[uid] || {};
-      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + Number(row.hours || 0);
+      // Recompute hours from minute-truncated timestamps so it matches the
+      // Raw/Hours columns in the Full report (see rawHoursFromTimestamps).
+      const rawH = rawHoursFromTimestamps(row.first_in, row.last_out);
+      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + finalHoursFromRaw(rawH, row.break_minutes);
     }
   }
 
@@ -411,7 +414,29 @@ function fmtClockTime(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (isNaN(d)) return "—";
+  // Truncate seconds so HH:MM is shown deterministically across browsers.
+  // Also lines up with rawHoursFromTimestamps below — what you see in the
+  // In/Out columns is exactly what gets fed into Raw.
+  d.setSeconds(0, 0);
   return d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+// The shared Clock RPC computes raw_hours from second-precision timestamps,
+// while the UI displays In/Out at HH:MM precision. That mismatch makes the
+// Raw column look wrong by ~0.02h on shifts where the seconds happen to
+// straddle a minute boundary. We recompute client-side from the same
+// timestamps after truncating seconds, so the visible math reconciles.
+function rawHoursFromTimestamps(firstIn, lastOut) {
+  if (!firstIn || !lastOut) return 0;
+  const inMs  = new Date(firstIn).setSeconds(0, 0);
+  const outMs = new Date(lastOut).setSeconds(0, 0);
+  if (outMs <= inMs) return 0;
+  return Number(((outMs - inMs) / 3600000).toFixed(2));
+}
+
+function finalHoursFromRaw(rawHours, breakMinutes) {
+  const breakHrs = (Number(breakMinutes) || 0) / 60;
+  return Math.max(0, Number((rawHours - breakHrs).toFixed(2)));
 }
 
 async function loadFlagReport() {
@@ -477,6 +502,8 @@ async function loadFlagReport() {
       <tbody>
         ${rows.map((r) => {
           const f = flagLabel(r.flag);
+          const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
+          const hrs = finalHoursFromRaw(raw, r.break_minutes);
           return `<tr>
             <td><span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span></td>
             <td class="small">${escapeHtml(r.day || "")}</td>
@@ -484,8 +511,8 @@ async function loadFlagReport() {
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
-            <td class="num small">${r.raw_hours != null ? Number(r.raw_hours).toFixed(2) : "—"}</td>
-            <td class="num"><strong>${r.hours != null ? Number(r.hours).toFixed(2) : "—"}</strong></td>
+            <td class="num small">${(r.first_in && r.last_out) ? raw.toFixed(2) : "—"}</td>
+            <td class="num"><strong>${(r.first_in && r.last_out) ? hrs.toFixed(2) : "—"}</strong></td>
           </tr>`;
         }).join("")}
       </tbody>
@@ -561,7 +588,8 @@ async function loadFullReport() {
     return (a.day || "") < (b.day || "") ? -1 : 1;
   });
 
-  const totalHours = worked.reduce((s, r) => s + Number(r.hours || 0), 0);
+  const totalHours = worked.reduce((s, r) =>
+    s + finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), r.break_minutes), 0);
   const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
   summaryEl.innerHTML = `<div class="notice info" style="margin:0">
     <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
@@ -587,15 +615,17 @@ async function loadFullReport() {
       <tbody>
         ${worked.map((r) => {
           const f = r.flag ? flagLabel(r.flag) : null;
+          const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
+          const hrs = finalHoursFromRaw(raw, r.break_minutes);
           return `<tr>
             <td class="small">${escapeHtml(r.day || "")}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
-            <td class="num small">${r.raw_hours != null ? Number(r.raw_hours).toFixed(2) : "—"}</td>
+            <td class="num small">${(r.first_in && r.last_out) ? raw.toFixed(2) : "—"}</td>
             <td class="num small">${r.break_minutes ? r.break_minutes + "m" : "—"}</td>
-            <td class="num"><strong>${r.hours != null ? Number(r.hours).toFixed(2) : "—"}</strong></td>
+            <td class="num"><strong>${(r.first_in && r.last_out) ? hrs.toFixed(2) : "—"}</strong></td>
             <td>${f ? `<span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span>` : ""}</td>
           </tr>`;
         }).join("")}
