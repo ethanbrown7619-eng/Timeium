@@ -248,6 +248,7 @@ async function loadClockComparison() {
 
   await loadOrgTolerance();
   await loadClockStandard();
+  await loadUnpaidBreaks();
 
   const ws = fmtDate(cvtWeek);
   const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
@@ -303,10 +304,16 @@ async function loadClockComparison() {
     if (dayIdx >= 0 && dayIdx < 7) {
       const dayKey = DAYS[dayIdx];
       clockedMap[uid] = clockedMap[uid] || {};
-      // Recompute hours from minute-truncated timestamps so it matches the
-      // Raw/Hours columns in the Full report (see rawHoursFromTimestamps).
-      const rawH = rawHoursFromTimestamps(row.first_in, row.last_out);
-      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + finalHoursFromRaw(rawH, row.break_minutes);
+      // Worked hours = Raw - unpaid break. Paid breaks count as worked
+      // and are included in the clocked figure compared against the
+      // timesheet. unpaidBreakMinutesForRaw returns null when the
+      // unpaid-break config hasn't loaded yet (migration 122 missing
+      // or RPC failure) — fall back to the original "all breaks
+      // unpaid" behaviour using row.break_minutes.
+      const rawH       = rawHoursFromTimestamps(row.first_in, row.last_out);
+      const unpaidMin  = unpaidBreakMinutesForRaw(rawH);
+      const breakMin   = unpaidMin != null ? unpaidMin : row.break_minutes;
+      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + finalHoursFromRaw(rawH, breakMin);
     }
   }
 
@@ -467,6 +474,36 @@ function rawHoursFromTimestamps(firstIn, lastOut) {
 function finalHoursFromRaw(rawHours, breakMinutes) {
   const breakHrs = (Number(breakMinutes) || 0) / 60;
   return Math.max(0, Number((rawHours - breakHrs).toFixed(2)));
+}
+
+// Clock-vs-Timesheet compares worked hours against logged hours, and
+// "worked" excludes only unpaid breaks (paid breaks are paid time, so
+// they count as worked). The shared RPC returns total break_minutes
+// without a paid/unpaid split, so we re-derive: sum the unpaid-break
+// duration for breaks whose trigger threshold this shift exceeded.
+let unpaidBreaks = null;
+async function loadUnpaidBreaks() {
+  if (unpaidBreaks != null || !currentOrgId) return;
+  try {
+    const { data } = await sb.rpc("clock_unpaid_breaks", { p_org_id: currentOrgId });
+    unpaidBreaks = (data || []).map((b) => ({
+      duration_minutes:         Number(b.duration_minutes) || 0,
+      trigger_hours_into_shift: Number(b.trigger_hours_into_shift) || 0,
+    }));
+  } catch {
+    // Migration 122 may not be applied yet — fall back to assuming all
+    // breaks are unpaid (the existing behaviour).
+    unpaidBreaks = [];
+  }
+}
+
+function unpaidBreakMinutesForRaw(rawHours) {
+  if (!Array.isArray(unpaidBreaks)) return null;
+  let mins = 0;
+  for (const b of unpaidBreaks) {
+    if (rawHours >= b.trigger_hours_into_shift) mins += b.duration_minutes;
+  }
+  return mins;
 }
 
 async function loadFlagReport() {
