@@ -1329,24 +1329,22 @@ function wireRow(row, idx) {
       menu.hidden = true;
       menuBtn.setAttribute("aria-expanded", "false");
       const entryId = Number(row.dataset.entryId);
-      const src = entries.find((x) => x.id === entryId);
-      if (!src) return;
+      const srcIdx = entries.findIndex((x) => x.id === entryId);
+      if (srcIdx < 0) return;
+      const src = entries[srcIdx];
       try {
-        const sortOrder = Math.max(-1, ...entries.map((e) => Number(e.sort_order) || 0)) + 1;
-        const { data, error } = await sb
-          .from("timesheet_entries")
-          .insert({
-            timesheet_id: timesheetId,
-            sort_order:   sortOrder,
-            job_id:       src.job_id ?? null,
-            task_id:      src.task_id ?? null,
-            dept_code_id: src.dept_code_id ?? null,
-            description:  src.description ?? null,
-          })
-          .select()
-          .single();
+        // duplicate_timesheet_entry shifts subsequent sort_orders +1
+        // and inserts a copy at src.sort_order + 1 atomically.
+        const { data, error } = await sb.rpc("duplicate_timesheet_entry", { p_entry_id: entryId });
         if (error) throw error;
-        entries.push(data);
+        // Mirror the server-side shift locally so the next render is
+        // ordered correctly without a refetch.
+        for (const e of entries) {
+          if (e.id !== entryId && (Number(e.sort_order) || 0) > (Number(src.sort_order) || 0)) {
+            e.sort_order = (Number(e.sort_order) || 0) + 1;
+          }
+        }
+        entries.splice(srcIdx + 1, 0, data);
         renderGrid();
         notice("Row duplicated", "success");
       } catch (err) {
