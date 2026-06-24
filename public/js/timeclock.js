@@ -190,6 +190,35 @@ async function loadOrgTolerance() {
   if (data?.clock_tolerance_hours != null) clockTolerance = Number(data.clock_tolerance_hours);
 }
 
+// "Short shift" threshold used by the Clock RPC to flag red. Loaded
+// once and reused across the Clock-vs-Timesheet and Full report renders.
+// Default 8.5 matches the RPC's coalesce default. We need this on the
+// client because our recomputed (minute-truncated) hours may cross the
+// threshold even when the RPC's second-precision hours don't — and the
+// flag in the RPC response was computed from those second-precision
+// hours. So if we don't re-derive, the flag and the displayed hours
+// disagree (e.g. shows "Short shift" next to "7.50h" with threshold 7.5).
+let clockStandardHours = null;
+async function loadClockStandard() {
+  if (clockStandardHours != null || !currentOrgId) return;
+  const { data } = await sb.from("app_settings")
+    .select("auto_close_shift_hours")
+    .eq("organisation_id", currentOrgId).maybeSingle();
+  clockStandardHours = Number(data?.auto_close_shift_hours) || 8.5;
+}
+
+// Re-derive the row flag given our recomputed hours. We only override
+// 'red' (short shift) — yellow/orange depend on factors we don't
+// recompute (auto-close, lateness). If our recomputed hours equal or
+// exceed the threshold, suppress 'red'.
+function effectiveFlag(originalFlag, recomputedHours) {
+  if (originalFlag === "red" && clockStandardHours != null
+      && recomputedHours > 0 && recomputedHours >= clockStandardHours) {
+    return null;
+  }
+  return originalFlag;
+}
+
 function updateCvtWeekLabel() {
   const end = addDays(cvtWeek, 6);
   document.getElementById("cvt-week-label").textContent =
@@ -218,6 +247,7 @@ async function loadClockComparison() {
   summaryEl.innerHTML = "";
 
   await loadOrgTolerance();
+  await loadClockStandard();
 
   const ws = fmtDate(cvtWeek);
   const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
@@ -446,6 +476,7 @@ async function loadFlagReport() {
   tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
   summaryEl.innerHTML = "";
 
+  await loadClockStandard();
   const ws = fmtDate(flagWeek);
   let rows = [];
   try {
@@ -455,7 +486,14 @@ async function loadFlagReport() {
       p_org_id: currentOrgId,
     });
     if (error) throw error;
-    rows = (data || []).filter((r) => r.flag);
+    // Re-derive the flag client-side: rows where our minute-truncated
+    // hours actually meet the standard shouldn't carry 'red'.
+    rows = (data || [])
+      .map((r) => ({
+        ...r,
+        flag: effectiveFlag(r.flag, finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), r.break_minutes)),
+      }))
+      .filter((r) => r.flag);
   } catch (err) {
     tableEl.innerHTML = `
       <div class="notice warn" style="margin:0">
@@ -501,9 +539,9 @@ async function loadFlagReport() {
       </thead>
       <tbody>
         ${rows.map((r) => {
-          const f = flagLabel(r.flag);
           const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
           const hrs = finalHoursFromRaw(raw, r.break_minutes);
+          const f = flagLabel(effectiveFlag(r.flag, hrs));
           return `<tr>
             <td><span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span></td>
             <td class="small">${escapeHtml(r.day || "")}</td>
@@ -554,6 +592,7 @@ async function loadFullReport() {
   tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
   summaryEl.innerHTML = "";
 
+  await loadClockStandard();
   const ws = fmtDate(fullWeek);
   let rows = [];
   try {
@@ -614,9 +653,10 @@ async function loadFullReport() {
       </thead>
       <tbody>
         ${worked.map((r) => {
-          const f = r.flag ? flagLabel(r.flag) : null;
           const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
           const hrs = finalHoursFromRaw(raw, r.break_minutes);
+          const eff = effectiveFlag(r.flag, hrs);
+          const f = eff ? flagLabel(eff) : null;
           return `<tr>
             <td class="small">${escapeHtml(r.day || "")}</td>
             <td>${escapeHtml(r.name || "")}</td>
