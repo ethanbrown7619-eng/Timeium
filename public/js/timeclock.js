@@ -256,8 +256,14 @@ async function loadClockComparison() {
 
   const allCvtDepts = dash.departments;
   const cvtDeptById = new Map(allCvtDepts.map((d) => [d.id, d]));
-  const employees = dash.employees.filter((e) =>
-    !isUserEffectiveOverhead(e, cvtDeptById.get(e.department_id)));
+  // Exclude anyone whose home department is flagged overhead — the
+  // Clock-vs-Timesheet view is only meaningful for billable staff who
+  // log time. isUserEffectiveOverhead lets through overhead-dept users
+  // who carry an explicit rate; on this view we don't want them either.
+  const employees = dash.employees.filter((e) => {
+    const dept = cvtDeptById.get(e.department_id);
+    return !dept?.is_overhead;
+  });
   const deptMap = {};
   for (const d of allCvtDepts) if (!d.is_overhead) deptMap[d.id] = d.name;
   for (const e of employees) {
@@ -304,16 +310,18 @@ async function loadClockComparison() {
     if (dayIdx >= 0 && dayIdx < 7) {
       const dayKey = DAYS[dayIdx];
       clockedMap[uid] = clockedMap[uid] || {};
-      // Worked hours = Raw - unpaid break. Paid breaks count as worked
-      // and are included in the clocked figure compared against the
-      // timesheet. unpaidBreakMinutesForRaw returns null when the
-      // unpaid-break config hasn't loaded yet (migration 122 missing
-      // or RPC failure) — fall back to the original "all breaks
-      // unpaid" behaviour using row.break_minutes.
-      const rawH       = rawHoursFromTimestamps(row.first_in, row.last_out);
-      const unpaidMin  = unpaidBreakMinutesForRaw(rawH);
-      const breakMin   = unpaidMin != null ? unpaidMin : row.break_minutes;
-      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + finalHoursFromRaw(rawH, breakMin);
+      // Worked hours = Raw - unpaid break + early-leave credit. Paid
+      // breaks count as worked. unpaidBreakMinutesForRaw returns null
+      // when the unpaid-break config hasn't loaded yet (migration 122
+      // missing or RPC failure) — fall back to row.break_minutes and
+      // skip the 15-min credit since we can't verify a 15-min break
+      // would have triggered.
+      const rawH      = rawHoursFromTimestamps(row.first_in, row.last_out);
+      const unpaidMin = unpaidBreakMinutesForRaw(rawH);
+      const breakMin  = unpaidMin != null ? unpaidMin : row.break_minutes;
+      const earlyMin  = unpaidMin != null ? earlyLeaveCreditMinutes(rawH) : 0;
+      const dayHrs    = finalHoursFromRaw(rawH, breakMin) + earlyMin / 60;
+      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + dayHrs;
     }
   }
 
@@ -504,6 +512,20 @@ function unpaidBreakMinutesForRaw(rawHours) {
     if (rawHours >= b.trigger_hours_into_shift) mins += b.duration_minutes;
   }
   return mins;
+}
+
+// PTL convention: the last 15-minute break is taken as leaving 15
+// minutes earlier instead. So when a shift is long enough that a
+// 15-min unpaid break would have triggered, we credit those 15 mins
+// back to clocked time — the worker skipped the break and clocked
+// out 15 min sooner. Only kicks in once per shift; if multiple
+// 15-min unpaid breaks are configured (rare), still only one applies.
+function earlyLeaveCreditMinutes(rawHours) {
+  if (!Array.isArray(unpaidBreaks)) return 0;
+  const triggered15 = unpaidBreaks.some(
+    (b) => b.duration_minutes === 15 && rawHours >= b.trigger_hours_into_shift,
+  );
+  return triggered15 ? 15 : 0;
 }
 
 async function loadFlagReport() {
