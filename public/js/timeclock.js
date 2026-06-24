@@ -594,6 +594,25 @@ async function loadFullReport() {
 
   await loadClockStandard();
   const ws = fmtDate(fullWeek);
+  // Days where an auto-closed event happened. Used to promote 'red'
+  // (Short shift) to 'yellow' (Auto-closed) in the row render — the
+  // shared Clock RPC's flag column picks red first, but for the Full
+  // report we want auto-close to take priority.
+  let autoClosedSet = new Set();
+  try {
+    const weekEndExcl = fmtDate(addDays(fullWeek, 7));
+    const { data: acRows } = await sb.rpc("clock_auto_closed_days", {
+      p_org_id:   currentOrgId,
+      p_start:    ws,
+      p_end_excl: weekEndExcl,
+      p_tz:       null,
+    });
+    autoClosedSet = new Set((acRows || []).map((r) => `${r.user_id}_${r.day}`));
+  } catch {
+    // RPC may not exist yet (migration 121 not applied) or caller
+    // lacks access — fall through with an empty set so the original
+    // RPC-supplied flag still renders.
+  }
   let rows = [];
   try {
     const { data, error } = await sb.rpc("weekly_timesheet", {
@@ -655,7 +674,11 @@ async function loadFullReport() {
         ${worked.map((r) => {
           const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
           const hrs = finalHoursFromRaw(raw, r.break_minutes);
-          const eff = effectiveFlag(r.flag, hrs);
+          let eff = effectiveFlag(r.flag, hrs);
+          // Auto-closed takes priority over short-shift in this view.
+          if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
+            eff = "yellow";
+          }
           const f = eff ? flagLabel(eff) : null;
           return `<tr>
             <td class="small">${escapeHtml(r.day || "")}</td>
