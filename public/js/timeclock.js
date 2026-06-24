@@ -256,14 +256,8 @@ async function loadClockComparison() {
 
   const allCvtDepts = dash.departments;
   const cvtDeptById = new Map(allCvtDepts.map((d) => [d.id, d]));
-  // Exclude anyone whose home department is flagged overhead — the
-  // Clock-vs-Timesheet view is only meaningful for billable staff who
-  // log time. isUserEffectiveOverhead lets through overhead-dept users
-  // who carry an explicit rate; on this view we don't want them either.
-  const employees = dash.employees.filter((e) => {
-    const dept = cvtDeptById.get(e.department_id);
-    return !dept?.is_overhead;
-  });
+  const employees = dash.employees.filter((e) =>
+    !isUserEffectiveOverhead(e, cvtDeptById.get(e.department_id)));
   const deptMap = {};
   for (const d of allCvtDepts) if (!d.is_overhead) deptMap[d.id] = d.name;
   for (const e of employees) {
