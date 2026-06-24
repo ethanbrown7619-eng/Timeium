@@ -1202,8 +1202,16 @@ function rowHtml(e, idx, isSubmitted) {
         </td>
       `).join("")}
       <td class="day-col row-total"><strong>${rowTotal}</strong></td>
-      <td>
-        ${isSubmitted ? "" : `<button class="ghost small delete-entry-btn" title="Remove row">✕</button>`}
+      <td class="row-actions-cell">
+        ${isSubmitted ? "" : `
+          <div class="row-menu-wrap">
+            <button type="button" class="ghost small row-menu-btn" aria-label="Row options" aria-expanded="false">⋯</button>
+            <div class="row-menu" hidden role="menu">
+              <button type="button" class="row-menu-item duplicate-entry-btn" role="menuitem">Duplicate row</button>
+              <button type="button" class="row-menu-item delete-entry-btn" role="menuitem">Remove row</button>
+            </div>
+          </div>
+        `}
       </td>
     </tr>
   `;
@@ -1298,9 +1306,60 @@ function wireRow(row, idx) {
     });
   });
 
+  // Row options menu — three-dot button toggles a small popup with
+  // Duplicate / Remove. Clicking outside or selecting a menu item closes
+  // it. We close other open menus on each open so only one is ever
+  // visible at a time.
+  const menuBtn = row.querySelector(".row-menu-btn");
+  const menu    = row.querySelector(".row-menu");
+  if (menuBtn && menu) {
+    menuBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const willOpen = menu.hidden;
+      document.querySelectorAll(".row-menu").forEach((m) => { m.hidden = true; });
+      document.querySelectorAll(".row-menu-btn").forEach((b) => b.setAttribute("aria-expanded", "false"));
+      menu.hidden = !willOpen;
+      menuBtn.setAttribute("aria-expanded", String(willOpen));
+    });
+  }
+
+  const dupBtn = row.querySelector(".duplicate-entry-btn");
+  if (dupBtn) {
+    dupBtn.addEventListener("click", async () => {
+      menu.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
+      const entryId = Number(row.dataset.entryId);
+      const src = entries.find((x) => x.id === entryId);
+      if (!src) return;
+      try {
+        const sortOrder = Math.max(-1, ...entries.map((e) => Number(e.sort_order) || 0)) + 1;
+        const { data, error } = await sb
+          .from("timesheet_entries")
+          .insert({
+            timesheet_id: timesheetId,
+            sort_order:   sortOrder,
+            job_id:       src.job_id ?? null,
+            task_id:      src.task_id ?? null,
+            dept_code_id: src.dept_code_id ?? null,
+            description:  src.description ?? null,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        entries.push(data);
+        renderGrid();
+        notice("Row duplicated", "success");
+      } catch (err) {
+        notice(err.message || "Duplicate failed", "error");
+      }
+    });
+  }
+
   const delBtn = row.querySelector(".delete-entry-btn");
   if (delBtn) {
     delBtn.addEventListener("click", async () => {
+      menu.hidden = true;
+      menuBtn.setAttribute("aria-expanded", "false");
       const entryId = Number(row.dataset.entryId);
       try {
         const { error } = await sb.from("timesheet_entries").delete().eq("id", entryId);
@@ -1386,6 +1445,14 @@ async function saveEntry(entry, changedFields) {
 }
 
 /* ---------------------------------------------------------------- add row */
+
+// Close any open row-actions menu when clicking outside it. One global
+// listener; wireRow stops propagation on the menu button's own click so
+// this doesn't immediately close the menu it just opened.
+document.addEventListener("click", () => {
+  document.querySelectorAll(".row-menu").forEach((m) => { m.hidden = true; });
+  document.querySelectorAll(".row-menu-btn").forEach((b) => b.setAttribute("aria-expanded", "false"));
+});
 
 document.getElementById("add-row-btn").addEventListener("click", async () => {
   if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
