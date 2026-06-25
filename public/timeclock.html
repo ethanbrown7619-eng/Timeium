@@ -6,7 +6,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#c2ff00" />
+    <meta name="theme-color" content="#BEFA40" />
     <title>Clock · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
@@ -52,6 +52,30 @@
               </tr>
             </thead>
             <tbody id="tc-live-body">
+              <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Visitors signed in via the PTL guest sign-in module (shared
+             Supabase project). Read-only, refreshed on the same cadence as
+             the employee roster above. -->
+        <div class="row-flex mb-md mt-md">
+          <h3 style="margin:0">Visitors on site</h3>
+          <span id="tc-visitors-count" class="tc-live-pill onsite" style="display:none"></span>
+        </div>
+
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Company</th>
+                <th>Host</th>
+                <th>Signed in</th>
+              </tr>
+            </thead>
+            <tbody id="tc-visitors-body">
               <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
             </tbody>
           </table>

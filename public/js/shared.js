@@ -167,7 +167,7 @@ export function isTsSubmittedOrApproved(status) {
 
 /* ---------------------------------------------------------------- donut */
 
-export function donutSvg({ submitted, total, fillColor = "#c2ff00", emptyColor = "#e8e8e8" }) {
+export function donutSvg({ submitted, total, fillColor = "#BEFA40", emptyColor = "#e8e8e8" }) {
   const pct = total === 0 ? 0 : submitted / total;
   const radius = 70;
   const circumference = 2 * Math.PI * radius;
@@ -508,7 +508,7 @@ export function renderTopbar(opts) {
   // and we'll fill it; pages that pre-populated it (legacy) are overwritten.
   el.innerHTML = `
     <div class="brand">
-      <span class="brand-logo" aria-hidden="true">ptl</span>
+      <img src="/img/ptl-logo.png" class="brand-logo" alt="PTL" />
       <span class="brand-name">Timesheet</span>
     </div>
     <nav class="ready">

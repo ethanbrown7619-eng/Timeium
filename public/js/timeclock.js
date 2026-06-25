@@ -87,10 +87,17 @@ function stopLivePresence() {
   if (liveClockTimer) { clearInterval(liveClockTimer); liveClockTimer = null; }
 }
 
+// Refresh both the employee roster and the visitors-on-site panel together
+// so they always reflect the same moment and share one polling cadence.
+function refreshLive() {
+  loadLivePresence();
+  loadVisitorsOnSite();
+}
+
 function startLivePresence() {
   stopLivePresence();
-  loadLivePresence();
-  liveTimer = setInterval(loadLivePresence, 30_000);
+  refreshLive();
+  liveTimer = setInterval(refreshLive, 30_000);
   const tickClock = () => {
     const el = document.getElementById("tc-live-clock");
     if (el) el.textContent = new Date().toLocaleTimeString();
@@ -99,7 +106,7 @@ function startLivePresence() {
   liveClockTimer = setInterval(tickClock, 1000);
 }
 
-document.getElementById("tc-live-refresh")?.addEventListener("click", () => loadLivePresence());
+document.getElementById("tc-live-refresh")?.addEventListener("click", () => refreshLive());
 
 // Status values come from public.org_live_status (Attendium) and are
 // exhaustively: on_site | off_site_job | off_site_break | clocked_out_early.
@@ -172,6 +179,76 @@ async function loadLivePresence() {
         Could not load presence data. ${escapeHtml(err.message || "")}
       </td></tr>`;
     countsEl.innerHTML = "";
+  }
+}
+
+/* ---------------------------------------------------------------- Visitors on site */
+//
+// The PTL guest sign-in module writes to the SAME Supabase project as
+// Timeium. list_present_guests_admin(p_org_id) is a SECURITY DEFINER RPC
+// granted to authenticated and gated server-side by is_admin_of, so only
+// admins of this org see its rows. Returns:
+//   visitor_id, visitor_name, company, host_name, reason, signed_in_at
+// Refreshed alongside the employee roster (see refreshLive).
+
+function fmtSignedInAt(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  d.setSeconds(0, 0);
+  return d.toLocaleString(undefined, {
+    weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
+async function loadVisitorsOnSite() {
+  if (!currentOrgId) return;
+  const body = document.getElementById("tc-visitors-body");
+  const countEl = document.getElementById("tc-visitors-count");
+  if (!body) return;
+  try {
+    const { data, error } = await sb.rpc("list_present_guests_admin", {
+      p_org_id: currentOrgId,
+    });
+    if (error) throw error;
+
+    const rows = data || [];
+
+    if (countEl) {
+      if (rows.length) {
+        countEl.textContent = `${rows.length} on site`;
+        countEl.style.display = "";
+      } else {
+        countEl.style.display = "none";
+      }
+    }
+
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="4" class="muted small" style="text-align:center;padding:16px">No visitors signed in right now.</td></tr>`;
+      return;
+    }
+
+    // The host placeholder ('—') comes straight from the RPC when no host
+    // was recorded; treat it (and blanks) as "no host" for a clean cell.
+    const cleanHost = (h) => {
+      const v = String(h || "").trim();
+      return v && v !== "—" ? v : "";
+    };
+
+    body.innerHTML = rows.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.visitor_name || "")}</td>
+        <td class="small muted">${escapeHtml(r.company || "")}</td>
+        <td class="small">${escapeHtml(cleanHost(r.host_name))}</td>
+        <td class="small">${escapeHtml(fmtSignedInAt(r.signed_in_at))}</td>
+      </tr>`).join("");
+  } catch (err) {
+    console.error("visitors-on-site load failed:", err);
+    if (countEl) countEl.style.display = "none";
+    body.innerHTML = `
+      <tr><td colspan="4" class="muted small" style="text-align:center;padding:24px">
+        Could not load visitor data. ${escapeHtml(err.message || "")}
+      </td></tr>`;
   }
 }
 

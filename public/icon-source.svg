@@ -4,7 +4,7 @@
        The SVG references the same system font stack the rest of the app
        uses (-apple-system); when the static PNGs are pre-rasterised on
        Linux we install Inter to stand in for SF Pro / Segoe UI / Roboto. -->
-  <rect width="1024" height="1024" fill="#c2ff00"/>
+  <rect width="1024" height="1024" fill="#BEFA40"/>
   <text x="512" y="560"
         text-anchor="middle"
         font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"

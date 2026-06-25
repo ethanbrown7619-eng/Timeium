@@ -160,9 +160,9 @@ async function loadDashboard(signal) {
   const hoursMap = dash.hoursByTsId;
 
   const submittedEmps = employees.filter((e) => isTsSubmittedOrApproved(tsMap[e.id]?.status));
-  renderDonut("emp-donut", submittedEmps.length, employees.length, "#c2ff00", "#e8e8e8");
+  renderDonut("emp-donut", submittedEmps.length, employees.length, "#BEFA40", "#e8e8e8");
   document.getElementById("emp-legend").innerHTML = `
-    <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submittedEmps.length})</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#BEFA40"></span> Submitted (${submittedEmps.length})</span>
     <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Not submitted (${employees.length - submittedEmps.length})</span>
   `;
 
@@ -1226,7 +1226,7 @@ async function lvExportToPdf(rows, filename, { title, periodLabel }) {
     startY: 92,
     margin: { left: 40, right: 40 },
     styles: { fontSize: 9, cellPadding: 4, lineColor: [220, 220, 220], lineWidth: 0.5 },
-    headStyles: { fillColor: [194, 255, 0], textColor: [10, 10, 10], fontStyle: "bold" },
+    headStyles: { fillColor: [190, 250, 64], textColor: [10, 10, 10], fontStyle: "bold" },
     alternateRowStyles: { fillColor: [248, 248, 248] },
     columnStyles: {
       0: { cellWidth: 40, halign: "center" },   // Logged checkbox

@@ -1,11 +1,18 @@
 /* Timeium — timesheet web app styles.
-   Kept deliberately simple: system font stack, light theme, no build step.
+   Kept deliberately simple: brand font + light theme, no build step.
    All layout is CSS grid / flexbox. */
+
+@font-face {
+  font-family: "Altmann Grotesk";
+  src: url("/fonts/AltmannGrotesk-Medium.ttf") format("truetype");
+  font-weight: 400 700;
+  font-display: swap;
+}
 
 :root {
   /* PTL brand palette */
-  --ptl-lime: #c2ff00;
-  --ptl-lime-dark: #a8e000;
+  --ptl-lime: #BEFA40;
+  --ptl-lime-dark: #A9E62C;
   --ptl-black: #0a0a0a;
 
   --bg: #f6f7f9;
@@ -68,8 +75,8 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Altmann Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.45;
 }
@@ -122,14 +129,10 @@ a:hover { text-decoration: underline; }
 }
 .topbar .brand-logo {
   display: inline-block;
-  background: var(--ptl-lime);
-  color: var(--ptl-black);
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: -0.02em;
-  padding: 4px 10px 5px;
-  border-radius: 999px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  height: 2rem;
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
 }
 .topbar .brand-name {
   font-weight: 600;
@@ -145,13 +148,10 @@ a:hover { text-decoration: underline; }
 }
 .auth-brand .brand-logo {
   display: inline-block;
-  background: var(--ptl-lime);
-  color: var(--ptl-black);
-  font-weight: 800;
-  font-size: 15px;
-  letter-spacing: -0.02em;
-  padding: 4px 10px 5px;
-  border-radius: 999px;
+  height: 2rem;
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
 }
 .auth-brand .brand-name {
   font-weight: 600;
@@ -203,7 +203,7 @@ a:hover { text-decoration: underline; }
 .topbar nav a.active {
   color: var(--ptl-black);
   background: var(--ptl-lime);
-  box-shadow: 0 2px 8px rgba(194, 255, 0, 0.4), 0 1px 2px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(190, 250, 64, 0.4), 0 1px 2px rgba(0,0,0,0.06);
   font-weight: 600;
 }
 
@@ -486,7 +486,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   color: var(--ptl-black);
   border-color: var(--ptl-lime);
   margin-bottom: 0;
-  box-shadow: 0 1px 4px rgba(194, 255, 0, 0.3);
+  box-shadow: 0 1px 4px rgba(190, 250, 64, 0.3);
 }
 
 /* -------- organisation columns -------- */
@@ -604,7 +604,7 @@ dialog::backdrop {
 .ts-current-card.submitted {
   border-color: var(--ptl-lime);
   background: linear-gradient(135deg, #f3ffd6 0%, #f9ffe8 100%);
-  box-shadow: 0 0 20px rgba(194, 255, 0, 0.25);
+  box-shadow: 0 0 20px rgba(190, 250, 64, 0.25);
 }
 .ts-current-card.submitted h2 { color: #5a7a00; }
 
@@ -663,8 +663,8 @@ dialog::backdrop {
 .week-calendar td { padding: 18px 8px; text-align: center; font-size: 14px; }
 .week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); transition: background 0.15s; }
 .week-calendar tr.week-row:hover { background: var(--surface-alt); }
-.week-calendar tr.week-row.current-week { background: rgba(194, 255, 0, 0.12); font-weight: 600; }
-.week-calendar tr.week-row.current-week:hover { background: rgba(194, 255, 0, 0.22); }
+.week-calendar tr.week-row.current-week { background: rgba(190, 250, 64, 0.12); font-weight: 600; }
+.week-calendar tr.week-row.current-week:hover { background: rgba(190, 250, 64, 0.22); }
 .week-calendar tr.week-row.week-submitted { background: rgba(46, 125, 58, 0.06); }
 .week-calendar tr.week-row.week-submitted:hover { background: rgba(46, 125, 58, 0.12); }
 .week-calendar tr.week-row.week-draft { background: rgba(201, 144, 26, 0.06); }
@@ -778,7 +778,7 @@ dialog::backdrop {
 .ts-grid .hours-input:focus {
   outline: none;
   border-color: var(--ptl-lime-dark);
-  box-shadow: 0 0 0 3px rgba(194, 255, 0, 0.3);
+  box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3);
 }
 .ts-grid .desc-input {
   width: 100%;
@@ -789,7 +789,7 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
 }
-.ts-grid .desc-input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(194, 255, 0, 0.3); }
+.ts-grid .desc-input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3); }
 .ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
 .ts-grid .row-total { background: var(--surface-alt); }
 
@@ -805,7 +805,7 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
 }
-.ac-wrap input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(194, 255, 0, 0.3); }
+.ac-wrap input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3); }
 .ac-list {
   display: none;
   position: absolute;
@@ -1011,12 +1011,12 @@ details.card[open] > summary::before { content: "▾ "; }
   font-size: 28px;
   font-weight: 800;
   fill: var(--ptl-black);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Altmann Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .donut-pct {
   font-size: 14px;
   fill: var(--text-muted);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Altmann Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .dash-legend {
   display: flex;
@@ -1220,7 +1220,7 @@ details.card[open] > summary::before { content: "▾ "; }
 }
 .workflow-option:has(input:checked) {
   border-color: var(--ptl-lime);
-  background: rgba(194, 255, 0, 0.06);
+  background: rgba(190, 250, 64, 0.06);
 }
 .workflow-option input[type="radio"] {
   margin-top: 3px;
@@ -1265,7 +1265,7 @@ details.card[open] > summary::before { content: "▾ "; }
 .settings-check:hover { background: var(--surface-alt); }
 .settings-check:has(input:checked) {
   border-color: var(--ptl-lime);
-  background: rgba(194, 255, 0, 0.06);
+  background: rgba(190, 250, 64, 0.06);
 }
 .settings-check input[type="checkbox"] {
   margin-top: 3px;
@@ -1287,7 +1287,7 @@ button.primary {
 button.primary:hover {
   background: var(--ptl-lime-dark);
   border-color: var(--ptl-lime-dark);
-  box-shadow: 0 2px 8px rgba(194, 255, 0, 0.4);
+  box-shadow: 0 2px 8px rgba(190, 250, 64, 0.4);
 }
 
 /* -------- reduced motion -------- */

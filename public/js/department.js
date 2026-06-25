@@ -60,7 +60,7 @@ function renderDonut(container, submitted, total, label) {
     <h3 style="margin:0 0 12px;text-align:center">${escapeHtml(label)}</h3>
     <div class="donut-wrap">${donutSvg({ submitted, total })}</div>
     <div class="dash-legend">
-      <span class="legend-item"><span class="legend-dot" style="background:#c2ff00"></span> Submitted (${submitted})</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#BEFA40"></span> Submitted (${submitted})</span>
       <span class="legend-item"><span class="legend-dot" style="background:#e8e8e8;border:1px solid #ccc"></span> Pending (${total - submitted})</span>
     </div>
   `;
