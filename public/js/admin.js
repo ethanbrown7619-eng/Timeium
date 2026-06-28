@@ -924,10 +924,23 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
   const tsMap = {};
   for (const t of timesheets) tsMap[t.id] = { user_id: t.user_id, week_start: t.week_start };
 
-  const { data: entries } = await sb
-    .from("timesheet_entries")
-    .select("id, timesheet_id, job_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-    .in("timesheet_id", tsIds);
+  // Chunk the entries fetch — Supabase caps a single .in() select at
+  // 1000 rows by default, and the monthly salaried report pulls ~70
+  // staff × ~10 entries × ~5 weeks ≈ 3500 rows. Anything past the
+  // 1000th row gets silently dropped, which is how a sick-leave entry
+  // can sit on a real timesheet and never reach the report. A chunk
+  // of 50 timesheets keeps each request comfortably under 1000.
+  const ENTRY_CHUNK = 50;
+  const entries = [];
+  for (let i = 0; i < tsIds.length; i += ENTRY_CHUNK) {
+    const slice = tsIds.slice(i, i + ENTRY_CHUNK);
+    const { data: chunk, error } = await sb
+      .from("timesheet_entries")
+      .select("id, timesheet_id, job_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+      .in("timesheet_id", slice);
+    if (error) throw error;
+    if (chunk?.length) entries.push(...chunk);
+  }
 
   if (!entries?.length) return [];
 
