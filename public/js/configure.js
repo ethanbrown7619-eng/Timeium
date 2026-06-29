@@ -59,7 +59,7 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-settings").style.display   = activeTab === "settings"   ? "" : "none";
     document.getElementById("tab-xero").style.display       = activeTab === "xero"       ? "" : "none";
     if (activeTab === "stafftypes") loadSettings();
-    if (activeTab === "settings") { loadSettings(); loadHolidays(); loadXeroStatus(); }
+    if (activeTab === "settings") { loadSettings(); loadHolidays(); loadXeroStatus(); loadLeaveJobMapping(); }
     if (activeTab === "xero") loadXeroMapping();
   });
 });
@@ -1648,6 +1648,148 @@ document.getElementById("xero-disconnect-btn")?.addEventListener("click", discon
     history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
   }
 })();
+
+// ---------------------------------------------------------------------------
+// Leave Job Mapping (Settings tab) — links each is_leave job in
+// public.jobs to one of the org's seeded leave_types via
+// set_job_leave_type_mapping. Same shape as the Xero mapping above
+// but pointed at the local table.
+// ---------------------------------------------------------------------------
+
+let _leaveJobs = [];   // [{id, code, description, leave_type_id}]
+let _leaveTypes = [];  // [{id, code, name}]
+
+async function loadLeaveJobMapping() {
+  if (!currentOrgId) return;
+  const body = document.getElementById("leave-job-body");
+  if (!body) return;
+  body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
+  try {
+    const [jobsResp, typesResp] = await Promise.all([
+      sb.from("jobs")
+        .select("id, job_code, description, leave_type_id")
+        .eq("organisation_id", currentOrgId)
+        .eq("is_leave", true)
+        .order("job_code"),
+      sb.from("leave_types")
+        .select("id, code, name")
+        .eq("organisation_id", currentOrgId)
+        .eq("active", true)
+        .order("sort_order"),
+    ]);
+    if (jobsResp.error) throw jobsResp.error;
+    if (typesResp.error) throw typesResp.error;
+    _leaveJobs = jobsResp.data || [];
+    _leaveTypes = typesResp.data || [];
+    renderLeaveJobTable();
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small" style="color:#c00">${escapeHtml(err.message || "Failed to load")}</td></tr>`;
+  }
+}
+
+function leaveJobLabel(j) {
+  return j.description ? `${j.job_code} — ${j.description}` : j.job_code;
+}
+
+function renderLeaveJobTable() {
+  const body = document.getElementById("leave-job-body");
+  if (!body) return;
+  if (_leaveJobs.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small">No jobs flagged "Leave". Tick the Leave box on a job in the Jobs tab to make it mappable.</td></tr>`;
+    return;
+  }
+  if (_leaveTypes.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small">No leave types seeded for this org. Run seed_default_leave_types in Supabase or apply migration 126.</td></tr>`;
+    return;
+  }
+
+  const options = ['<option value="">— not mapped —</option>']
+    .concat(_leaveTypes.map((t) =>
+      `<option value="${escapeHtml(String(t.id))}">${escapeHtml(t.name)}</option>`
+    ))
+    .join("");
+
+  body.innerHTML = _leaveJobs.map((j) => {
+    const sel = j.leave_type_id != null ? String(j.leave_type_id) : "";
+    const mapped = _leaveTypes.find((t) => String(t.id) === sel);
+    const status = !sel
+      ? `<span class="muted small">unmapped</span>`
+      : mapped
+        ? `<span style="color:#080" class="small">linked to ${escapeHtml(mapped.name)}</span>`
+        : `<span style="color:#c00" class="small">stale id</span>`;
+    return `
+      <tr>
+        <td>${escapeHtml(leaveJobLabel(j))}</td>
+        <td>
+          <select data-job-id="${j.id}" class="leave-job-select" style="width:100%">
+            ${options.replace(`value="${escapeHtml(sel)}"`, `value="${escapeHtml(sel)}" selected`)}
+          </select>
+        </td>
+        <td>${status}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function normaliseLeaveName(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function autoMatchLeaveJobs() {
+  const byName = new Map();
+  const byCode = new Map();
+  for (const t of _leaveTypes) {
+    byName.set(normaliseLeaveName(t.name), t.id);
+    byCode.set(normaliseLeaveName(t.code), t.id);
+  }
+  let matched = 0;
+  for (const sel of document.querySelectorAll(".leave-job-select")) {
+    if (sel.value) continue;
+    const jobId = Number(sel.dataset.jobId);
+    const j = _leaveJobs.find((x) => x.id === jobId);
+    if (!j) continue;
+    const candidate =
+      byName.get(normaliseLeaveName(j.description)) ||
+      byCode.get(normaliseLeaveName(j.description)) ||
+      byName.get(normaliseLeaveName(j.job_code)) ||
+      byCode.get(normaliseLeaveName(j.job_code));
+    if (candidate) {
+      sel.value = String(candidate);
+      matched++;
+    }
+  }
+  notice(`Matched ${matched} job${matched === 1 ? "" : "s"} by name/code. Click Save to persist.`, "success");
+}
+
+async function saveLeaveJobMappings() {
+  const status = document.getElementById("leave-job-status");
+  status.textContent = "Saving…";
+  let saved = 0, errors = 0;
+  for (const sel of document.querySelectorAll(".leave-job-select")) {
+    const jobId = Number(sel.dataset.jobId);
+    const original = (_leaveJobs.find((j) => j.id === jobId)?.leave_type_id) || "";
+    const next = sel.value || null;
+    const same = (String(original || "") === String(next || ""));
+    if (same) continue;
+    try {
+      const { error } = await sb.rpc("set_job_leave_type_mapping", {
+        p_job_id: jobId,
+        p_leave_type_id: next ? Number(next) : null,
+      });
+      if (error) throw error;
+      saved++;
+    } catch (err) {
+      errors++;
+      console.error("Leave-job mapping save failed for job", jobId, err);
+    }
+  }
+  status.textContent = errors ? `Saved ${saved}, ${errors} failed.` : `Saved ${saved}.`;
+  notice(errors ? `${errors} mapping(s) failed — see console` : `Saved ${saved} mapping(s)`, errors ? "error" : "success");
+  await loadLeaveJobMapping();
+}
+
+document.getElementById("leave-job-automatch")?.addEventListener("click", autoMatchLeaveJobs);
+document.getElementById("leave-job-save")?.addEventListener("click", saveLeaveJobMappings);
 
 function reloadAll() {
   jobsCtl.load();

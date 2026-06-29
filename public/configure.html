@@ -541,6 +541,42 @@
       <!-- Settings tab                                                 -->
       <!-- ============================================================ -->
       <section id="tab-settings" class="tab-panel" style="display:none">
+        <!-- Leave Job Mapping
+             Each leave-flagged job (Configure → Jobs, "Leave" tick) must be
+             linked to one of the seeded leave types so the admin approval
+             of a leave request knows which job to populate on the timesheet.
+        -->
+        <div class="card" style="max-width:920px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Leave Job Mapping</h2>
+            <div class="grow"></div>
+            <button id="leave-job-automatch" type="button" class="ghost">Auto-match by name</button>
+          </div>
+          <p class="muted small" style="margin:0 0 12px">
+            Link each leave-flagged job to a leave type. The leave-request
+            approval flow uses this map to know which job to populate on
+            the timesheet when an admin approves a leave request.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Leave job</th>
+                  <th>Leave type</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="leave-job-body">
+                <tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-md row-flex" style="gap:8px;align-items:center">
+            <button id="leave-job-save" type="button">Save mappings</button>
+            <span id="leave-job-status" class="muted small"></span>
+          </div>
+        </div>
+
         <!-- Public Holidays -->
         <div class="card" style="max-width:640px">
           <div class="row-flex mb-md">
