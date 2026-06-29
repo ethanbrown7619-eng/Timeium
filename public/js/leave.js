@@ -147,14 +147,33 @@ function rowMenu(r) {
     </div>`;
 }
 
+function closeRowMenus() {
+  document.querySelectorAll("#leave-list-body .row-menu").forEach((m) => { m.hidden = true; });
+}
+
 function wireRowMenus() {
   document.querySelectorAll("#leave-list-body .row-menu-btn").forEach((btn) => {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       const menu = btn.parentElement.querySelector(".row-menu");
       const willOpen = menu.hidden;
-      document.querySelectorAll("#leave-list-body .row-menu").forEach((m) => { m.hidden = true; });
-      menu.hidden = !willOpen;
+      closeRowMenus();
+      if (!willOpen) return;
+      // The menu lives inside a table wrapper with overflow:auto, which
+      // clips an absolutely-positioned dropdown. Position it fixed,
+      // anchored to the button, so it floats above everything.
+      menu.hidden = false;
+      menu.style.position = "fixed";
+      const r = btn.getBoundingClientRect();
+      const left = Math.max(8, r.right - menu.offsetWidth);
+      // If the menu would overflow the bottom of the viewport, open it
+      // upward instead.
+      const top = (r.bottom + menu.offsetHeight > window.innerHeight - 8)
+        ? r.top - menu.offsetHeight
+        : r.bottom;
+      menu.style.top = `${Math.max(8, top)}px`;
+      menu.style.left = `${left}px`;
+      menu.style.right = "auto";
     });
   });
   document.querySelectorAll("#leave-list-body .row-menu-item").forEach((item) => {
@@ -162,9 +181,8 @@ function wireRowMenus() {
   });
 }
 
-document.addEventListener("click", () => {
-  document.querySelectorAll("#leave-list-body .row-menu").forEach((m) => { m.hidden = true; });
-});
+document.addEventListener("click", closeRowMenus);
+window.addEventListener("scroll", closeRowMenus, true);
 
 async function onMenuAction(act, id) {
   if (act === "cancel") {
