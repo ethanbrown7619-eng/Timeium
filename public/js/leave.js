@@ -8,7 +8,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
-  fmtDate, fmtHours, confirmDialog,
+  fmtDate, fmtHours, confirmDialog, promptDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -25,11 +25,32 @@ if (!employee) {
 }
 
 const currentOrgId = employee.organisation_id;
+const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
+const canReviewTeam = isManager || isAdminOrDev;
 
 renderTopbar({
   sb, session, isDeveloper, isManager, isClockViewer, adminRow,
   orgs: null, currentOrgId, onOrgChange: () => {},
   active: "leave",
+});
+
+// ---------------------------------------------------------------- tabs
+
+// The Team Requests tab only exists for people who manage a department
+// (or admins). A pure employee never sees it.
+if (canReviewTeam) {
+  document.getElementById("leave-team-tab").style.display = "";
+}
+
+document.querySelectorAll("[data-leave-tab]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-leave-tab]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.leaveTab;
+    document.getElementById("leave-tab-mine").style.display = tab === "mine" ? "" : "none";
+    document.getElementById("leave-tab-team").style.display = tab === "team" ? "" : "none";
+    if (tab === "team") loadTeamRequests();
+  });
 });
 
 // ---------------------------------------------------------------- data
@@ -178,7 +199,109 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+// ---------------------------------------------------------------- team review
+
+function setTeamCountBadge(n) {
+  const badge = document.getElementById("leave-team-count");
+  if (!badge) return;
+  if (n > 0) { badge.textContent = String(n); badge.style.display = ""; }
+  else { badge.style.display = "none"; }
+}
+
+function teamDateRange(r) {
+  return r.start_date === r.end_date ? r.start_date : `${r.start_date} → ${r.end_date}`;
+}
+
+async function loadTeamRequests() {
+  await Promise.all([loadTeamPending(), loadTeamForwarded()]);
+}
+
+// pending_manager requests for the caller's managed team. Read via the
+// SECURITY DEFINER RPC (migration 130) because RLS won't show other
+// people's requests to a non-admin department lead.
+async function loadTeamPending() {
+  const body = document.getElementById("team-pending-body");
+  if (!body) return;
+  const { data, error } = await sb.rpc("list_team_leave_requests", {
+    p_org_id: currentOrgId,
+    p_status: "pending_manager",
+  });
+  if (error) {
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    return;
+  }
+  const rows = data || [];
+  setTeamCountBadge(rows.length);
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => `
+    <tr data-id="${r.id}">
+      <td>${escapeHtml(r.employee_name || "")}</td>
+      <td>${escapeHtml(r.leave_type_name || "")}</td>
+      <td class="small">${teamDateRange(r)}</td>
+      <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td style="white-space:nowrap">
+        <button class="small approve-tr-btn">Approve</button>
+        <button class="ghost small reject-tr-btn">Reject</button>
+      </td>
+    </tr>`).join("");
+
+  body.querySelectorAll(".approve-tr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Approve leave", message: "Approve this request and send it to an admin for final sign-off?", confirmText: "Approve" })) return;
+      const { error: e } = await sb.rpc("manager_approve_leave_request", { p_request_id: id, p_note: null });
+      if (e) return notice(e.message, "error");
+      notice("Approved — sent to admin for final sign-off", "success");
+      await loadTeamRequests();
+    });
+  });
+  body.querySelectorAll(".reject-tr-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      const note = await promptDialog({ title: "Reject leave", message: "Reason for rejection (optional):" }) || null;
+      const { error: e } = await sb.rpc("manager_reject_leave_request", { p_request_id: id, p_note: note });
+      if (e) return notice(e.message, "error");
+      notice("Leave request rejected", "success");
+      await loadTeamRequests();
+    });
+  });
+}
+
+// pending_admin requests this manager already forwarded — read-only.
+async function loadTeamForwarded() {
+  const body = document.getElementById("team-forwarded-body");
+  if (!body) return;
+  const { data, error } = await sb.rpc("list_team_leave_requests", {
+    p_org_id: currentOrgId,
+    p_status: "pending_admin",
+  });
+  if (error) {
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    return;
+  }
+  const rows = data || [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.employee_name || "")}</td>
+      <td>${escapeHtml(r.leave_type_name || "")}</td>
+      <td class="small">${teamDateRange(r)}</td>
+      <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+    </tr>`).join("");
+}
+
 // ---------------------------------------------------------------- init
 
 await loadLeaveTypes();
 await loadRequests();
+// Pre-load the team pending count so the badge shows on first paint even
+// while the My Requests tab is active.
+if (canReviewTeam) loadTeamPending();

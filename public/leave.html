@@ -16,33 +16,99 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="row-flex mb-md">
-        <h2 style="margin:0">My Leave</h2>
-        <div class="grow"></div>
-        <button id="open-request-btn" class="primary">+ Request leave</button>
+      <h2 style="margin:0 0 12px">Leave</h2>
+
+      <div class="tabs">
+        <button class="tab active" data-leave-tab="mine">My Requests</button>
+        <button class="tab" data-leave-tab="team" id="leave-team-tab" style="display:none">
+          Team Requests<span id="leave-team-count" class="leave-count-badge" style="display:none"></span>
+        </button>
       </div>
 
-      <div class="card">
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>From</th>
-                <th>To</th>
-                <th class="num">Hours / day</th>
-                <th>Status</th>
-                <th>Reason</th>
-                <th>Submitted</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="leave-list-body">
-              <tr><td colspan="8" class="muted small" style="text-align:center;padding:24px">Loading…</td></tr>
-            </tbody>
-          </table>
+      <!-- ============================================================ -->
+      <!-- My Requests tab                                              -->
+      <!-- ============================================================ -->
+      <section id="leave-tab-mine" class="tab-panel">
+        <div class="row-flex mb-md">
+          <div class="grow"></div>
+          <button id="open-request-btn" class="primary">+ Request leave</button>
         </div>
-      </div>
+
+        <div class="card">
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th class="num">Hours / day</th>
+                  <th>Status</th>
+                  <th>Reason</th>
+                  <th>Submitted</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="leave-list-body">
+                <tr><td colspan="8" class="muted small" style="text-align:center;padding:24px">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Team Requests tab (managers only)                            -->
+      <!-- ============================================================ -->
+      <section id="leave-tab-team" class="tab-panel" style="display:none">
+        <div class="card">
+          <h3 style="margin:0 0 4px">Pending your review</h3>
+          <p class="muted small" style="margin:0 0 12px">
+            Approve to send to an admin for final sign-off, or reject to send
+            it back to the employee.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="team-pending-body">
+                <tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 4px">Forwarded to admin</h3>
+          <p class="muted small" style="margin:0 0 12px">
+            You've approved these — they're awaiting an admin's final sign-off.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="team-forwarded-body">
+                <tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Request modal — opened by the "Request leave" button. The
