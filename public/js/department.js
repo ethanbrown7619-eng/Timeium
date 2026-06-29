@@ -51,6 +51,18 @@ renderTopbar({
   active: "department",
 });
 
+/* ---------------------------------------------------------------- tabs */
+
+document.querySelectorAll("[data-dept-tab]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-dept-tab]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.deptTab;
+    document.getElementById("dept-tab-dashboard").style.display = tab === "dashboard" ? "" : "none";
+    document.getElementById("dept-tab-leave").style.display     = tab === "leave"     ? "" : "none";
+  });
+});
+
 /* ---------------------------------------------------------------- helpers */
 
 function renderDonut(container, submitted, total, label) {
@@ -277,10 +289,12 @@ async function loadDashboard(signal) {
     btn.addEventListener("click", () => decide(Number(btn.dataset.tsId), "rejected"));
   });
 
-  // Load pending + approved leave requests for the team
+  // Load the three leave sections for the team.
+  const teamIdsArr = myTeam.map((e) => e.id);
   await Promise.all([
-    loadPendingLeaveRequests(myTeam.map((e) => e.id)),
-    loadApprovedLeaveRequests(myTeam.map((e) => e.id)),
+    loadPendingLeaveRequests(teamIdsArr),
+    loadForwardedLeaveRequests(teamIdsArr),
+    loadApprovedLeaveRequests(teamIdsArr),
   ]);
 }
 
@@ -411,30 +425,50 @@ document.getElementById("edit-leave-form")?.addEventListener("submit", async (e)
   await loadDashboard();
 });
 
+function setLeaveCountBadge(n) {
+  const badge = document.getElementById("dept-leave-count");
+  if (!badge) return;
+  if (n > 0) {
+    badge.textContent = String(n);
+    badge.style.display = "";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+// Step 1 of the two-step flow: requests at pending_manager for this
+// manager's team. Approving bumps to pending_admin (manager_approve_*),
+// rejecting bumps to rejected (manager_reject_*). The timesheet is NOT
+// populated here — that only happens at the final admin approval.
 async function loadPendingLeaveRequests(teamUserIds) {
-  const card = document.getElementById("leave-requests-card");
   const body = document.getElementById("pending-leave-body");
-  if (!card) return;
+  if (!body) return;
 
   if (!teamUserIds?.length) {
-    card.style.display = "none";
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No employees in your departments.</td></tr>`;
+    setLeaveCountBadge(0);
     return;
   }
 
-  const { data } = await sb
+  const { data, error } = await sb
     .from("leave_requests")
     .select("id, user_id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, users(name), leave_types(name)")
     .eq("organisation_id", currentOrgId)
-    .eq("status", "pending")
+    .eq("status", "pending_manager")
     .in("user_id", teamUserIds)
     .order("created_at");
 
+  if (error) {
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    return;
+  }
   if (!data?.length) {
-    card.style.display = "none";
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
+    setLeaveCountBadge(0);
     return;
   }
 
-  card.style.display = "";
+  setLeaveCountBadge(data.length);
   body.innerHTML = data.map((r) => {
     const dateRange = r.start_date === r.end_date
       ? r.start_date
@@ -446,10 +480,8 @@ async function loadPendingLeaveRequests(teamUserIds) {
       <td class="num">${r.hours_per_day}</td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
       <td style="white-space:nowrap">
-        ${canActOnLeave ? `
-          <button class="small approve-lr-btn">Approve</button>
-          <button class="ghost small reject-lr-btn">Reject</button>
-        ` : `<span class="small muted">Awaiting manager</span>`}
+        <button class="small approve-lr-btn">Approve</button>
+        <button class="ghost small reject-lr-btn">Reject</button>
       </td>
     </tr>`;
   }).join("");
@@ -457,11 +489,10 @@ async function loadPendingLeaveRequests(teamUserIds) {
   body.querySelectorAll(".approve-lr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!await confirmDialog({ title: "Approve leave", message: "Approve this leave request? The timesheet will be populated automatically.", confirmText: "Approve" })) return;
-      const { error } = await sb.rpc("approve_leave_request", { p_request_id: id, p_note: null });
+      if (!await confirmDialog({ title: "Approve leave", message: "Approve this request and send it to an admin for final sign-off?", confirmText: "Approve" })) return;
+      const { error } = await sb.rpc("manager_approve_leave_request", { p_request_id: id, p_note: null });
       if (error) return notice(error.message, "error");
-      notice("Leave approved and timesheet populated", "success");
-      invalidateWeekDashboard(currentOrgId);
+      notice("Approved — sent to admin for final sign-off", "success");
       await loadDashboard();
     });
   });
@@ -470,13 +501,49 @@ async function loadPendingLeaveRequests(teamUserIds) {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
       const note = await promptDialog({ title: "Reject leave", message: "Reason for rejection (optional):" }) || null;
-      const { error } = await sb.rpc("reject_leave_request", { p_request_id: id, p_note: note });
+      const { error } = await sb.rpc("manager_reject_leave_request", { p_request_id: id, p_note: note });
       if (error) return notice(error.message, "error");
-      notice("Leave rejected", "success");
-      invalidateWeekDashboard(currentOrgId);
+      notice("Leave request rejected", "success");
       await loadDashboard();
     });
   });
+}
+
+// Read-only: requests this manager already approved that are now waiting
+// on an admin. Gives the manager visibility into what they've forwarded.
+async function loadForwardedLeaveRequests(teamUserIds) {
+  const body = document.getElementById("forwarded-leave-body");
+  if (!body) return;
+  if (!teamUserIds?.length) {
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">—</td></tr>`;
+    return;
+  }
+
+  const { data } = await sb
+    .from("leave_requests")
+    .select("id, start_date, end_date, hours_per_day, reason, users(name), leave_types(name)")
+    .eq("organisation_id", currentOrgId)
+    .eq("status", "pending_admin")
+    .in("user_id", teamUserIds)
+    .order("created_at");
+
+  if (!data?.length) {
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = data.map((r) => {
+    const dateRange = r.start_date === r.end_date
+      ? r.start_date
+      : `${r.start_date} → ${r.end_date}`;
+    return `<tr>
+      <td>${escapeHtml(r.users?.name || "")}</td>
+      <td>${escapeHtml(r.leave_types?.name || "")}</td>
+      <td class="small">${dateRange}</td>
+      <td class="num">${r.hours_per_day}</td>
+      <td class="small muted">${escapeHtml(r.reason || "")}</td>
+    </tr>`;
+  }).join("");
 }
 
 await loadOrgSettings();

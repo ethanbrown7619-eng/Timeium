@@ -1088,6 +1088,23 @@ details.card[open] > summary::before { content: "▾ "; }
 .dept-badge-rejected { background: var(--danger-bg); color: var(--danger); }
 .dept-badge-rejected::before { background: var(--danger); }
 
+/* Count badge on the Leave Requests tab — small pill showing how many
+   requests are waiting on this manager's review. */
+.leave-count-badge {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: middle;
+}
+
 /* -------- timesheet row actions (3-dot menu) -------- */
 
 .row-actions-cell { white-space: nowrap; text-align: center; }

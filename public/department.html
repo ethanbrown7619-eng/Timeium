@@ -16,52 +16,119 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <h2 style="margin:0 0 4px" id="page-title">My Departments</h2>
-      <div class="row-flex mb-md">
-        <button class="ghost" id="dept-prev">←</button>
-        <h3 id="mgr-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
-        <button class="ghost" id="dept-next">→</button>
+      <h2 style="margin:0 0 12px" id="page-title">My Departments</h2>
+
+      <div class="tabs">
+        <button class="tab active" data-dept-tab="dashboard">Dashboard</button>
+        <button class="tab" data-dept-tab="leave">
+          Leave Requests<span id="dept-leave-count" class="leave-count-badge" style="display:none"></span>
+        </button>
       </div>
 
-      <div class="dash-charts" id="dept-donuts"></div>
-
-      <div class="card" id="leave-requests-card" style="display:none">
-        <h3 style="margin:0 0 12px">Pending Leave Requests</h3>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Type</th>
-                <th>Dates</th>
-                <th class="num">Hours/day</th>
-                <th>Reason</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="pending-leave-body"></tbody>
-          </table>
+      <!-- ============================================================ -->
+      <!-- Dashboard tab                                                -->
+      <!-- ============================================================ -->
+      <section id="dept-tab-dashboard" class="tab-panel">
+        <div class="row-flex mb-md">
+          <button class="ghost" id="dept-prev">←</button>
+          <h3 id="mgr-week-label" style="margin:0;min-width:240px;text-align:center"></h3>
+          <button class="ghost" id="dept-next">→</button>
         </div>
-      </div>
 
-      <div class="card" id="approved-leave-card" style="display:none">
-        <h3 style="margin:0 0 12px">Approved Leave</h3>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Type</th>
-                <th>Dates</th>
-                <th class="num">Hours/day</th>
-                <th>Reason</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="approved-leave-body"></tbody>
-          </table>
+        <div class="dash-charts" id="dept-donuts"></div>
+
+        <div class="card">
+          <h3 style="margin:0 0 12px" id="emp-table-title">Employees</h3>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Status</th>
+                  <th>Hours</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="mgr-emp-body">
+                <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Leave Requests tab                                           -->
+      <!-- ============================================================ -->
+      <section id="dept-tab-leave" class="tab-panel" style="display:none">
+        <div class="card">
+          <h3 style="margin:0 0 4px">Pending your review</h3>
+          <p class="muted small" style="margin:0 0 12px">
+            Approve to send to an admin for final sign-off, or reject to send
+            it back to the employee.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="pending-leave-body">
+                <tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 4px">Forwarded to admin</h3>
+          <p class="muted small" style="margin:0 0 12px">
+            You've approved these — they're awaiting an admin's final sign-off.
+          </p>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="forwarded-leave-body">
+                <tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" id="approved-leave-card" style="display:none">
+          <h3 style="margin:0 0 12px">Approved Leave (upcoming)</h3>
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="approved-leave-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
       <dialog id="edit-leave-dialog">
         <form id="edit-leave-form" style="padding:20px;width:min(95vw,420px)">
@@ -107,26 +174,6 @@
           </div>
         </form>
       </dialog>
-
-      <div class="card">
-        <h3 style="margin:0 0 12px" id="emp-table-title">Employees</h3>
-        <div style="overflow-x:auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Department</th>
-                <th>Status</th>
-                <th>Hours</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="mgr-emp-body">
-              <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </main>
 
     <script type="module" src="/js/department.js"></script>
