@@ -18,22 +18,21 @@
 
       <h2 style="margin:0 0 12px">Leave</h2>
 
-      <div class="tabs">
-        <button class="tab active" data-leave-tab="mine">My Requests</button>
-        <button class="tab" data-leave-tab="team" id="leave-team-tab" style="display:none">
-          Team Requests<span id="leave-team-count" class="leave-count-badge" style="display:none"></span>
-        </button>
+      <div class="row-flex" style="align-items:flex-end">
+        <div class="tabs" style="margin-bottom:0">
+          <button class="tab active" data-leave-tab="mine">My Requests</button>
+          <button class="tab" data-leave-tab="team" id="leave-team-tab" style="display:none">
+            Team Requests<span id="leave-team-count" class="leave-count-badge" style="display:none"></span>
+          </button>
+        </div>
+        <div class="grow"></div>
+        <button id="open-request-btn" class="primary" style="margin-bottom:8px">+ Request leave</button>
       </div>
 
       <!-- ============================================================ -->
       <!-- My Requests tab                                              -->
       <!-- ============================================================ -->
       <section id="leave-tab-mine" class="tab-panel">
-        <div class="row-flex mb-md">
-          <div class="grow"></div>
-          <button id="open-request-btn" class="primary">+ Request leave</button>
-        </div>
-
         <div class="card">
           <div style="overflow-x:auto">
             <table>
