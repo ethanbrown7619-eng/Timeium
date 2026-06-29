@@ -45,10 +45,13 @@
       </div>
     </main>
 
-    <!-- Request modal — opened by the "Request leave" button. -->
-    <dialog id="request-dialog" class="dialog">
-      <form id="request-form" method="dialog">
-        <h3 style="margin:0 0 12px">Request leave</h3>
+    <!-- Request modal — opened by the "Request leave" button. The
+         inner wrapper supplies the padding + width-cap that the native
+         <dialog> CSS leaves off (matches the convention used by every
+         other dialog in this app — see timesheet.html). -->
+    <dialog id="request-dialog">
+      <form id="request-form" style="padding:24px;width:min(95vw,520px)">
+        <h2 style="margin:0 0 16px">Request leave</h2>
 
         <div class="mb-sm">
           <label for="req-type">Leave type</label>
@@ -84,7 +87,7 @@
           <textarea id="req-reason" rows="3" style="width:100%" placeholder="e.g. family event, medical appointment, holiday"></textarea>
         </div>
 
-        <div class="row-flex" style="gap:8px;justify-content:flex-end">
+        <div class="row-flex mt-md" style="gap:8px;justify-content:flex-end">
           <button type="button" id="req-cancel-btn" class="ghost">Cancel</button>
           <button type="submit" id="req-submit-btn" class="primary">Submit request</button>
         </div>
