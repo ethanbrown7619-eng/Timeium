@@ -1702,7 +1702,7 @@ async function loadLeaveJobMapping() {
   }
 }
 
-function leaveJobLabel(j) {
+function leaveTypeJobLabel(j) {
   return j.description ? `${j.job_code} — ${j.description}` : j.job_code;
 }
 
@@ -1734,7 +1734,7 @@ function renderLeaveJobTable() {
         : `<span style="color:#c00" class="small">stale id</span>`;
     return `
       <tr>
-        <td>${escapeHtml(leaveJobLabel(j))}</td>
+        <td>${escapeHtml(leaveTypeJobLabel(j))}</td>
         <td>
           <select data-job-id="${j.id}" class="leave-job-select" style="width:100%">
             ${options.replace(`value="${escapeHtml(sel)}"`, `value="${escapeHtml(sel)}" selected`)}
