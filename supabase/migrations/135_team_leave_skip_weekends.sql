@@ -6,6 +6,10 @@
 --
 -- Safe to re-run.
 
+-- Adding skip_weekends changes the function's return columns, and
+-- create-or-replace can't alter a function's return type — drop first.
+drop function if exists public.list_team_leave_requests(bigint, text);
+
 create or replace function public.list_team_leave_requests(
     p_org_id bigint,
     p_status text
