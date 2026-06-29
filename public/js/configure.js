@@ -84,6 +84,7 @@ function makeController(kind) {
 
   const state = {
     rows: [],
+    totalCount: 0,
     filter: { search: "", status: "" },
     page: 1,
     subView: "view",
@@ -105,46 +106,68 @@ function makeController(kind) {
     });
   });
 
-  // Filters
+  // Filters. Both search and status now re-query the server — the
+  // list isn't loaded in bulk anymore so we can't filter client-side.
+  // Search input is debounced so typing fast doesn't fire a query
+  // per keystroke.
+  let searchTimer = null;
   document.getElementById(`${prefix}-search`).addEventListener("input", (e) => {
-    state.filter.search = e.target.value.trim().toLowerCase();
+    state.filter.search = e.target.value.trim();
     state.page = 1;
-    renderList();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => load(), 200);
   });
   const statusFilterEl = document.getElementById(`${prefix}-status-filter`);
   if (statusFilterEl) {
     statusFilterEl.addEventListener("change", (e) => {
       state.filter.status = e.target.value;
       state.page = 1;
-      renderList();
+      load();
     });
   }
 
+  const PER_PAGE = 15;
+
+  // Server-paginated loader. Each call fetches a single page based on
+  // state.page, state.filter.search, state.filter.status. Bulk-loading
+  // everything client-side (the previous approach) doesn't scale —
+  // PTL has 6000+ jobs synced from Infusion and the bulk fetch took
+  // multiple seconds before anything rendered. The list view isn't
+  // for browsing — the search box is the primary way to find a job.
   async function load() {
     if (!currentOrgId) return;
+    const body = document.getElementById(`${prefix}-body`);
+    if (body) {
+      const colCount = kind === "jobs" ? 7 : (c.hasStatus ? 6 : 5);
+      body.innerHTML = `<tr><td colspan="${colCount}" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
+    }
     try {
-      const PAGE = 1000;
-      let all = [];
-      let from = 0;
-      while (true) {
-        const { data, error } = await sb
-          .from(table)
-          .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`)
-          .eq("organisation_id", currentOrgId)
-          .order(codeField, { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        all = all.concat(data || []);
-        if (!data || data.length < PAGE) break;
-        from += PAGE;
+      let query = sb
+        .from(table)
+        .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`, { count: "exact" })
+        .eq("organisation_id", currentOrgId);
+
+      if (state.filter.status) {
+        query = query.eq("status", state.filter.status);
       }
-      state.rows = all;
-      state.rows.sort((a, b) => {
-        const aActive = a.status === "ACTIVE" ? 0 : 1;
-        const bActive = b.status === "ACTIVE" ? 0 : 1;
-        if (aActive !== bActive) return aActive - bActive;
-        return String(a[codeField]).localeCompare(String(b[codeField]));
-      });
+      if (state.filter.search) {
+        // Match either the code or the description (case-insensitive).
+        // .or() needs the value escaped of commas; we trust the input
+        // box won't contain ones, and ilike is the safer matching mode
+        // (no SQL injection via PostgREST since it's parametric).
+        const s = state.filter.search.replace(/[%,()]/g, " ");
+        query = query.or(`${codeField}.ilike.%${s}%,description.ilike.%${s}%`);
+      }
+
+      const from = (state.page - 1) * PER_PAGE;
+      const { data, count, error } = await query
+        .order("status", { ascending: true })  // ACTIVE/etc grouped together
+        .order(codeField, { ascending: true })
+        .range(from, from + PER_PAGE - 1);
+      if (error) throw error;
+
+      state.rows = data || [];
+      state.totalCount = count || 0;
       renderList();
     } catch (err) {
       console.error(err);
@@ -152,28 +175,17 @@ function makeController(kind) {
     }
   }
 
-  const PER_PAGE = 200;
-
   function renderList() {
     const body = document.getElementById(`${prefix}-body`);
     const paginationEl = document.getElementById(`${prefix}-pagination`);
-    const filtered = state.rows.filter((r) => {
-      if (state.filter.status && r.status !== state.filter.status) return false;
-      if (!state.filter.search) return true;
-      const q = state.filter.search;
-      return (
-        String(r[codeField]).toLowerCase().includes(q) ||
-        (r.description || "").toLowerCase().includes(q)
-      );
-    });
-
-    const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+    // state.rows is the server-returned page already; no client-side
+    // filtering happens here (the server applied search + status).
+    const pageRows = state.rows;
+    const totalPages = Math.max(1, Math.ceil(state.totalCount / PER_PAGE));
     if (state.page > totalPages) state.page = totalPages;
-    const start = (state.page - 1) * PER_PAGE;
-    const pageRows = filtered.slice(start, start + PER_PAGE);
 
     document.getElementById(`${prefix}-summary`).textContent =
-      `${filtered.length} total · page ${state.page} of ${totalPages}`;
+      `${state.totalCount} total · page ${state.page} of ${totalPages}`;
 
     const colCount = kind === "jobs" ? 7 : (c.hasStatus ? 6 : 5);
     if (!pageRows.length) {
@@ -214,10 +226,10 @@ function makeController(kind) {
         <button class="ghost" id="${prefix}-next" ${state.page >= totalPages ? "disabled" : ""}>Next →</button>
       `;
       document.getElementById(`${prefix}-prev`)?.addEventListener("click", () => {
-        if (state.page > 1) { state.page--; renderList(); }
+        if (state.page > 1) { state.page--; load(); }
       });
       document.getElementById(`${prefix}-next`)?.addEventListener("click", () => {
-        if (state.page < totalPages) { state.page++; renderList(); }
+        if (state.page < totalPages) { state.page++; load(); }
       });
     } else {
       paginationEl.innerHTML = "";
@@ -267,8 +279,10 @@ function makeController(kind) {
         try {
           const { error } = await sb.from(table).delete().eq("id", id);
           if (error) throw error;
-          state.rows = state.rows.filter((x) => x.id !== id);
-          renderList();
+          // Re-fetch instead of splicing — the page count may have
+          // changed and a server-paginated list can't infer the next
+          // visible row without going back to the source.
+          await load();
           notice("Deleted", "success");
         } catch (err) {
           notice(err.message || "Delete failed", "error");
