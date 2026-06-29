@@ -1841,20 +1841,37 @@ function adminLeaveStatusBadge(status) {
   }
 }
 
+// Sub-tab: "approvals" (pending_admin action queue) | "all" (history).
+let alSubView = "approvals";
+
+document.querySelectorAll("[data-al-view]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-al-view]").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    alSubView = btn.dataset.alView;
+    // The status filter only makes sense on the All Requests view.
+    document.getElementById("al-filter-row").style.display = alSubView === "all" ? "" : "none";
+    loadAdminLeave();
+  });
+});
+
 async function loadAdminLeave() {
   const body = document.getElementById("admin-leave-body");
   const filterEl = document.getElementById("admin-leave-filter");
-  const badge = document.getElementById("admin-leave-count");
   if (!body || !currentOrgId) return;
-  const filter = filterEl?.value || "needs_action";
   body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
 
   let query = sb.from("leave_requests")
     .select("id, start_date, end_date, hours_per_day, reason, status, manager_review_note, review_note, created_at, users(name), leave_types(name)")
     .eq("organisation_id", currentOrgId);
 
-  if (filter === "needs_action")  query = query.eq("status", "pending_admin");
-  else if (filter !== "all")      query = query.eq("status", filter);
+  if (alSubView === "approvals") {
+    // Action queue — only what's waiting on the admin.
+    query = query.eq("status", "pending_admin");
+  } else {
+    const filter = filterEl?.value || "all";
+    if (filter !== "all") query = query.eq("status", filter);
+  }
 
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) {
@@ -1862,13 +1879,16 @@ async function loadAdminLeave() {
     return;
   }
 
-  // Count of items needing admin action drives the tab badge — fetched
-  // separately so the badge is right regardless of the active filter.
-  void refreshAdminLeaveBadge(badge);
+  // Count of items needing admin action drives the badges — fetched
+  // separately so they're right regardless of the active sub-view.
+  void refreshAdminLeaveBadge();
 
   const rows = data || [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No leave requests match this filter.</td></tr>`;
+    const msg = alSubView === "approvals"
+      ? "Nothing awaiting your approval. 🎉"
+      : "No leave requests match this filter.";
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">${msg}</td></tr>`;
     return;
   }
 
@@ -1919,14 +1939,22 @@ async function loadAdminLeave() {
   });
 }
 
-async function refreshAdminLeaveBadge(badge) {
-  if (!badge) return;
+// Updates both the main "Leave" tab badge and the "Awaiting approval"
+// sub-tab badge with the count of pending_admin requests. The `badge`
+// param is ignored beyond back-compat — both elements are looked up
+// fresh each call.
+async function refreshAdminLeaveBadge() {
   const { count } = await sb.from("leave_requests")
     .select("id", { count: "exact", head: true })
     .eq("organisation_id", currentOrgId)
     .eq("status", "pending_admin");
-  if (count > 0) { badge.textContent = String(count); badge.style.display = ""; }
-  else { badge.style.display = "none"; }
+  const n = count || 0;
+  for (const id of ["admin-leave-count", "al-approvals-count"]) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (n > 0) { el.textContent = String(n); el.style.display = ""; }
+    else { el.style.display = "none"; }
+  }
 }
 
 document.getElementById("admin-leave-filter")?.addEventListener("change", loadAdminLeave);
@@ -1938,4 +1966,4 @@ loadOrgSettings().then(() => navLoadInfusionStatus());
 applyActiveTab();
 // Populate the Leave tab badge on first load regardless of which tab is
 // active, so an admin landing on Dashboard still sees a pending count.
-refreshAdminLeaveBadge(document.getElementById("admin-leave-count"));
+refreshAdminLeaveBadge();

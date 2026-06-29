@@ -193,16 +193,23 @@
         <h2 style="margin:0 0 4px">Leave Requests</h2>
         <p class="muted mb-md">Final approval populates the employee's timesheet with the leave hours.</p>
 
+        <div class="tabs sub" id="al-sub-tabs">
+          <button class="tab active" data-al-view="approvals">
+            Awaiting approval<span id="al-approvals-count" class="leave-count-badge" style="display:none"></span>
+          </button>
+          <button class="tab" data-al-view="all">All requests</button>
+        </div>
+
         <div class="card">
-          <div class="row-flex mb-md" style="gap:8px">
+          <div class="row-flex mb-md" id="al-filter-row" style="gap:8px;display:none">
             <label for="admin-leave-filter" style="margin:0">Show</label>
             <select id="admin-leave-filter" style="width:220px">
-              <option value="needs_action">Needs admin action</option>
+              <option value="all">All requests</option>
               <option value="pending_manager">Pending manager</option>
+              <option value="pending_admin">Pending admin</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
               <option value="cancelled">Cancelled</option>
-              <option value="all">All requests</option>
             </select>
             <div class="grow"></div>
             <button id="admin-leave-refresh" class="ghost small">↻ Refresh</button>
