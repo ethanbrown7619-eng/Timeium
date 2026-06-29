@@ -142,26 +142,27 @@ function makeController(kind) {
       body.innerHTML = `<tr><td colspan="${colCount}" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
     }
     try {
+      // count: "planned" uses Postgres's query-planner estimate
+      // instead of running a real COUNT(*) — needed because COUNT(*)
+      // re-evaluates the row-level-security policy for every row, and
+      // PTL's jobs RLS has nested EXISTS subqueries that turn a count
+      // over 6000 rows into a multi-second hang. The planner estimate
+      // is close enough for "Page X of Y" pagination.
       let query = sb
         .from(table)
-        .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`, { count: "exact" })
+        .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`, { count: "planned" })
         .eq("organisation_id", currentOrgId);
 
       if (state.filter.status) {
         query = query.eq("status", state.filter.status);
       }
       if (state.filter.search) {
-        // Match either the code or the description (case-insensitive).
-        // .or() needs the value escaped of commas; we trust the input
-        // box won't contain ones, and ilike is the safer matching mode
-        // (no SQL injection via PostgREST since it's parametric).
         const s = state.filter.search.replace(/[%,()]/g, " ");
         query = query.or(`${codeField}.ilike.%${s}%,description.ilike.%${s}%`);
       }
 
       const from = (state.page - 1) * PER_PAGE;
       const { data, count, error } = await query
-        .order("status", { ascending: true })  // ACTIVE/etc grouped together
         .order(codeField, { ascending: true })
         .range(from, from + PER_PAGE - 1);
       if (error) throw error;
