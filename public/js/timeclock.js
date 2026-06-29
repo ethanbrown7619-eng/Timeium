@@ -108,17 +108,20 @@ function startLivePresence() {
 
 document.getElementById("tc-live-refresh")?.addEventListener("click", () => refreshLive());
 
-// Status values come from public.org_live_status (Attendium) plus our
-// own "not_clocked_in" sentinel injected client-side for active staff
-// who don't appear in the RPC result (i.e. they haven't started a
-// shift today). The base RPC statuses are exhaustively:
-//   on_site | off_site_job | off_site_break | clocked_out_early.
-function liveStatusLabel(s, breakName) {
+// Status values come from public.org_live_status (Attendium) plus two
+// client-side sentinels: "on_leave" (active approved leave for today,
+// label carries the leave type) and "not_clocked_in" (active staff with
+// no shift today and not on leave). The base RPC statuses are
+// exhaustively: on_site | off_site_job | off_site_break | clocked_out_early.
+// The second arg carries break name for off_site_break, or the leave
+// type name for on_leave.
+function liveStatusLabel(s, detail) {
   switch ((s || "").toLowerCase()) {
     case "on_site":            return { label: "On site",                                               cls: "onsite"  };
     case "off_site_job":       return { label: "Off site (job)",                                        cls: "offsite" };
-    case "off_site_break":     return { label: breakName ? `Off site break (${breakName})` : "Off site break", cls: "break"   };
+    case "off_site_break":     return { label: detail ? `Off site break (${detail})` : "Off site break", cls: "break"   };
     case "clocked_out_early":  return { label: "Clocked out early",                                     cls: "away"    };
+    case "on_leave":           return { label: detail || "On leave",                                    cls: "leave"   };
     case "not_clocked_in":     return { label: "Not clocked in",                                        cls: "absent"  };
     default:                   return { label: s || "—",                                                cls: "away"    };
   }
@@ -183,8 +186,9 @@ function liveStatusRank(s) {
     case "off_site_job":      return 1;
     case "off_site_break":    return 2;
     case "clocked_out_early": return 3;
-    case "not_clocked_in":    return 4;
-    default:                  return 5;
+    case "on_leave":          return 4;
+    case "not_clocked_in":    return 5;
+    default:                  return 6;
   }
 }
 
@@ -219,7 +223,8 @@ function renderLiveTable() {
   });
 
   body.innerHTML = sorted.map((r) => {
-    const { label, cls } = liveStatusLabel(r.status, r.break_name);
+    const detail = r.status === "on_leave" ? r.leave_type : r.break_name;
+    const { label, cls } = liveStatusLabel(r.status, detail);
     return `<tr>
       <td><span class="tc-live-pill ${cls}">${escapeHtml(label)}</span></td>
       <td>${escapeHtml(r.name || "")}</td>
@@ -272,6 +277,23 @@ async function loadLivePresence() {
     const { data, error } = await sb.rpc("org_live_status", { p_org_id: currentOrgId });
     if (error) throw error;
 
+    // Who's on approved leave today, keyed by name → leave type. Used to
+    // show "Sick Leave" etc. instead of "Not clocked in" for people
+    // legitimately away. Best-effort: if the RPC isn't deployed yet, the
+    // map stays empty and presence falls back to the old behaviour.
+    const onLeaveByName = new Map();
+    try {
+      const { data: leaveRows } = await sb.rpc("org_on_leave_today", {
+        p_org_id: currentOrgId,
+        p_today: fmtDate(new Date()),
+      });
+      for (const lr of leaveRows || []) {
+        if (lr.name) onLeaveByName.set(lr.name, lr.leave_type_name || "On leave");
+      }
+    } catch (e) {
+      console.warn("org_on_leave_today unavailable:", e?.message || e);
+    }
+
     // Live rows from the RPC, decorated with employment_type from the
     // local roster (the RPC doesn't return it).
     const liveByName = new Map();
@@ -285,26 +307,29 @@ async function loadLivePresence() {
       return row;
     });
 
-    // Append a "Not clocked in" row for every active employee who isn't
-    // in the live RPC result — gives the admin a complete picture of
-    // every staff member's status.
+    // For every active employee NOT in the live RPC result, append a
+    // row: "On leave (<type>)" if they have approved leave today,
+    // otherwise "Not clocked in". Gives a complete picture of everyone.
     if (liveEmpInfoByName) {
       for (const info of liveEmpInfoByName.values()) {
         if (liveByName.has(info.name)) continue;
+        const leaveType = onLeaveByName.get(info.name);
         rows.push({
           name:            info.name,
           department:      info.department,
           employment_type: info.employment_type,
-          status:          "not_clocked_in",
+          status:          leaveType ? "on_leave" : "not_clocked_in",
+          leave_type:      leaveType || null,
           since:           null,
           break_name:      null,
         });
       }
     }
 
-    const buckets = { onsite: 0, offsite: 0, break: 0, away: 0, absent: 0 };
+    const buckets = { onsite: 0, offsite: 0, break: 0, away: 0, leave: 0, absent: 0 };
     for (const r of rows) {
-      const { cls } = liveStatusLabel(r.status, r.break_name);
+      const detail = r.status === "on_leave" ? r.leave_type : r.break_name;
+      const { cls } = liveStatusLabel(r.status, detail);
       buckets[cls] = (buckets[cls] || 0) + 1;
     }
     // Guest count is updated by loadVisitorsOnSite (separate fetch).
@@ -316,6 +341,7 @@ async function loadLivePresence() {
       <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
       <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">Off site break</div></div>
       <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>
+      <div class="tile leave"><div class="num">${buckets.leave || 0}</div><div class="lbl">On leave</div></div>
       <div class="tile absent"><div class="num">${buckets.absent || 0}</div><div class="lbl">Not clocked in</div></div>
       <div class="tile guest"><div class="num" id="tc-guest-tile-num">—</div><div class="lbl">Guests on site</div></div>`;
 
