@@ -286,33 +286,61 @@ function loadOrgSettings() {
   return orgSettingsPromise;
 }
 
-// Developer-only audit info pulled from public.infusion_export_logs.
-// Renders the most recent export's row count + timestamp + actor, plus a
-// count of how many times this week has been re-exported. Past exports
-// from before migration 124 won't have a log entry — those show "no
-// log yet (legacy or pre-migration)".
+// Developer-only audit info combining two sources:
+//   - infusion_export_row_counts RPC (live): tells us how many rows are
+//     currently exportable, split by already-exported vs pending. For a
+//     fully-exported past week this number IS what was sent to Infusion
+//     — compare against the downloaded XLSX to verify accuracy even when
+//     no log entry exists (i.e. exports done before migration 124).
+//   - infusion_export_logs table: the historical log of every export run
+//     and the row count it produced. Lets us see drift between runs.
 async function renderExportLogInfo(weekStartIso) {
   const infoEl = document.getElementById("inf-export-log-info");
   if (!infoEl) return;
   infoEl.style.display = "";
   infoEl.textContent = "Loading export log…";
   try {
-    const { data, error } = await sb.from("infusion_export_logs")
-      .select("row_count, exported_at, exported_by, users:exported_by (name)")
-      .eq("organisation_id", currentOrgId)
-      .eq("week_start", weekStartIso)
-      .order("exported_at", { ascending: false });
-    if (error) throw error;
-    if (!data?.length) {
-      infoEl.innerHTML = `🛠 <strong>No export log</strong> for this week (legacy export or pre-migration).`;
-      return;
+    const [countsRes, logsRes] = await Promise.all([
+      sb.rpc("infusion_export_row_counts", {
+        p_org_id: currentOrgId,
+        p_week_start: weekStartIso,
+      }),
+      sb.from("infusion_export_logs")
+        .select("row_count, exported_at, exported_by, users:exported_by (name)")
+        .eq("organisation_id", currentOrgId)
+        .eq("week_start", weekStartIso)
+        .order("exported_at", { ascending: false }),
+    ]);
+
+    const countsRow = Array.isArray(countsRes.data) ? countsRes.data[0] : countsRes.data;
+    const exportedNow = Number(countsRow?.already_exported) || 0;
+    const pendingNow  = Number(countsRow?.pending_approved) || 0;
+    const logs = logsRes.data || [];
+
+    const parts = [];
+    if (exportedNow > 0) {
+      parts.push(`Exported state: <strong>${exportedNow.toLocaleString()}</strong> row${exportedNow === 1 ? "" : "s"}`);
     }
-    const latest = data[0];
-    const when = new Date(latest.exported_at).toLocaleString();
-    const who = latest.users?.name || "—";
-    const reruns = data.length > 1 ? ` · ${data.length} runs total` : "";
-    infoEl.innerHTML =
-      `🛠 Last export: <strong>${Number(latest.row_count).toLocaleString()}</strong> row${latest.row_count === 1 ? "" : "s"} · ${escapeHtml(when)} · ${escapeHtml(who)}${reruns}`;
+    if (pendingNow > 0) {
+      parts.push(`Pending approval/export: <strong>${pendingNow.toLocaleString()}</strong> row${pendingNow === 1 ? "" : "s"}`);
+    }
+    if (parts.length === 0) {
+      parts.push("No exportable rows for this week (no approved or exported timesheets).");
+    }
+
+    let logLine = "";
+    if (logs.length) {
+      const latest = logs[0];
+      const when = new Date(latest.exported_at).toLocaleString();
+      const who = latest.users?.name || "—";
+      const reruns = logs.length > 1 ? ` · ${logs.length} runs total` : "";
+      const match = Number(latest.row_count) === exportedNow ? " ✓" : " ⚠ count differs";
+      logLine = `<br>Last logged export: <strong>${Number(latest.row_count).toLocaleString()}</strong> rows · ${escapeHtml(when)} · ${escapeHtml(who)}${reruns}${match}`;
+    } else if (exportedNow > 0) {
+      logLine = `<br><span style="color:var(--text-muted)">No log entry (export ran before audit logging was enabled). Open the downloaded XLSX and confirm it has <strong>${exportedNow.toLocaleString()}</strong> data rows.</span>`;
+    }
+
+    infoEl.innerHTML = `🛠 ${parts.join(" · ")}${logLine}`;
   } catch (err) {
     infoEl.innerHTML = `🛠 Export log unavailable (${escapeHtml(err.message || "")})`;
   }
