@@ -541,28 +541,28 @@
       <!-- Settings tab                                                 -->
       <!-- ============================================================ -->
       <section id="tab-settings" class="tab-panel" style="display:none">
-        <!-- Leave Job Mapping
-             Each leave-flagged job (Configure → Jobs, "Leave" tick) must be
-             linked to one of the seeded leave types so the admin approval
-             of a leave request knows which job to populate on the timesheet.
+        <!-- Leave Type Mapping
+             Each leave type is linked to the leave-flagged job whose
+             timesheet row it populates on approval. Many types can share
+             one job (e.g. Bereavement and Family Violence → Other Leave).
         -->
         <div class="card" style="max-width:920px">
           <div class="row-flex mb-md">
-            <h2 style="margin:0">Leave Job Mapping</h2>
+            <h2 style="margin:0">Leave Type Mapping</h2>
             <div class="grow"></div>
             <button id="leave-job-automatch" type="button" class="ghost">Auto-match by name</button>
           </div>
           <p class="muted small" style="margin:0 0 12px">
-            Link each leave-flagged job to a leave type. The leave-request
-            approval flow uses this map to know which job to populate on
-            the timesheet when an admin approves a leave request.
+            Link each leave type to the job it should populate on the
+            timesheet when approved. Multiple types can point at the same
+            job — e.g. Bereavement and Family Violence both to "Other Leave".
           </p>
           <div style="overflow-x:auto">
             <table>
               <thead>
                 <tr>
-                  <th>Leave job</th>
                   <th>Leave type</th>
+                  <th>Leave job</th>
                   <th>Status</th>
                 </tr>
               </thead>

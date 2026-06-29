@@ -1665,14 +1665,15 @@ document.getElementById("xero-disconnect-btn")?.addEventListener("click", discon
 })();
 
 // ---------------------------------------------------------------------------
-// Leave Job Mapping (Settings tab) — links each is_leave job in
-// public.jobs to one of the org's seeded leave_types via
-// set_job_leave_type_mapping. Same shape as the Xero mapping above
-// but pointed at the local table.
+// Leave Type Mapping (Settings tab) — links each leave type to the
+// is_leave job whose timesheet row it populates on approval. Many types
+// can share one job (e.g. Bereavement and Family Violence both → "Other
+// Leave"), so the row is the TYPE and the dropdown picks the JOB. Stored
+// on leave_types.job_id via set_leave_type_job_mapping (migration 131).
 // ---------------------------------------------------------------------------
 
-let _leaveJobs = [];   // [{id, code, description, leave_type_id}]
-let _leaveTypes = [];  // [{id, code, name}]
+let _leaveJobs = [];   // [{id, job_code, description}]
+let _leaveTypes = [];  // [{id, code, name, job_id}]
 
 async function loadLeaveJobMapping() {
   if (!currentOrgId) return;
@@ -1682,12 +1683,12 @@ async function loadLeaveJobMapping() {
   try {
     const [jobsResp, typesResp] = await Promise.all([
       sb.from("jobs")
-        .select("id, job_code, description, leave_type_id")
+        .select("id, job_code, description")
         .eq("organisation_id", currentOrgId)
         .eq("is_leave", true)
         .order("job_code"),
       sb.from("leave_types")
-        .select("id, code, name")
+        .select("id, code, name, job_id")
         .eq("organisation_id", currentOrgId)
         .eq("active", true)
         .order("sort_order"),
@@ -1702,41 +1703,41 @@ async function loadLeaveJobMapping() {
   }
 }
 
-function leaveTypeJobLabel(j) {
+function leaveJobOptionLabel(j) {
   return j.description ? `${j.job_code} — ${j.description}` : j.job_code;
 }
 
 function renderLeaveJobTable() {
   const body = document.getElementById("leave-job-body");
   if (!body) return;
+  if (_leaveTypes.length === 0) {
+    body.innerHTML = `<tr><td colspan="3" class="muted small">No leave types seeded for this org. Apply the leave migrations in Supabase.</td></tr>`;
+    return;
+  }
   if (_leaveJobs.length === 0) {
     body.innerHTML = `<tr><td colspan="3" class="muted small">No jobs flagged "Leave". Tick the Leave box on a job in the Jobs tab to make it mappable.</td></tr>`;
     return;
   }
-  if (_leaveTypes.length === 0) {
-    body.innerHTML = `<tr><td colspan="3" class="muted small">No leave types seeded for this org. Run seed_default_leave_types in Supabase or apply migration 126.</td></tr>`;
-    return;
-  }
 
   const options = ['<option value="">— not mapped —</option>']
-    .concat(_leaveTypes.map((t) =>
-      `<option value="${escapeHtml(String(t.id))}">${escapeHtml(t.name)}</option>`
+    .concat(_leaveJobs.map((j) =>
+      `<option value="${escapeHtml(String(j.id))}">${escapeHtml(leaveJobOptionLabel(j))}</option>`
     ))
     .join("");
 
-  body.innerHTML = _leaveJobs.map((j) => {
-    const sel = j.leave_type_id != null ? String(j.leave_type_id) : "";
-    const mapped = _leaveTypes.find((t) => String(t.id) === sel);
+  body.innerHTML = _leaveTypes.map((t) => {
+    const sel = t.job_id != null ? String(t.job_id) : "";
+    const mapped = _leaveJobs.find((j) => String(j.id) === sel);
     const status = !sel
       ? `<span class="muted small">unmapped</span>`
       : mapped
-        ? `<span style="color:#080" class="small">linked to ${escapeHtml(mapped.name)}</span>`
+        ? `<span style="color:#080" class="small">→ ${escapeHtml(mapped.job_code)}</span>`
         : `<span style="color:#c00" class="small">stale id</span>`;
     return `
       <tr>
-        <td>${escapeHtml(leaveTypeJobLabel(j))}</td>
+        <td>${escapeHtml(t.name)}</td>
         <td>
-          <select data-job-id="${j.id}" class="leave-job-select" style="width:100%">
+          <select data-leave-type-id="${t.id}" class="leave-job-select" style="width:100%">
             ${options.replace(`value="${escapeHtml(sel)}"`, `value="${escapeHtml(sel)}" selected`)}
           </select>
         </td>
@@ -1750,30 +1751,31 @@ function normaliseLeaveName(s) {
   return String(s || "").toLowerCase().replace(/[^a-z\s]/g, "").replace(/\s+/g, " ").trim();
 }
 
+// Auto-match each leave type to a job whose code or description looks
+// like the type name. Most won't match (e.g. Bereavement → "Other
+// Leave" isn't a name match) — those stay for manual mapping.
 function autoMatchLeaveJobs() {
   const byName = new Map();
   const byCode = new Map();
-  for (const t of _leaveTypes) {
-    byName.set(normaliseLeaveName(t.name), t.id);
-    byCode.set(normaliseLeaveName(t.code), t.id);
+  for (const j of _leaveJobs) {
+    byName.set(normaliseLeaveName(j.description), j.id);
+    byCode.set(normaliseLeaveName(j.job_code), j.id);
   }
   let matched = 0;
   for (const sel of document.querySelectorAll(".leave-job-select")) {
     if (sel.value) continue;
-    const jobId = Number(sel.dataset.jobId);
-    const j = _leaveJobs.find((x) => x.id === jobId);
-    if (!j) continue;
+    const ltId = Number(sel.dataset.leaveTypeId);
+    const t = _leaveTypes.find((x) => x.id === ltId);
+    if (!t) continue;
     const candidate =
-      byName.get(normaliseLeaveName(j.description)) ||
-      byCode.get(normaliseLeaveName(j.description)) ||
-      byName.get(normaliseLeaveName(j.job_code)) ||
-      byCode.get(normaliseLeaveName(j.job_code));
+      byName.get(normaliseLeaveName(t.name)) ||
+      byCode.get(normaliseLeaveName(t.code));
     if (candidate) {
       sel.value = String(candidate);
       matched++;
     }
   }
-  notice(`Matched ${matched} job${matched === 1 ? "" : "s"} by name/code. Click Save to persist.`, "success");
+  notice(`Matched ${matched} type${matched === 1 ? "" : "s"} by name/code. Click Save to persist.`, "success");
 }
 
 async function saveLeaveJobMappings() {
@@ -1781,21 +1783,20 @@ async function saveLeaveJobMappings() {
   status.textContent = "Saving…";
   let saved = 0, errors = 0;
   for (const sel of document.querySelectorAll(".leave-job-select")) {
-    const jobId = Number(sel.dataset.jobId);
-    const original = (_leaveJobs.find((j) => j.id === jobId)?.leave_type_id) || "";
+    const ltId = Number(sel.dataset.leaveTypeId);
+    const original = (_leaveTypes.find((t) => t.id === ltId)?.job_id) || "";
     const next = sel.value || null;
-    const same = (String(original || "") === String(next || ""));
-    if (same) continue;
+    if (String(original || "") === String(next || "")) continue;
     try {
-      const { error } = await sb.rpc("set_job_leave_type_mapping", {
-        p_job_id: jobId,
-        p_leave_type_id: next ? Number(next) : null,
+      const { error } = await sb.rpc("set_leave_type_job_mapping", {
+        p_leave_type_id: ltId,
+        p_job_id: next ? Number(next) : null,
       });
       if (error) throw error;
       saved++;
     } catch (err) {
       errors++;
-      console.error("Leave-job mapping save failed for job", jobId, err);
+      console.error("Leave-type mapping save failed for type", ltId, err);
     }
   }
   status.textContent = errors ? `Saved ${saved}, ${errors} failed.` : `Saved ${saved}.`;
