@@ -635,11 +635,24 @@ async function buildInfusionRows() {
   const tsIds = timesheets.map((t) => t.id);
 
   // Load entries with the related lookup codes inlined via PostgREST joins.
-  const { data: entries } = await sb
-    .from("timesheet_entries")
-    .select("id, timesheet_id, job_id, task_id, dept_code_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours, jobs(id, job_code), tasks(id, task_code), department_codes(id, code)")
-    .in("timesheet_id", tsIds)
-    .order("id");
+  // Chunked by timesheet_id to stay under Supabase's 1000-row select cap.
+  // A busy week at PTL scale (~70 staff × ~15 entries) can exceed 1000 in
+  // a single .in() call; the cap silently drops anything past row 1000 —
+  // which on this code path would mean missing payroll lines in the
+  // Infusion export. 50 timesheets per chunk → ~500 entries per request
+  // even on heavy weeks, comfortably under the cap.
+  const ENTRY_CHUNK = 50;
+  const entries = [];
+  for (let i = 0; i < tsIds.length; i += ENTRY_CHUNK) {
+    const slice = tsIds.slice(i, i + ENTRY_CHUNK);
+    const { data: chunk, error } = await sb
+      .from("timesheet_entries")
+      .select("id, timesheet_id, job_id, task_id, dept_code_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours, jobs(id, job_code), tasks(id, task_code), department_codes(id, code)")
+      .in("timesheet_id", slice)
+      .order("id");
+    if (error) throw error;
+    if (chunk?.length) entries.push(...chunk);
+  }
 
   const empMap = {};
   for (const e of employees || []) empMap[e.id] = e;

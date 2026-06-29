@@ -319,11 +319,20 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart) {
     const hoursByTsId = {};
     let entries = [];
     if (tsIds.length) {
-      const { data } = await sb
-        .from("timesheet_entries")
-        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-        .in("timesheet_id", tsIds);
-      entries = data || [];
+      // Chunked by timesheet_id to stay under Supabase's 1000-row select
+      // cap. At ~70 staff × ~10 entries a single .in() call sits near the
+      // limit; a heavy week pushes over and silently drops rows. 50
+      // timesheets per chunk keeps each request well under 1000.
+      const CHUNK = 50;
+      for (let i = 0; i < tsIds.length; i += CHUNK) {
+        const slice = tsIds.slice(i, i + CHUNK);
+        const { data, error } = await sb
+          .from("timesheet_entries")
+          .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+          .in("timesheet_id", slice);
+        if (error) throw error;
+        if (data?.length) entries.push(...data);
+      }
       for (const e of entries) {
         const sum = DAYS.reduce((s, d) => s + (Number(e[`${d}_hours`]) || 0), 0);
         hoursByTsId[e.timesheet_id] = (hoursByTsId[e.timesheet_id] || 0) + sum;

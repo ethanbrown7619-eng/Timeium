@@ -43,12 +43,22 @@ async function loadArchive() {
       return;
     }
 
-    // Load entry totals for each timesheet
+    // Load entry totals for each timesheet. Chunked by timesheet_id to
+    // stay under Supabase's 1000-row select cap — at 52 timesheets of
+    // ~10 entries each the totals query is close to the limit and any
+    // overflow gets silently dropped.
     const tsIds = timesheets.map((ts) => ts.id);
-    const { data: allEntries } = await sb
-      .from("timesheet_entries")
-      .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
-      .in("timesheet_id", tsIds);
+    const ENTRY_CHUNK = 50;
+    const allEntries = [];
+    for (let i = 0; i < tsIds.length; i += ENTRY_CHUNK) {
+      const slice = tsIds.slice(i, i + ENTRY_CHUNK);
+      const { data: chunk, error } = await sb
+        .from("timesheet_entries")
+        .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
+        .in("timesheet_id", slice);
+      if (error) throw error;
+      if (chunk?.length) allEntries.push(...chunk);
+    }
 
     const totalsByTs = {};
     for (const e of allEntries || []) {
