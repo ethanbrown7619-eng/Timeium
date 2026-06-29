@@ -331,6 +331,7 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart) {
           .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
           .in("timesheet_id", slice);
         if (error) throw error;
+        flagTruncationRisk(data?.length, "Week dashboard hour totals");
         if (data?.length) entries.push(...data);
       }
       for (const e of entries) {
@@ -352,6 +353,32 @@ export async function fetchWeekDashboardData(sb, orgId, weekStart) {
     // and prevent retries.
     dashboardInFlight.delete(key);
   }
+}
+
+// Detection layer for silent-truncation bugs. Every chunked report passes
+// the row count of each fetched batch through this helper. If a single
+// batch returns at or above the danger threshold (default 950, below
+// Supabase's 1000-row default cap), we've likely hit the limit and may
+// have lost rows beyond it. Fires a sticky error banner so the admin
+// knows the page is suspect and can contact the developer.
+//
+// One alert per page load is enough — successive truncated chunks would
+// just spam the user — so we track first-fire-per-context via a
+// session-scoped set.
+const _truncationFired = new Set();
+export function flagTruncationRisk(rowCount, contextLabel, threshold = 950) {
+  if (!Number.isFinite(rowCount) || rowCount < threshold) return;
+  const key = `${contextLabel}@${rowCount}`;
+  if (_truncationFired.has(contextLabel)) return;
+  _truncationFired.add(contextLabel);
+  console.warn(`[truncation-risk] ${contextLabel} returned ${rowCount} rows (threshold ${threshold})`);
+  notice(
+    `⚠ Data integrity warning: this report may be missing rows ` +
+    `(${contextLabel} returned ${rowCount}, near the database row cap). ` +
+    `Please contact the developer to raise database limits before relying on this data.`,
+    "error",
+    { sticky: true },
+  );
 }
 
 export function debounce(fn, ms = 150) {

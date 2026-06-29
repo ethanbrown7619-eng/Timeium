@@ -1,7 +1,7 @@
 // PTL Timesheet — archive page (list of past timesheets).
 
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, renderTopbar, getUserContext } from "/js/shared.js";
+import { notice, renderTopbar, getUserContext, flagTruncationRisk } from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -57,6 +57,7 @@ async function loadArchive() {
         .select("timesheet_id, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
         .in("timesheet_id", slice);
       if (error) throw error;
+      flagTruncationRisk(chunk?.length, "Personal timesheet archive");
       if (chunk?.length) allEntries.push(...chunk);
     }
 

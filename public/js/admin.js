@@ -10,6 +10,7 @@ import {
   confirmDialog,
   fetchWeekDashboardData, invalidateWeekDashboard,
   isUserEffectiveOverhead,
+  flagTruncationRisk,
 } from "/js/shared.js";
 
 // XLSX is ~600KB. Load only when an Export button is actually clicked.
@@ -718,6 +719,7 @@ async function buildInfusionRows() {
       .in("timesheet_id", slice)
       .order("id");
     if (error) throw error;
+    flagTruncationRisk(chunk?.length, "Infusion export entries");
     if (chunk?.length) entries.push(...chunk);
   }
 
@@ -1033,6 +1035,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
       .select("id, timesheet_id, job_id, description, mon_hours, tue_hours, wed_hours, thu_hours, fri_hours, sat_hours, sun_hours")
       .in("timesheet_id", slice);
     if (error) throw error;
+    flagTruncationRisk(chunk?.length, "Leave / Overtime report entries");
     if (chunk?.length) entries.push(...chunk);
   }
 
