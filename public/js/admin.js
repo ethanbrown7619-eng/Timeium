@@ -4,7 +4,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, requireAdmin,
-  DAYS, DAY_LABELS, getMonday, getActiveMonday, fmtDate, addDays, fmtDMY, fmtHours,
+  DAYS, DAY_LABELS, getMonday, getActiveMonday, fmtDate, addDays, fmtDMY, fmtHours, leaveTotalHours,
   donutSvg, makeLatestOnly,
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog, promptDialog,
@@ -1939,13 +1939,13 @@ async function loadAdminLeave() {
   const body = document.getElementById("admin-leave-body");
   const filterEl = document.getElementById("admin-leave-filter");
   if (!body || !currentOrgId) return;
-  body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
+  body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
 
   // Disambiguate the users embed: leave_requests has three FKs to users
   // (user_id, reviewed_by, manager_reviewed_by), so a bare users(name)
   // is ambiguous. Pin it to the user_id FK by constraint name.
   let query = sb.from("leave_requests")
-    .select("id, start_date, end_date, hours_per_day, reason, status, manager_review_note, review_note, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
+    .select("id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
     .eq("organisation_id", currentOrgId);
 
   if (alSubView === "approvals") {
@@ -1958,7 +1958,7 @@ async function loadAdminLeave() {
 
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
 
@@ -1971,13 +1971,14 @@ async function loadAdminLeave() {
     const msg = alSubView === "approvals"
       ? "Nothing awaiting your approval. 🎉"
       : "No leave requests match this filter.";
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">${msg}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">${msg}</td></tr>`;
     return;
   }
 
   body.innerHTML = rows.map((r) => {
     const dateRange = r.start_date === r.end_date ? r.start_date : `${r.start_date} → ${r.end_date}`;
     const canAct = r.status === "pending_admin" || r.status === "pending_manager";
+    const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
     const notes = [];
     if (r.reason)              notes.push(escapeHtml(r.reason));
     if (r.manager_review_note) notes.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
@@ -1987,6 +1988,7 @@ async function loadAdminLeave() {
       <td>${escapeHtml(r.leave_types?.name || "")}</td>
       <td class="small">${dateRange}</td>
       <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td>${adminLeaveStatusBadge(r.status)}</td>
       <td class="small">${notes.length ? notes.join("<br>") : `<span class="muted">—</span>`}</td>
       <td style="white-space:nowrap">

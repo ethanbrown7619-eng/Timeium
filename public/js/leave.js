@@ -8,7 +8,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
-  fmtDate, fmtHours, confirmDialog, promptDialog,
+  fmtDate, fmtHours, leaveTotalHours, confirmDialog, promptDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -92,12 +92,12 @@ async function loadRequests() {
     .eq("user_id", employee.id)
     .order("created_at", { ascending: false });
   if (error) {
-    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   const rows = data || [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:24px">No leave requests yet. Click "Request leave" to submit one.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="muted small" style="text-align:center;padding:24px">No leave requests yet. Click "Request leave" to submit one.</td></tr>`;
     return;
   }
 
@@ -110,11 +110,13 @@ async function loadRequests() {
     if (r.review_note)         noteParts.push(`<em class="muted small">Admin: ${escapeHtml(r.review_note)}</em>`);
     const reasonCell = noteParts.length ? noteParts.join("<br>") : `<span class="muted small">—</span>`;
 
+    const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
     return `<tr>
       <td>${escapeHtml(typeName)}</td>
       <td class="small">${escapeHtml(r.start_date || "")}</td>
       <td class="small">${escapeHtml(r.end_date || "")}</td>
       <td class="num small">${fmtHours(r.hours_per_day)}</td>
+      <td class="num small"><strong>${fmtHours(total)}</strong></td>
       <td>${statusBadge(r.status)}</td>
       <td class="small">${reasonCell}</td>
       <td class="small muted">${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
@@ -233,21 +235,25 @@ async function loadTeamPending() {
   const rows = data || [];
   setTeamCountBadge(rows.length);
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map((r) => `
+  body.innerHTML = rows.map((r) => {
+    const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
+    return `
     <tr data-id="${r.id}">
       <td>${escapeHtml(r.employee_name || "")}</td>
       <td>${escapeHtml(r.leave_type_name || "")}</td>
       <td class="small">${teamDateRange(r)}</td>
       <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
       <td style="white-space:nowrap">
         <button class="small approve-tr-btn">Approve</button>
         <button class="ghost small reject-tr-btn">Reject</button>
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   body.querySelectorAll(".approve-tr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -285,17 +291,21 @@ async function loadTeamForwarded() {
   }
   const rows = data || [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
     return;
   }
-  body.innerHTML = rows.map((r) => `
+  body.innerHTML = rows.map((r) => {
+    const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
+    return `
     <tr>
       <td>${escapeHtml(r.employee_name || "")}</td>
       <td>${escapeHtml(r.leave_type_name || "")}</td>
       <td class="small">${teamDateRange(r)}</td>
       <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 }
 
 // ---------------------------------------------------------------- init

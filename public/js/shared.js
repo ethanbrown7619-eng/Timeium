@@ -97,6 +97,25 @@ export function computeOvertime(workedByDay, dailyThreshold = 8) {
   return { otByDay, otTotal };
 }
 
+// Total hours a leave request covers: hours_per_day × number of leave
+// days between start and end (inclusive). When skipWeekends is true,
+// Sat/Sun are not counted. Mirrors the day-counting the approval RPC
+// uses to populate the timesheet.
+export function leaveTotalHours(startIso, endIso, hoursPerDay, skipWeekends = true) {
+  const perDay = Number(hoursPerDay) || 0;
+  if (!startIso || !endIso || perDay <= 0) return 0;
+  const start = new Date(startIso + "T00:00:00");
+  const end = new Date(endIso + "T00:00:00");
+  if (isNaN(start) || isNaN(end) || end < start) return 0;
+  let days = 0;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay(); // 0=Sun, 6=Sat
+    if (skipWeekends && (dow === 0 || dow === 6)) continue;
+    days++;
+  }
+  return Number((days * perDay).toFixed(2));
+}
+
 export function fmtDate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
