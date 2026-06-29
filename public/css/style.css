@@ -411,6 +411,11 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   position: fixed;
   top: 16px;
   left: 50%;
+  /* Override the popover UA defaults (inset:0; margin:auto) so the
+     toast keeps its top-centre placement when shown on the top layer. */
+  right: auto;
+  bottom: auto;
+  margin: 0;
   transform: translateX(-50%);
   z-index: 9999;
   max-width: min(560px, calc(100vw - 32px));
@@ -419,6 +424,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-size: 13px;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
   animation: noticeIn 0.3s ease;
+  overflow: visible;
 }
 @keyframes noticeIn {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }

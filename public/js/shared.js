@@ -421,7 +421,9 @@ export function validatePassword(pw) {
 
 /* ---------------------------------------------------------------- notices */
 
-/** Flash a notice into #notice. Level: info | warn | error | success. */
+/** Flash a notice into #notice. Level: info | warn | error | success.
+ *  Renders on the top layer (Popover API) so it floats above modal
+ *  <dialog>s instead of being buried behind their blurred backdrop. */
 export function notice(message, level = "info", { sticky = false } = {}) {
   const el = document.getElementById("notice");
   if (!el) {
@@ -430,10 +432,25 @@ export function notice(message, level = "info", { sticky = false } = {}) {
   }
   el.className = `notice ${level}`;
   el.textContent = message;
-  el.classList.remove("hidden");
+
+  const usePopover = typeof el.showPopover === "function";
+  if (usePopover) {
+    if (el.getAttribute("popover") !== "manual") el.setAttribute("popover", "manual");
+    el.classList.remove("hidden");
+    // Re-show to bump it to the top of the top layer — so a toast
+    // triggered while a dialog is open lands above the dialog.
+    try { el.hidePopover(); } catch {}
+    try { el.showPopover(); } catch {}
+  } else {
+    el.classList.remove("hidden");
+  }
+
+  clearTimeout(notice._t);
   if (!sticky) {
-    clearTimeout(notice._t);
-    notice._t = setTimeout(() => el.classList.add("hidden"), 5000);
+    notice._t = setTimeout(() => {
+      if (usePopover) { try { el.hidePopover(); } catch {} }
+      el.classList.add("hidden");
+    }, 5000);
   }
 }
 
