@@ -2007,6 +2007,10 @@ async function loadAdminLeave() {
         <button class="small approve-al-btn">Approve</button>
         <button class="ghost small reject-al-btn">Reject</button>`;
     }
+    // Developer-only hard delete for clearing test data.
+    if (ctx.isDeveloper) {
+      actions += ` <button class="ghost small dev-delete-al-btn" title="Delete (dev)" style="color:var(--danger)">🗑</button>`;
+    }
     return `<tr data-id="${r.id}">
       <td>${escapeHtml(r.users?.name || "")}</td>
       <td>${escapeHtml(r.leave_types?.name || "")}</td>
@@ -2061,6 +2065,18 @@ async function loadAdminLeave() {
       const { error: e } = await sb.rpc("dismiss_leave_change_request", { p_request_id: id });
       if (e) return notice(e.message, "error");
       notice("Change request dismissed", "success");
+      await loadAdminLeave();
+    });
+  });
+
+  body.querySelectorAll(".dev-delete-al-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Delete leave request (dev)", message: "Permanently delete this leave request? If it was approved, the leave hours are stripped from the timesheet first. This can't be undone.", confirmText: "Delete", danger: true })) return;
+      const { error: e } = await sb.rpc("dev_delete_leave_request", { p_request_id: id });
+      if (e) return notice(e.message, "error");
+      notice("Leave request deleted", "success");
+      invalidateWeekDashboard(currentOrgId);
       await loadAdminLeave();
     });
   });
