@@ -19,6 +19,9 @@
       <div class="tabs" id="admin-tabs">
         <button class="tab active" data-tab="dashboard">Dashboard</button>
         <button class="tab" data-tab="infusion">Infusion Export</button>
+        <button class="tab" data-tab="leave">
+          Leave<span id="admin-leave-count" class="leave-count-badge" style="display:none"></span>
+        </button>
         <button class="tab" data-tab="leavereport">Leave / Overtime</button>
       </div>
 
@@ -181,6 +184,47 @@
             <button id="lv-sal-export-btn">Export to Excel</button>
             <button id="lv-sal-export-pdf-btn" class="ghost">Export to PDF</button>
             <span id="lv-sal-status" class="muted small"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== Leave ==================== -->
+      <section id="tab-leave" class="tab-panel" style="display:none">
+        <h2 style="margin:0 0 4px">Leave Requests</h2>
+        <p class="muted mb-md">Final approval populates the employee's timesheet with the leave hours.</p>
+
+        <div class="card">
+          <div class="row-flex mb-md" style="gap:8px">
+            <label for="admin-leave-filter" style="margin:0">Show</label>
+            <select id="admin-leave-filter" style="width:220px">
+              <option value="needs_action">Needs admin action</option>
+              <option value="pending_manager">Pending manager</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="all">All requests</option>
+            </select>
+            <div class="grow"></div>
+            <button id="admin-leave-refresh" class="ghost small">↻ Refresh</button>
+          </div>
+
+          <div style="overflow-x:auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Type</th>
+                  <th>Dates</th>
+                  <th class="num">Hours/day</th>
+                  <th>Status</th>
+                  <th>Reason / notes</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="admin-leave-body">
+                <tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>

@@ -7,7 +7,7 @@ import {
   DAYS, DAY_LABELS, getMonday, getActiveMonday, fmtDate, addDays, fmtDMY, fmtHours,
   donutSvg, makeLatestOnly,
   TS_STATUS, isTsSubmittedOrApproved,
-  confirmDialog,
+  confirmDialog, promptDialog,
   fetchWeekDashboardData, invalidateWeekDashboard,
   isUserEffectiveOverhead,
   flagTruncationRisk,
@@ -78,7 +78,7 @@ if (ctx.isDeveloper) {
   tabBar.appendChild(devBtn);
 }
 
-const VALID_TABS = new Set(["dashboard", "infusion", "leavereport", "devtools"]);
+const VALID_TABS = new Set(["dashboard", "infusion", "leave", "leavereport", "devtools"]);
 function tabFromHash() {
   const m = /tab=([a-z]+)/.exec(location.hash);
   const t = m?.[1];
@@ -92,10 +92,12 @@ function applyActiveTab() {
   });
   document.getElementById("tab-dashboard").style.display    = activeTab === "dashboard"   ? "" : "none";
   document.getElementById("tab-infusion").style.display     = activeTab === "infusion"    ? "" : "none";
+  document.getElementById("tab-leave").style.display        = activeTab === "leave"       ? "" : "none";
   document.getElementById("tab-leavereport").style.display  = activeTab === "leavereport" ? "" : "none";
   document.getElementById("tab-devtools").style.display     = activeTab === "devtools"    ? "" : "none";
   if (activeTab === "dashboard") navLoadDashboard();
   if (activeTab === "infusion") navLoadInfusionStatus();
+  if (activeTab === "leave") loadAdminLeave();
   if (activeTab === "leavereport") { if (lvSubView === "waged") loadWagedReport(); else loadSalariedReport(); }
   if (activeTab === "devtools") loadDevToolsForm();
 }
@@ -1822,7 +1824,118 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
   btn.disabled = false;
 });
 
+/* ---------------------------------------------------------------- leave queue */
+
+// Admin leave queue — full org visibility plus final approve/reject.
+// Final approval (approve_leave_request) populates the employee's
+// timesheet with the leave hours; admins can also approve a request
+// still at pending_manager as an override (migration 129).
+function adminLeaveStatusBadge(status) {
+  switch (status) {
+    case "pending_manager": return `<span class="dept-badge dept-badge-draft">Pending manager</span>`;
+    case "pending_admin":   return `<span class="dept-badge dept-badge-submitted">Pending admin</span>`;
+    case "approved":        return `<span class="dept-badge dept-badge-approved">Approved</span>`;
+    case "rejected":        return `<span class="dept-badge dept-badge-rejected">Rejected</span>`;
+    case "cancelled":       return `<span class="dept-badge dept-badge-none">Cancelled</span>`;
+    default:                return `<span class="dept-badge dept-badge-none">${escapeHtml(status || "")}</span>`;
+  }
+}
+
+async function loadAdminLeave() {
+  const body = document.getElementById("admin-leave-body");
+  const filterEl = document.getElementById("admin-leave-filter");
+  const badge = document.getElementById("admin-leave-count");
+  if (!body || !currentOrgId) return;
+  const filter = filterEl?.value || "needs_action";
+  body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
+
+  let query = sb.from("leave_requests")
+    .select("id, start_date, end_date, hours_per_day, reason, status, manager_review_note, review_note, created_at, users(name), leave_types(name)")
+    .eq("organisation_id", currentOrgId);
+
+  if (filter === "needs_action")  query = query.eq("status", "pending_admin");
+  else if (filter !== "all")      query = query.eq("status", filter);
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) {
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    return;
+  }
+
+  // Count of items needing admin action drives the tab badge — fetched
+  // separately so the badge is right regardless of the active filter.
+  void refreshAdminLeaveBadge(badge);
+
+  const rows = data || [];
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No leave requests match this filter.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = rows.map((r) => {
+    const dateRange = r.start_date === r.end_date ? r.start_date : `${r.start_date} → ${r.end_date}`;
+    const canAct = r.status === "pending_admin" || r.status === "pending_manager";
+    const notes = [];
+    if (r.reason)              notes.push(escapeHtml(r.reason));
+    if (r.manager_review_note) notes.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
+    if (r.review_note)         notes.push(`<em class="muted small">Admin: ${escapeHtml(r.review_note)}</em>`);
+    return `<tr data-id="${r.id}">
+      <td>${escapeHtml(r.users?.name || "")}</td>
+      <td>${escapeHtml(r.leave_types?.name || "")}</td>
+      <td class="small">${dateRange}</td>
+      <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td>${adminLeaveStatusBadge(r.status)}</td>
+      <td class="small">${notes.length ? notes.join("<br>") : `<span class="muted">—</span>`}</td>
+      <td style="white-space:nowrap">
+        ${canAct ? `
+          <button class="small approve-al-btn">Approve</button>
+          <button class="ghost small reject-al-btn">Reject</button>
+        ` : ""}
+      </td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".approve-al-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Approve leave", message: "Approve this request? The employee's timesheet will be populated with the leave hours automatically.", confirmText: "Approve" })) return;
+      const { error: e } = await sb.rpc("approve_leave_request", { p_request_id: id, p_note: null });
+      if (e) return notice(e.message, "error");
+      notice("Approved — timesheet populated", "success");
+      invalidateWeekDashboard(currentOrgId);
+      await loadAdminLeave();
+    });
+  });
+
+  body.querySelectorAll(".reject-al-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      const note = await promptDialog({ title: "Reject leave", message: "Reason for rejection (optional):" }) || null;
+      const { error: e } = await sb.rpc("reject_leave_request", { p_request_id: id, p_note: note });
+      if (e) return notice(e.message, "error");
+      notice("Leave request rejected", "success");
+      await loadAdminLeave();
+    });
+  });
+}
+
+async function refreshAdminLeaveBadge(badge) {
+  if (!badge) return;
+  const { count } = await sb.from("leave_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("organisation_id", currentOrgId)
+    .eq("status", "pending_admin");
+  if (count > 0) { badge.textContent = String(count); badge.style.display = ""; }
+  else { badge.style.display = "none"; }
+}
+
+document.getElementById("admin-leave-filter")?.addEventListener("change", loadAdminLeave);
+document.getElementById("admin-leave-refresh")?.addEventListener("click", loadAdminLeave);
+
 /* ---------------------------------------------------------------- boot */
 
 loadOrgSettings().then(() => navLoadInfusionStatus());
 applyActiveTab();
+// Populate the Leave tab badge on first load regardless of which tab is
+// active, so an admin landing on Dashboard still sees a pending count.
+refreshAdminLeaveBadge(document.getElementById("admin-leave-count"));
