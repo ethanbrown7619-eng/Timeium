@@ -1861,8 +1861,11 @@ async function loadAdminLeave() {
   if (!body || !currentOrgId) return;
   body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
 
+  // Disambiguate the users embed: leave_requests has three FKs to users
+  // (user_id, reviewed_by, manager_reviewed_by), so a bare users(name)
+  // is ambiguous. Pin it to the user_id FK by constraint name.
   let query = sb.from("leave_requests")
-    .select("id, start_date, end_date, hours_per_day, reason, status, manager_review_note, review_note, created_at, users(name), leave_types(name)")
+    .select("id, start_date, end_date, hours_per_day, reason, status, manager_review_note, review_note, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
     .eq("organisation_id", currentOrgId);
 
   if (alSubView === "approvals") {
