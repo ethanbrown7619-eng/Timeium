@@ -286,6 +286,38 @@ function loadOrgSettings() {
   return orgSettingsPromise;
 }
 
+// Developer-only audit info pulled from public.infusion_export_logs.
+// Renders the most recent export's row count + timestamp + actor, plus a
+// count of how many times this week has been re-exported. Past exports
+// from before migration 124 won't have a log entry — those show "no
+// log yet (legacy or pre-migration)".
+async function renderExportLogInfo(weekStartIso) {
+  const infoEl = document.getElementById("inf-export-log-info");
+  if (!infoEl) return;
+  infoEl.style.display = "";
+  infoEl.textContent = "Loading export log…";
+  try {
+    const { data, error } = await sb.from("infusion_export_logs")
+      .select("row_count, exported_at, exported_by, users:exported_by (name)")
+      .eq("organisation_id", currentOrgId)
+      .eq("week_start", weekStartIso)
+      .order("exported_at", { ascending: false });
+    if (error) throw error;
+    if (!data?.length) {
+      infoEl.innerHTML = `🛠 <strong>No export log</strong> for this week (legacy export or pre-migration).`;
+      return;
+    }
+    const latest = data[0];
+    const when = new Date(latest.exported_at).toLocaleString();
+    const who = latest.users?.name || "—";
+    const reruns = data.length > 1 ? ` · ${data.length} runs total` : "";
+    infoEl.innerHTML =
+      `🛠 Last export: <strong>${Number(latest.row_count).toLocaleString()}</strong> row${latest.row_count === 1 ? "" : "s"} · ${escapeHtml(when)} · ${escapeHtml(who)}${reruns}`;
+  } catch (err) {
+    infoEl.innerHTML = `🛠 Export log unavailable (${escapeHtml(err.message || "")})`;
+  }
+}
+
 function updateInfusionWeekLabel() {
   const end = addDays(infWeek, 6);
   document.getElementById("inf-week-label").textContent =
@@ -301,6 +333,13 @@ async function loadInfusionStatus(signal) {
   await loadOrgSettings();
 
   const ws = fmtDate(infWeek);
+  // Developer-only: pull the export history for this week and render a
+  // small audit line above the status bars. Used to spot regressions in
+  // the export pipeline (e.g. row count dropping unexpectedly between
+  // runs would suggest data loss).
+  if (ctx.isDeveloper) {
+    void renderExportLogInfo(ws);
+  }
   const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
   if (!dash) { barsEl.innerHTML = ""; return; }
 
@@ -839,6 +878,20 @@ document.getElementById("inf-export-btn").addEventListener("click", async () => 
 
     const weekLabel = fmtDate(infWeek);
     XLSX.writeFile(wb, `infusion-export-${weekLabel}.xlsx`);
+
+    // Log the row count for the developer audit trail (migration 124).
+    // Best-effort: if the RPC fails or the migration isn't applied, the
+    // export itself is already on disk and we don't want to surface a
+    // misleading error.
+    try {
+      await sb.rpc("log_infusion_export", {
+        p_org_id: currentOrgId,
+        p_week_start: fmtDate(infWeek),
+        p_row_count: wsData.length,
+      });
+    } catch (err) {
+      console.warn("log_infusion_export failed:", err);
+    }
 
     // After the file is written, flip every approved timesheet for the
     // exported week to 'exported'. Re-runs (late submissions) pick up
