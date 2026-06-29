@@ -1945,12 +1945,15 @@ async function loadAdminLeave() {
   // (user_id, reviewed_by, manager_reviewed_by), so a bare users(name)
   // is ambiguous. Pin it to the user_id FK by constraint name.
   let query = sb.from("leave_requests")
-    .select("id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
+    .select("id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_request_note, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
     .eq("organisation_id", currentOrgId);
 
   if (alSubView === "approvals") {
     // Action queue — only what's waiting on the admin.
     query = query.eq("status", "pending_admin");
+  } else if (alSubView === "changes") {
+    // Approved leave with an employee cancel/amend request.
+    query = query.eq("status", "approved").not("change_request_type", "is", null);
   } else {
     const filter = filterEl?.value || "all";
     if (filter !== "all") query = query.eq("status", filter);
@@ -1970,7 +1973,9 @@ async function loadAdminLeave() {
   if (!rows.length) {
     const msg = alSubView === "approvals"
       ? "Nothing awaiting your approval. 🎉"
-      : "No leave requests match this filter.";
+      : alSubView === "changes"
+        ? "No cancellation or amendment requests."
+        : "No leave requests match this filter.";
     body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">${msg}</td></tr>`;
     return;
   }
@@ -1978,11 +1983,30 @@ async function loadAdminLeave() {
   body.innerHTML = rows.map((r) => {
     const dateRange = r.start_date === r.end_date ? r.start_date : `${r.start_date} → ${r.end_date}`;
     const canAct = r.status === "pending_admin" || r.status === "pending_manager";
+    const hasChange = !!r.change_request_type;
     const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
     const notes = [];
     if (r.reason)              notes.push(escapeHtml(r.reason));
     if (r.manager_review_note) notes.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
     if (r.review_note)         notes.push(`<em class="muted small">Admin: ${escapeHtml(r.review_note)}</em>`);
+    if (hasChange) {
+      const label = r.change_request_type === "cancel" ? "Cancellation requested" : "Amendment requested";
+      const cn = r.change_request_note ? `: ${escapeHtml(r.change_request_note)}` : "";
+      notes.push(`<em class="small" style="color:var(--warning)">${label}${cn}</em>`);
+    }
+    // In the Change requests view, offer Revoke (pull off timesheet +
+    // cancel) and Dismiss (clear the flag, keep the leave). Elsewhere,
+    // pending rows get Approve/Reject.
+    let actions = "";
+    if (alSubView === "changes" || (hasChange && r.status === "approved")) {
+      actions = `
+        <button class="small revoke-al-btn">Revoke</button>
+        <button class="ghost small dismiss-al-btn">Dismiss</button>`;
+    } else if (canAct) {
+      actions = `
+        <button class="small approve-al-btn">Approve</button>
+        <button class="ghost small reject-al-btn">Reject</button>`;
+    }
     return `<tr data-id="${r.id}">
       <td>${escapeHtml(r.users?.name || "")}</td>
       <td>${escapeHtml(r.leave_types?.name || "")}</td>
@@ -1991,12 +2015,7 @@ async function loadAdminLeave() {
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td>${adminLeaveStatusBadge(r.status)}</td>
       <td class="small">${notes.length ? notes.join("<br>") : `<span class="muted">—</span>`}</td>
-      <td style="white-space:nowrap">
-        ${canAct ? `
-          <button class="small approve-al-btn">Approve</button>
-          <button class="ghost small reject-al-btn">Reject</button>
-        ` : ""}
-      </td>
+      <td style="white-space:nowrap">${actions}</td>
     </tr>`;
   }).join("");
 
@@ -2022,6 +2041,29 @@ async function loadAdminLeave() {
       await loadAdminLeave();
     });
   });
+
+  body.querySelectorAll(".revoke-al-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Revoke leave", message: "Cancel this approved leave and remove the hours from the employee's timesheet?", confirmText: "Revoke", danger: true })) return;
+      const { error: e } = await sb.rpc("revoke_leave_request", { p_request_id: id, p_note: null });
+      if (e) return notice(e.message, "error");
+      notice("Leave revoked and removed from timesheet", "success");
+      invalidateWeekDashboard(currentOrgId);
+      await loadAdminLeave();
+    });
+  });
+
+  body.querySelectorAll(".dismiss-al-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Dismiss change request", message: "Clear the change request and keep the leave as approved?", confirmText: "Dismiss" })) return;
+      const { error: e } = await sb.rpc("dismiss_leave_change_request", { p_request_id: id });
+      if (e) return notice(e.message, "error");
+      notice("Change request dismissed", "success");
+      await loadAdminLeave();
+    });
+  });
 }
 
 // Updates both the main "Leave" tab badge and the "Awaiting approval"
@@ -2029,17 +2071,27 @@ async function loadAdminLeave() {
 // param is ignored beyond back-compat — both elements are looked up
 // fresh each call.
 async function refreshAdminLeaveBadge() {
-  const { count } = await sb.from("leave_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("organisation_id", currentOrgId)
-    .eq("status", "pending_admin");
-  const n = count || 0;
-  for (const id of ["admin-leave-count", "al-approvals-count"]) {
-    const el = document.getElementById(id);
-    if (!el) continue;
-    if (n > 0) { el.textContent = String(n); el.style.display = ""; }
-    else { el.style.display = "none"; }
-  }
+  const [pendingRes, changeRes] = await Promise.all([
+    sb.from("leave_requests").select("id", { count: "exact", head: true })
+      .eq("organisation_id", currentOrgId).eq("status", "pending_admin"),
+    sb.from("leave_requests").select("id", { count: "exact", head: true })
+      .eq("organisation_id", currentOrgId).eq("status", "approved")
+      .not("change_request_type", "is", null),
+  ]);
+  const setBadge = (ids, n) => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (n > 0) { el.textContent = String(n); el.style.display = ""; }
+      else { el.style.display = "none"; }
+    }
+  };
+  // Main Leave tab badge = pending approvals + change requests combined.
+  const pending = pendingRes.count || 0;
+  const changes = changeRes.count || 0;
+  setBadge(["admin-leave-count"], pending + changes);
+  setBadge(["al-approvals-count"], pending);
+  setBadge(["al-changes-count"], changes);
 }
 
 document.getElementById("admin-leave-filter")?.addEventListener("change", loadAdminLeave);

@@ -88,7 +88,7 @@ function statusBadge(status) {
 async function loadRequests() {
   const body = document.getElementById("leave-list-body");
   const { data, error } = await sb.from("leave_requests")
-    .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, created_at, leave_types ( name )")
+    .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_requested_at, created_at, leave_types ( name )")
     .eq("user_id", employee.id)
     .order("created_at", { ascending: false });
   if (error) {
@@ -103,11 +103,11 @@ async function loadRequests() {
 
   body.innerHTML = rows.map((r) => {
     const typeName = r.leave_types?.name || "—";
-    const canCancel = r.status === "pending_manager" || r.status === "pending_admin";
     const noteParts = [];
     if (r.reason)              noteParts.push(escapeHtml(r.reason));
     if (r.manager_review_note) noteParts.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
     if (r.review_note)         noteParts.push(`<em class="muted small">Admin: ${escapeHtml(r.review_note)}</em>`);
+    if (r.change_request_type) noteParts.push(`<em class="small" style="color:var(--warning)">${r.change_request_type === "cancel" ? "Cancellation" : "Amendment"} requested — awaiting admin</em>`);
     const reasonCell = noteParts.length ? noteParts.join("<br>") : `<span class="muted small">—</span>`;
 
     const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
@@ -120,27 +120,87 @@ async function loadRequests() {
       <td>${statusBadge(r.status)}</td>
       <td class="small">${reasonCell}</td>
       <td class="small muted">${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
-      <td class="small">${canCancel ? `<button class="ghost small cancel-btn" data-id="${r.id}">Cancel</button>` : ""}</td>
+      <td class="small" style="text-align:right">${rowMenu(r)}</td>
     </tr>`;
   }).join("");
 
-  for (const btn of document.querySelectorAll(".cancel-btn")) {
-    btn.addEventListener("click", () => cancelRequest(Number(btn.dataset.id)));
-  }
+  wireRowMenus();
 }
 
-async function cancelRequest(id) {
-  const ok = await confirmDialog({
-    title: "Cancel leave request",
-    message: "Withdraw this leave request? It can't be un-cancelled — you'd need to submit a new one.",
-    confirmText: "Cancel request",
-    danger: true,
+// Build the per-row 3-dot menu. Pending requests can be cancelled
+// outright; approved requests can request a cancellation or amendment
+// (which an admin must action). Anything with a change already pending,
+// or terminal (rejected/cancelled), gets no menu.
+function rowMenu(r) {
+  const items = [];
+  if (r.status === "pending_manager" || r.status === "pending_admin") {
+    items.push(`<button type="button" class="row-menu-item delete-entry-btn" role="menuitem" data-act="cancel" data-id="${r.id}">Cancel request</button>`);
+  } else if (r.status === "approved" && !r.change_request_type) {
+    items.push(`<button type="button" class="row-menu-item" role="menuitem" data-act="req-cancel" data-id="${r.id}">Request cancellation</button>`);
+    items.push(`<button type="button" class="row-menu-item" role="menuitem" data-act="req-amend" data-id="${r.id}">Request amendment</button>`);
+  }
+  if (!items.length) return "";
+  return `
+    <div class="row-menu-wrap">
+      <button type="button" class="ghost small row-menu-btn" aria-label="Options" aria-expanded="false">⋯</button>
+      <div class="row-menu" hidden role="menu">${items.join("")}</div>
+    </div>`;
+}
+
+function wireRowMenus() {
+  document.querySelectorAll("#leave-list-body .row-menu-btn").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const menu = btn.parentElement.querySelector(".row-menu");
+      const willOpen = menu.hidden;
+      document.querySelectorAll("#leave-list-body .row-menu").forEach((m) => { m.hidden = true; });
+      menu.hidden = !willOpen;
+    });
   });
-  if (!ok) return;
-  const { error } = await sb.rpc("cancel_leave_request", { p_request_id: id });
-  if (error) return notice(error.message, "error");
-  notice("Leave request cancelled", "success");
-  await loadRequests();
+  document.querySelectorAll("#leave-list-body .row-menu-item").forEach((item) => {
+    item.addEventListener("click", () => onMenuAction(item.dataset.act, Number(item.dataset.id)));
+  });
+}
+
+document.addEventListener("click", () => {
+  document.querySelectorAll("#leave-list-body .row-menu").forEach((m) => { m.hidden = true; });
+});
+
+async function onMenuAction(act, id) {
+  if (act === "cancel") {
+    const ok = await confirmDialog({
+      title: "Cancel leave request",
+      message: "Withdraw this leave request? You'd need to submit a new one to reinstate it.",
+      confirmText: "Cancel request", danger: true,
+    });
+    if (!ok) return;
+    const { error } = await sb.rpc("cancel_leave_request", { p_request_id: id });
+    if (error) return notice(error.message, "error");
+    notice("Leave request cancelled", "success");
+    await loadRequests();
+  } else if (act === "req-cancel") {
+    const ok = await confirmDialog({
+      title: "Request cancellation",
+      message: "This leave is already approved and on your timesheet. Ask an admin to cancel it?",
+      confirmText: "Request cancellation",
+    });
+    if (!ok) return;
+    const { error } = await sb.rpc("request_leave_change", { p_request_id: id, p_type: "cancel", p_note: null });
+    if (error) return notice(error.message, "error");
+    notice("Cancellation requested — an admin will action it", "success");
+    await loadRequests();
+  } else if (act === "req-amend") {
+    const note = await promptDialog({
+      title: "Request amendment",
+      message: "What needs to change? (dates, hours, etc.) An admin will action it.",
+      placeholder: "e.g. change Friday to a half day",
+    });
+    if (note == null) return; // cancelled the prompt
+    const { error } = await sb.rpc("request_leave_change", { p_request_id: id, p_type: "amend", p_note: note.trim() || null });
+    if (error) return notice(error.message, "error");
+    notice("Amendment requested — an admin will action it", "success");
+    await loadRequests();
+  }
 }
 
 // ---------------------------------------------------------------- modal
