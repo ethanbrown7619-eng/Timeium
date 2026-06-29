@@ -124,65 +124,58 @@ async function loadRequests() {
     </tr>`;
   }).join("");
 
-  wireRowMenus();
+  wireRowMenus(rows);
 }
 
-// Build the per-row 3-dot menu. Pending requests can be cancelled
-// outright; approved requests can request a cancellation or amendment
-// (which an admin must action). Anything with a change already pending,
-// or terminal (rejected/cancelled), gets no menu.
-function rowMenu(r) {
-  const items = [];
+// Which actions a row offers. Pending requests can be cancelled
+// outright; approved requests can request a cancellation or amendment.
+// Anything with a change already pending, or terminal, has none.
+function rowActions(r) {
   if (r.status === "pending_manager" || r.status === "pending_admin") {
-    items.push(`<button type="button" class="row-menu-item delete-entry-btn" role="menuitem" data-act="cancel" data-id="${r.id}">Cancel request</button>`);
-  } else if (r.status === "approved" && !r.change_request_type) {
-    items.push(`<button type="button" class="row-menu-item" role="menuitem" data-act="req-cancel" data-id="${r.id}">Request cancellation</button>`);
-    items.push(`<button type="button" class="row-menu-item" role="menuitem" data-act="req-amend" data-id="${r.id}">Request amendment</button>`);
+    return [{ act: "cancel", label: "Cancel request", danger: true }];
   }
-  if (!items.length) return "";
-  return `
-    <div class="row-menu-wrap">
-      <button type="button" class="ghost small row-menu-btn" aria-label="Options" aria-expanded="false">⋯</button>
-      <div class="row-menu" hidden role="menu">${items.join("")}</div>
-    </div>`;
+  if (r.status === "approved" && !r.change_request_type) {
+    return [
+      { act: "req-cancel", label: "Request cancellation" },
+      { act: "req-amend", label: "Request amendment" },
+    ];
+  }
+  return [];
 }
 
-function closeRowMenus() {
-  document.querySelectorAll("#leave-list-body .row-menu").forEach((m) => { m.hidden = true; });
+function rowMenu(r) {
+  if (!rowActions(r).length) return "";
+  return `<button type="button" class="ghost small leave-menu-btn" data-id="${r.id}" aria-label="Options">⋯</button>`;
 }
 
-function wireRowMenus() {
-  document.querySelectorAll("#leave-list-body .row-menu-btn").forEach((btn) => {
-    btn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const menu = btn.parentElement.querySelector(".row-menu");
-      const willOpen = menu.hidden;
-      closeRowMenus();
-      if (!willOpen) return;
-      // The menu lives inside a table wrapper with overflow:auto, which
-      // clips an absolutely-positioned dropdown. Position it fixed,
-      // anchored to the button, so it floats above everything.
-      menu.hidden = false;
-      menu.style.position = "fixed";
-      const r = btn.getBoundingClientRect();
-      const left = Math.max(8, r.right - menu.offsetWidth);
-      // If the menu would overflow the bottom of the viewport, open it
-      // upward instead.
-      const top = (r.bottom + menu.offsetHeight > window.innerHeight - 8)
-        ? r.top - menu.offsetHeight
-        : r.bottom;
-      menu.style.top = `${Math.max(8, top)}px`;
-      menu.style.left = `${left}px`;
-      menu.style.right = "auto";
+const actionDialog = document.getElementById("leave-action-dialog");
+document.getElementById("leave-action-close").addEventListener("click", () => actionDialog.close());
+
+function wireRowMenus(rows) {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  document.querySelectorAll("#leave-list-body .leave-menu-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = Number(btn.dataset.id);
+      const r = byId.get(id);
+      if (!r) return;
+      const acts = rowActions(r);
+      document.getElementById("leave-action-title").textContent =
+        `${r.leave_types?.name || "Leave"} · ${r.start_date}${r.end_date !== r.start_date ? ` → ${r.end_date}` : ""}`;
+      document.getElementById("leave-action-sub").textContent = "Choose an action for this leave request.";
+      const box = document.getElementById("leave-action-buttons");
+      box.innerHTML = acts.map((a) =>
+        `<button type="button" class="${a.danger ? "danger" : "primary"}" data-act="${a.act}" data-id="${id}" style="width:100%">${a.label}</button>`
+      ).join("");
+      box.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => {
+          actionDialog.close();
+          onMenuAction(b.dataset.act, Number(b.dataset.id));
+        });
+      });
+      actionDialog.showModal();
     });
   });
-  document.querySelectorAll("#leave-list-body .row-menu-item").forEach((item) => {
-    item.addEventListener("click", () => onMenuAction(item.dataset.act, Number(item.dataset.id)));
-  });
 }
-
-document.addEventListener("click", closeRowMenus);
-window.addEventListener("scroll", closeRowMenus, true);
 
 async function onMenuAction(act, id) {
   if (act === "cancel") {

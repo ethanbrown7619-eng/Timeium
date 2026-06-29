@@ -117,6 +117,20 @@
          inner wrapper supplies the padding + width-cap that the native
          <dialog> CSS leaves off (matches the convention used by every
          other dialog in this app — see timesheet.html). -->
+    <!-- Per-row action sheet — opened by the ⋯ button. A <dialog> renders
+         on the top layer so it can't be clipped by the table's scroll
+         container (which an absolute/fixed dropdown was). -->
+    <dialog id="leave-action-dialog">
+      <div style="padding:20px;width:min(95vw,360px)">
+        <h3 style="margin:0 0 4px" id="leave-action-title">Leave request</h3>
+        <p class="muted small" id="leave-action-sub" style="margin:0 0 16px"></p>
+        <div id="leave-action-buttons" style="display:flex;flex-direction:column;gap:8px"></div>
+        <div class="row-flex mt-md" style="justify-content:flex-end">
+          <button type="button" class="ghost" id="leave-action-close">Close</button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="request-dialog">
       <form id="request-form" style="padding:24px;width:min(95vw,520px)">
         <h2 style="margin:0 0 16px">Request leave</h2>
