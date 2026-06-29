@@ -9,11 +9,24 @@ if (!session) {
 }
 
 document.getElementById("whoami").textContent = session.user.email || "";
-document.getElementById("signout-link").addEventListener("click", async (e) => {
-  e.preventDefault();
-  await sb.auth.signOut();
+async function doSignOut(e) {
+  e?.preventDefault?.();
+  try { await sb.auth.signOut(); } catch (err) { console.warn("signOut threw:", err); }
+  // Belt-and-braces for the kiosk/deleted-contractor case: even if
+  // Supabase's signOut errors (e.g. invalid refresh token because the
+  // user record is gone), clear any local session blobs before
+  // bouncing to signin so the next reload doesn't re-enter the loop.
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("sb-")) localStorage.removeItem(k);
+    }
+  } catch {}
   location.href = "/signin.html";
-});
+}
+
+document.getElementById("signout-link").addEventListener("click", doSignOut);
+document.getElementById("signout-card-btn")?.addEventListener("click", doSignOut);
 
 // Returns true if the user is now linked to an employee record (and
 // navigates to /timesheet.html). Otherwise reveals the unlinked card.

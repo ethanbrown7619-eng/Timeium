@@ -1157,6 +1157,7 @@ details.card[open] > summary::before { content: "▾ "; }
 .tc-live-counts .tile.offsite { background: var(--info-blue-bg-alt); border-color: #b8cfef; }
 .tc-live-counts .tile.break   { background: #fdecd3; border-color: #f5d89a; }
 .tc-live-counts .tile.away    { background: var(--surface-alt); }
+.tc-live-counts .tile.absent  { background: var(--danger-bg); border-color: #f5b8b8; }
 .tc-live-pill {
   display: inline-block;
   padding: 2px 8px;
@@ -1168,6 +1169,14 @@ details.card[open] > summary::before { content: "▾ "; }
 .tc-live-pill.offsite { background: var(--info-blue-bg-alt); color: var(--info-blue); }
 .tc-live-pill.break   { background: #fdecd3; color: #a56a10; }
 .tc-live-pill.away    { background: var(--surface-alt); color: var(--text-muted); }
+.tc-live-pill.absent  { background: var(--danger-bg); color: var(--danger); }
+
+/* Sortable column headers on the live presence table. Cursor + hover
+   hint that the cell is clickable; .sorted bolds the active column. */
+.tc-live-sort { cursor: pointer; user-select: none; }
+.tc-live-sort:hover { background: var(--surface-alt); }
+.tc-live-sort.sorted { color: var(--text); font-weight: 700; }
+.tc-live-sort .sort-ind { font-size: 11px; color: var(--text-muted); margin-left: 2px; }
 
 .dept-view-btn {
   display: inline-block;

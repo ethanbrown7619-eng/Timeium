@@ -44,15 +44,16 @@
         <div style="overflow-x:auto">
           <table>
             <thead>
-              <tr>
-                <th>Status</th>
-                <th>Name</th>
-                <th>Department</th>
-                <th>Since</th>
+              <tr id="tc-live-head">
+                <th class="tc-live-sort" data-sort="status">Status<span class="sort-ind"></span></th>
+                <th class="tc-live-sort" data-sort="name">Name<span class="sort-ind"></span></th>
+                <th class="tc-live-sort" data-sort="department">Department<span class="sort-ind"></span></th>
+                <th class="tc-live-sort" data-sort="employment_type">Employee type<span class="sort-ind"></span></th>
+                <th class="tc-live-sort" data-sort="since">Since<span class="sort-ind"></span></th>
               </tr>
             </thead>
             <tbody id="tc-live-body">
-              <tr><td colspan="4" class="muted small" style="text-align:center">Loading…</td></tr>
+              <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
             </tbody>
           </table>
         </div>

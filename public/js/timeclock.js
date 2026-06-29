@@ -108,14 +108,18 @@ function startLivePresence() {
 
 document.getElementById("tc-live-refresh")?.addEventListener("click", () => refreshLive());
 
-// Status values come from public.org_live_status (Attendium) and are
-// exhaustively: on_site | off_site_job | off_site_break | clocked_out_early.
+// Status values come from public.org_live_status (Attendium) plus our
+// own "not_clocked_in" sentinel injected client-side for active staff
+// who don't appear in the RPC result (i.e. they haven't started a
+// shift today). The base RPC statuses are exhaustively:
+//   on_site | off_site_job | off_site_break | clocked_out_early.
 function liveStatusLabel(s, breakName) {
   switch ((s || "").toLowerCase()) {
     case "on_site":            return { label: "On site",                                               cls: "onsite"  };
     case "off_site_job":       return { label: "Off site (job)",                                        cls: "offsite" };
     case "off_site_break":     return { label: breakName ? `Off site break (${breakName})` : "Off site break", cls: "break"   };
     case "clocked_out_early":  return { label: "Clocked out early",                                     cls: "away"    };
+    case "not_clocked_in":     return { label: "Not clocked in",                                        cls: "absent"  };
     default:                   return { label: s || "—",                                                cls: "away"    };
   }
 }
@@ -132,11 +136,135 @@ function fmtSince(iso) {
   return `${hrs}h ${remMin}m`;
 }
 
+// Live presence sort state — persists across 30s refresh ticks so a
+// mid-sort refresh doesn't snap the table back to the default. Defaults
+// to name ascending so the initial render is the same as before.
+let liveSortKey = "name";
+let liveSortDir = "asc";
+let liveRowsCache = [];
+let liveEmpInfoByName = null; // null until first load completes
+
+// Active employee roster — name, department, and employment_type. We use
+// this for two things:
+//   1. Decorate live rows with employment_type (the RPC doesn't return it).
+//   2. Inject rows for active staff who AREN'T in the live RPC result
+//      (i.e. haven't clocked in today) so the live view shows the
+//      status of every employee, not just present ones.
+// Fetched once per page load — these values don't change live.
+async function loadActiveEmployeeRoster() {
+  if (liveEmpInfoByName || !currentOrgId) return;
+  const [usersRes, deptsRes] = await Promise.all([
+    sb.from("users")
+      .select("id, name, department_id, employment_type")
+      .eq("organisation_id", currentOrgId)
+      .eq("active", true),
+    sb.from("departments")
+      .select("id, name")
+      .eq("organisation_id", currentOrgId),
+  ]);
+  const deptName = new Map((deptsRes.data || []).map((d) => [d.id, d.name]));
+  liveEmpInfoByName = new Map();
+  for (const u of usersRes.data || []) {
+    if (!u.name) continue;
+    liveEmpInfoByName.set(u.name, {
+      name: u.name,
+      department: u.department_id ? (deptName.get(u.department_id) || "") : "",
+      employment_type: u.employment_type || "",
+    });
+  }
+}
+
+function liveStatusRank(s) {
+  // Sort priority when ordering by Status: on-site first, then off-site
+  // job, then break, clocked-out-early, then not-clocked-in last so
+  // active staff bubble up.
+  switch ((s || "").toLowerCase()) {
+    case "on_site":           return 0;
+    case "off_site_job":      return 1;
+    case "off_site_break":    return 2;
+    case "clocked_out_early": return 3;
+    case "not_clocked_in":    return 4;
+    default:                  return 5;
+  }
+}
+
+function renderLiveTable() {
+  const body = document.getElementById("tc-live-body");
+  if (!body) return;
+  if (!liveRowsCache.length) {
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">No active employees.</td></tr>`;
+    updateLiveSortIndicators();
+    return;
+  }
+
+  const dir = liveSortDir === "asc" ? 1 : -1;
+  const sorted = liveRowsCache.slice().sort((a, b) => {
+    if (liveSortKey === "status") {
+      const r = liveStatusRank(a.status) - liveStatusRank(b.status);
+      if (r !== 0) return r * dir;
+      return String(a.name || "").localeCompare(String(b.name || "")) * dir;
+    }
+    if (liveSortKey === "since") {
+      // Empty since sorts to the bottom regardless of direction.
+      const at = a.since ? new Date(a.since).getTime() : null;
+      const bt = b.since ? new Date(b.since).getTime() : null;
+      if (at == null && bt == null) return 0;
+      if (at == null) return 1;
+      if (bt == null) return -1;
+      return (at - bt) * dir;
+    }
+    const av = String(a[liveSortKey] ?? "").toLowerCase();
+    const bv = String(b[liveSortKey] ?? "").toLowerCase();
+    return av.localeCompare(bv) * dir;
+  });
+
+  body.innerHTML = sorted.map((r) => {
+    const { label, cls } = liveStatusLabel(r.status, r.break_name);
+    return `<tr>
+      <td><span class="tc-live-pill ${cls}">${escapeHtml(label)}</span></td>
+      <td>${escapeHtml(r.name || "")}</td>
+      <td class="small muted">${escapeHtml(r.department || "")}</td>
+      <td class="small">${escapeHtml(r.employment_type || "")}</td>
+      <td class="small">${escapeHtml(fmtSince(r.since))}</td>
+    </tr>`;
+  }).join("");
+  updateLiveSortIndicators();
+}
+
+function updateLiveSortIndicators() {
+  document.querySelectorAll("#tc-live-head .tc-live-sort").forEach((th) => {
+    const ind = th.querySelector(".sort-ind");
+    if (!ind) return;
+    if (th.dataset.sort === liveSortKey) {
+      ind.textContent = liveSortDir === "asc" ? " ↑" : " ↓";
+      th.classList.add("sorted");
+    } else {
+      ind.textContent = "";
+      th.classList.remove("sorted");
+    }
+  });
+}
+
+document.querySelectorAll("#tc-live-head .tc-live-sort").forEach((th) => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    if (key === liveSortKey) {
+      liveSortDir = liveSortDir === "asc" ? "desc" : "asc";
+    } else {
+      liveSortKey = key;
+      liveSortDir = "asc";
+    }
+    renderLiveTable();
+  });
+});
+
 async function loadLivePresence() {
   if (!currentOrgId) return;
   const body = document.getElementById("tc-live-body");
   const countsEl = document.getElementById("tc-live-counts");
   try {
+    await loadActiveEmployeeRoster();
+
     // org_live_status is an RPC in Attendium, not a view. Takes p_org_id
     // explicitly and doesn't gate server-side — anyone with a valid
     // session can call it (our clock-viewer / admin UI permission is
@@ -144,10 +272,37 @@ async function loadLivePresence() {
     const { data, error } = await sb.rpc("org_live_status", { p_org_id: currentOrgId });
     if (error) throw error;
 
-    const rows = (data || []).slice().sort((a, b) =>
-      String(a.name || "").localeCompare(String(b.name || "")));
+    // Live rows from the RPC, decorated with employment_type from the
+    // local roster (the RPC doesn't return it).
+    const liveByName = new Map();
+    const rows = (data || []).map((r) => {
+      const info = liveEmpInfoByName?.get(r.name) || null;
+      const row = {
+        ...r,
+        employment_type: info?.employment_type || "",
+      };
+      if (r.name) liveByName.set(r.name, row);
+      return row;
+    });
 
-    const buckets = { onsite: 0, offsite: 0, break: 0, away: 0 };
+    // Append a "Not clocked in" row for every active employee who isn't
+    // in the live RPC result — gives the admin a complete picture of
+    // every staff member's status.
+    if (liveEmpInfoByName) {
+      for (const info of liveEmpInfoByName.values()) {
+        if (liveByName.has(info.name)) continue;
+        rows.push({
+          name:            info.name,
+          department:      info.department,
+          employment_type: info.employment_type,
+          status:          "not_clocked_in",
+          since:           null,
+          break_name:      null,
+        });
+      }
+    }
+
+    const buckets = { onsite: 0, offsite: 0, break: 0, away: 0, absent: 0 };
     for (const r of rows) {
       const { cls } = liveStatusLabel(r.status, r.break_name);
       buckets[cls] = (buckets[cls] || 0) + 1;
@@ -156,26 +311,15 @@ async function loadLivePresence() {
       <div class="tile onsite"><div class="num">${buckets.onsite || 0}</div><div class="lbl">On site</div></div>
       <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
       <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">Off site break</div></div>
-      <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>`;
+      <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>
+      <div class="tile absent"><div class="num">${buckets.absent || 0}</div><div class="lbl">Not clocked in</div></div>`;
 
-    if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="4" class="muted small" style="text-align:center">No active employees.</td></tr>`;
-      return;
-    }
-
-    body.innerHTML = rows.map((r) => {
-      const { label, cls } = liveStatusLabel(r.status, r.break_name);
-      return `<tr>
-        <td><span class="tc-live-pill ${cls}">${escapeHtml(label)}</span></td>
-        <td>${escapeHtml(r.name || "")}</td>
-        <td class="small muted">${escapeHtml(r.department || "")}</td>
-        <td class="small">${escapeHtml(fmtSince(r.since))}</td>
-      </tr>`;
-    }).join("");
+    liveRowsCache = rows;
+    renderLiveTable();
   } catch (err) {
     console.error("live presence load failed:", err);
     body.innerHTML = `
-      <tr><td colspan="4" class="muted small" style="text-align:center;padding:24px">
+      <tr><td colspan="5" class="muted small" style="text-align:center;padding:24px">
         Could not load presence data. ${escapeHtml(err.message || "")}
       </td></tr>`;
     countsEl.innerHTML = "";
