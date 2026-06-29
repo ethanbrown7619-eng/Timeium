@@ -84,7 +84,7 @@ function makeController(kind) {
 
   const state = {
     rows: [],
-    totalCount: 0,
+    hasNextPage: false,
     filter: { search: "", status: "" },
     page: 1,
     subView: "view",
@@ -142,15 +142,15 @@ function makeController(kind) {
       body.innerHTML = `<tr><td colspan="${colCount}" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
     }
     try {
-      // count: "planned" uses Postgres's query-planner estimate
-      // instead of running a real COUNT(*) — needed because COUNT(*)
-      // re-evaluates the row-level-security policy for every row, and
-      // PTL's jobs RLS has nested EXISTS subqueries that turn a count
-      // over 6000 rows into a multi-second hang. The planner estimate
-      // is close enough for "Page X of Y" pagination.
+      // No COUNT at all. A real COUNT(*) re-evaluates the row-level-
+      // security policy for every row, and PTL's jobs RLS has nested
+      // EXISTS subqueries — counting 6000 rows that way hangs the page
+      // indefinitely. Even count:"planned" was unreliable here. Instead
+      // we fetch PER_PAGE + 1 rows: if the extra row comes back there's
+      // a next page. No total is shown — just Prev / Next.
       let query = sb
         .from(table)
-        .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`, { count: "planned" })
+        .select(`id, ${codeField}, description, status, source, last_synced_at${kind === "jobs" ? ", is_leave" : ""}`)
         .eq("organisation_id", currentOrgId);
 
       if (state.filter.status) {
@@ -162,13 +162,14 @@ function makeController(kind) {
       }
 
       const from = (state.page - 1) * PER_PAGE;
-      const { data, count, error } = await query
+      const { data, error } = await query
         .order(codeField, { ascending: true })
-        .range(from, from + PER_PAGE - 1);
+        .range(from, from + PER_PAGE);  // +1 sentinel row to detect a next page
       if (error) throw error;
 
-      state.rows = data || [];
-      state.totalCount = count || 0;
+      const rows = data || [];
+      state.hasNextPage = rows.length > PER_PAGE;
+      state.rows = rows.slice(0, PER_PAGE);
       renderList();
     } catch (err) {
       console.error(err);
@@ -182,11 +183,9 @@ function makeController(kind) {
     // state.rows is the server-returned page already; no client-side
     // filtering happens here (the server applied search + status).
     const pageRows = state.rows;
-    const totalPages = Math.max(1, Math.ceil(state.totalCount / PER_PAGE));
-    if (state.page > totalPages) state.page = totalPages;
 
     document.getElementById(`${prefix}-summary`).textContent =
-      `${state.totalCount} total · page ${state.page} of ${totalPages}`;
+      `Page ${state.page}${state.filter.search || state.filter.status ? " (filtered)" : ""}`;
 
     const colCount = kind === "jobs" ? 7 : (c.hasStatus ? 6 : 5);
     if (!pageRows.length) {
@@ -219,18 +218,19 @@ function makeController(kind) {
       </tr>
     `).join("");
 
-    // Pagination controls
-    if (totalPages > 1) {
+    // Pagination controls — Prev/Next driven by hasNextPage (we don't
+    // know the total, only whether a sentinel +1 row came back).
+    if (state.page > 1 || state.hasNextPage) {
       paginationEl.innerHTML = `
         <button class="ghost" id="${prefix}-prev" ${state.page <= 1 ? "disabled" : ""}>← Prev</button>
-        <span class="page-info">Page ${state.page} of ${totalPages}</span>
-        <button class="ghost" id="${prefix}-next" ${state.page >= totalPages ? "disabled" : ""}>Next →</button>
+        <span class="page-info">Page ${state.page}</span>
+        <button class="ghost" id="${prefix}-next" ${state.hasNextPage ? "" : "disabled"}>Next →</button>
       `;
       document.getElementById(`${prefix}-prev`)?.addEventListener("click", () => {
         if (state.page > 1) { state.page--; load(); }
       });
       document.getElementById(`${prefix}-next`)?.addEventListener("click", () => {
-        if (state.page < totalPages) { state.page++; load(); }
+        if (state.hasNextPage) { state.page++; load(); }
       });
     } else {
       paginationEl.innerHTML = "";
