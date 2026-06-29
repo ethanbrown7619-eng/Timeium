@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#BEFA40" />
+    <title>My Leave · PTL Timesheet</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <div class="row-flex mb-md">
+        <h2 style="margin:0">My Leave</h2>
+        <div class="grow"></div>
+        <button id="open-request-btn" class="primary">+ Request leave</button>
+      </div>
+
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>From</th>
+                <th>To</th>
+                <th class="num">Hours / day</th>
+                <th>Status</th>
+                <th>Reason</th>
+                <th>Submitted</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="leave-list-body">
+              <tr><td colspan="8" class="muted small" style="text-align:center;padding:24px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- Request modal — opened by the "Request leave" button. -->
+    <dialog id="request-dialog" class="dialog">
+      <form id="request-form" method="dialog">
+        <h3 style="margin:0 0 12px">Request leave</h3>
+
+        <div class="mb-sm">
+          <label for="req-type">Leave type</label>
+          <select id="req-type" required style="width:100%"></select>
+        </div>
+
+        <div class="row-flex" style="gap:12px">
+          <div class="mb-sm" style="flex:1">
+            <label for="req-start">Start date</label>
+            <input id="req-start" type="date" required style="width:100%" />
+          </div>
+          <div class="mb-sm" style="flex:1">
+            <label for="req-end">End date</label>
+            <input id="req-end" type="date" required style="width:100%" />
+          </div>
+        </div>
+
+        <div class="row-flex" style="gap:12px;align-items:flex-end">
+          <div class="mb-sm" style="flex:1">
+            <label for="req-hours">Hours per day</label>
+            <input id="req-hours" type="number" step="0.25" min="0.25" max="24" value="8" required style="width:100%" />
+          </div>
+          <div class="mb-sm" style="flex:1">
+            <label class="row-flex" style="gap:8px;align-items:center;cursor:pointer">
+              <input id="req-skip-weekends" type="checkbox" checked />
+              <span>Skip weekends</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="mb-md">
+          <label for="req-reason">Reason (optional)</label>
+          <textarea id="req-reason" rows="3" style="width:100%" placeholder="e.g. family event, medical appointment, holiday"></textarea>
+        </div>
+
+        <div class="row-flex" style="gap:8px;justify-content:flex-end">
+          <button type="button" id="req-cancel-btn" class="ghost">Cancel</button>
+          <button type="submit" id="req-submit-btn" class="primary">Submit request</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/js/leave.js"></script>
+  </body>
+</html>
