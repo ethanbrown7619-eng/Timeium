@@ -1165,13 +1165,18 @@ function rowHtml(e, idx, isSubmitted) {
   const task = tasksById.get(e.task_id);
   const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
 
-  const ro = isSubmitted ? "readonly" : "";
   const isLeaveRow = !!job?.is_leave;
+  // Leave rows are owned by the leave request → approval flow: the
+  // employee can't edit or remove the hours it populated. Admin/manager
+  // override mode keeps full control. Submitted timesheets are read-only
+  // for everyone via `ro`.
+  const leaveLocked = isLeaveRow && !ADMIN_MODE;
+  const ro = (isSubmitted || leaveLocked) ? "readonly" : "";
   const deptRo = isSubmitted || isLeaveRow ? "readonly" : "";
   const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
 
   return `
-    <tr data-entry-id="${e.id}" data-idx="${idx}">
+    <tr data-entry-id="${e.id}" data-idx="${idx}"${leaveLocked ? ' title="Leave is managed from the Leave page — request a change there"' : ""}>
       <td>
         <div class="ac-wrap">
           <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" ${ro} />
@@ -1203,7 +1208,7 @@ function rowHtml(e, idx, isSubmitted) {
       `).join("")}
       <td class="day-col row-total"><strong>${rowTotal}</strong></td>
       <td class="row-actions-cell">
-        ${isSubmitted ? "" : `
+        ${(isSubmitted || leaveLocked) ? (leaveLocked ? `<span class="small muted" title="Leave is managed from the Leave page">🔒</span>` : "") : `
           <div class="row-menu-wrap">
             <button type="button" class="ghost small row-menu-btn" aria-label="Row options" aria-expanded="false">⋯</button>
             <div class="row-menu" hidden role="menu">
