@@ -307,12 +307,17 @@ async function loadLivePresence() {
       const { cls } = liveStatusLabel(r.status, r.break_name);
       buckets[cls] = (buckets[cls] || 0) + 1;
     }
+    // Guest count is updated by loadVisitorsOnSite (separate fetch).
+    // We render the tile here with a "—" placeholder so the position
+    // doesn't shift when the count lands; refreshLive() always fires
+    // visitor + employee fetches together so the gap is sub-second.
     countsEl.innerHTML = `
       <div class="tile onsite"><div class="num">${buckets.onsite || 0}</div><div class="lbl">On site</div></div>
       <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
       <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">Off site break</div></div>
       <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>
-      <div class="tile absent"><div class="num">${buckets.absent || 0}</div><div class="lbl">Not clocked in</div></div>`;
+      <div class="tile absent"><div class="num">${buckets.absent || 0}</div><div class="lbl">Not clocked in</div></div>
+      <div class="tile guest"><div class="num" id="tc-guest-tile-num">—</div><div class="lbl">Guests on site</div></div>`;
 
     liveRowsCache = rows;
     renderLiveTable();
@@ -349,6 +354,7 @@ async function loadVisitorsOnSite() {
   if (!currentOrgId) return;
   const body = document.getElementById("tc-visitors-body");
   const countEl = document.getElementById("tc-visitors-count");
+  const tileNumEl = document.getElementById("tc-guest-tile-num");
   if (!body) return;
   try {
     const { data, error } = await sb.rpc("list_present_guests_admin", {
@@ -358,6 +364,7 @@ async function loadVisitorsOnSite() {
 
     const rows = data || [];
 
+    if (tileNumEl) tileNumEl.textContent = String(rows.length);
     if (countEl) {
       if (rows.length) {
         countEl.textContent = `${rows.length} on site`;
@@ -389,6 +396,7 @@ async function loadVisitorsOnSite() {
   } catch (err) {
     console.error("visitors-on-site load failed:", err);
     if (countEl) countEl.style.display = "none";
+    if (tileNumEl) tileNumEl.textContent = "—";
     body.innerHTML = `
       <tr><td colspan="4" class="muted small" style="text-align:center;padding:24px">
         Could not load visitor data. ${escapeHtml(err.message || "")}
