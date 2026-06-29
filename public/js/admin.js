@@ -976,18 +976,88 @@ document.querySelectorAll("[data-lv-view]").forEach((btn) => {
 
 /* ---------- shared: build per-day leave/OT rows for a set of week_starts ---------- */
 
+// Pulls approved leave for OVERHEAD staff (who don't file timesheets)
+// from leave_requests and pushes one report row per leave day into
+// `rows`. Timesheet staff are skipped — their leave comes through their
+// timesheet entries instead, so including them here would double-count.
+async function appendOverheadLeaveRows(rows, { weekStarts, empMap, deptMap, jobMap, filteredEmpIds }) {
+  // Report date window = the span covered by the requested week starts.
+  const sorted = [...weekStarts].sort();
+  const rangeStart = sorted[0];
+  const lastMon = new Date(sorted[sorted.length - 1] + "T00:00:00");
+  const rangeEnd = fmtDate(addDays(lastMon, 6));
+
+  // Leave types → mapped job (for the code/description columns).
+  const { data: leaveTypes } = await sb
+    .from("leave_types")
+    .select("id, code, name, job_id")
+    .eq("organisation_id", currentOrgId);
+  const ltById = {};
+  for (const t of leaveTypes || []) ltById[t.id] = t;
+
+  // Approved leave overlapping the window.
+  const { data: reqs, error } = await sb
+    .from("leave_requests")
+    .select("id, user_id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status")
+    .eq("organisation_id", currentOrgId)
+    .eq("status", "approved")
+    .lte("start_date", rangeEnd)
+    .gte("end_date", rangeStart);
+  if (error) { console.warn("overhead leave fetch failed:", error.message); return; }
+
+  for (const req of reqs || []) {
+    const emp = empMap[req.user_id];
+    if (!emp) continue;
+    if (!filteredEmpIds.has(emp.id)) continue;
+    const dept = emp.department_id ? deptMap[emp.department_id] : null;
+    // Only overhead staff — timesheet staff get their leave from the
+    // timesheet-entry path.
+    if (!isUserEffectiveOverhead(emp, dept)) continue;
+
+    const lt = ltById[req.leave_type_id] || null;
+    const job = lt?.job_id ? jobMap[lt.job_id] : null;
+    const hours = Number(req.hours_per_day) || 0;
+    if (hours <= 0) continue;
+
+    let d = new Date(req.start_date + "T00:00:00");
+    const end = new Date(req.end_date + "T00:00:00");
+    while (d <= end) {
+      const iso = fmtDate(d);
+      const dow = d.getDay(); // 0=Sun, 6=Sat
+      const isWeekend = dow === 0 || dow === 6;
+      // Clip to the report window and respect skip_weekends.
+      if (iso >= rangeStart && iso <= rangeEnd && !(req.skip_weekends && isWeekend)) {
+        rows.push({
+          employee: emp.name || "",
+          employee_code: emp.employee_code || "",
+          department: dept?.name || "",
+          employment_type: emp.employment_type || "",
+          date: iso,
+          date_display: d.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" }),
+          event: "Leave",
+          event_detail: job?.job_code || lt?.code || "",
+          event_description: lt?.name || job?.description || "",
+          note: req.reason || "",
+          hours,
+        });
+      }
+      d = addDays(d, 1);
+    }
+  }
+}
+
 async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
   if (!currentOrgId || !weekStarts.length) return [];
 
   const { data: employees } = await sb
     .from("users")
-    .select("id, name, employee_code, department_id, employment_type, receives_overtime, overtime_threshold_hours, overtime_daily_threshold_hours, active")
+    .select("id, name, employee_code, department_id, employment_type, receives_overtime, overtime_threshold_hours, overtime_daily_threshold_hours, cost_rate, sell_rate, rate_source_department_id, active")
     .eq("organisation_id", currentOrgId)
     .eq("active", true);
 
   const { data: departments } = await sb
     .from("departments")
-    .select("id, name")
+    .select("id, name, is_overhead")
     .eq("organisation_id", currentOrgId);
 
   // Only fetch leave-flagged jobs. Orgs with thousands of synced
@@ -1004,6 +1074,28 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
   const jobMap = {};
   for (const j of allJobs || []) jobMap[j.id] = j;
 
+  const empMap = {};
+  for (const e of employees || []) empMap[e.id] = e;
+  const deptMap = {};
+  for (const d of departments || []) deptMap[d.id] = d;
+
+  // Filter by employment type (waged vs salaried).
+  const filteredEmpIds = new Set(
+    (employees || []).filter((e) => !typeFilter || e.employment_type === typeFilter).map((e) => e.id)
+  );
+
+  const rows = [];
+
+  // --- Overhead-staff leave (from leave_requests, not timesheets) ------
+  // Overhead staff don't file timesheets, so their approved leave never
+  // reaches the timesheet-entry path below. Pull it straight from
+  // approved leave_requests. Timesheet staff are intentionally excluded
+  // here — their leave already shows via their timesheet entries, and
+  // including both would double-count.
+  await appendOverheadLeaveRows(rows, {
+    weekStarts, empMap, deptMap, jobMap, filteredEmpIds,
+  });
+
   let tsQuery = sb
     .from("timesheets")
     .select("id, user_id, status, week_start")
@@ -1016,7 +1108,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     tsQuery = tsQuery.in("status", ["submitted", "approved", "exported"]);
   }
   const { data: timesheets } = await tsQuery;
-  if (!timesheets?.length) return [];
+  if (!timesheets?.length) return rows;
 
   const tsIds = timesheets.map((t) => t.id);
   const tsMap = {};
@@ -1041,19 +1133,7 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     if (chunk?.length) entries.push(...chunk);
   }
 
-  if (!entries?.length) return [];
-
-  const empMap = {};
-  for (const e of employees || []) empMap[e.id] = e;
-  const deptMap = {};
-  for (const d of departments || []) deptMap[d.id] = d;
-
-  // Filter by employment type
-  const filteredEmpIds = new Set(
-    (employees || []).filter((e) => !typeFilter || e.employment_type === typeFilter).map((e) => e.id)
-  );
-
-  const rows = [];
+  if (!entries?.length) return rows;
 
   // Leave rows — one row per day with hours
   for (const entry of entries) {
