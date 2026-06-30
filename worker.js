@@ -182,8 +182,10 @@ async function handleXero(url, request, env) {
       return xeroCallback(request, url, env);
     case "/xero/api/employees":
       return xeroProxyAdmin(request, env, async (conn) => {
-        const data = await xeroFetch(env, conn, "/payroll.xro/2.0/Employees");
-        return (data?.employees || []).map((e) => ({
+        // Xero Payroll paginates employees at 100/page. Loop until a
+        // short page so orgs with >100 staff aren't silently truncated.
+        const all = await xeroFetchAllPages(env, conn, "/payroll.xro/2.0/Employees", "employees");
+        return all.map((e) => ({
           id: e.employeeID,
           firstName: e.firstName,
           lastName: e.lastName,
@@ -554,6 +556,21 @@ async function loadConnection(env, orgId) {
   if (!resp.ok) throw new Error(`Load connection failed: ${await resp.text()}`);
   const rows = await resp.json();
   return rows[0] || null;
+}
+
+// Page through a paginated Xero Payroll collection (100 records/page),
+// concatenating the named array off each response until a short page is
+// returned. Caps at 100 pages (10k records) as a runaway guard.
+async function xeroFetchAllPages(env, conn, path, arrayKey) {
+  const out = [];
+  for (let page = 1; page <= 100; page++) {
+    const sep = path.includes("?") ? "&" : "?";
+    const data = await xeroFetch(env, conn, `${path}${sep}page=${page}`);
+    const chunk = data?.[arrayKey] || [];
+    out.push(...chunk);
+    if (chunk.length < 100) break;
+  }
+  return out;
 }
 
 async function xeroFetch(env, conn, path, init = {}) {

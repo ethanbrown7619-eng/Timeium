@@ -803,8 +803,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
     // Provision a login account if email was added and no auth account exists
     const prev = employees.find((e) => e.id === empId);
     if (payload.email && !prev?.auth_user_id) {
-      const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: empId });
-      if (provErr) console.warn("provision_employee_login:", provErr.message);
+      await provisionAndShowPassword(empId, payload.name);
     }
 
     // If the operator just edited their own row (e.g. moved themselves
@@ -829,11 +828,10 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
     });
     if (error) return notice(friendlyConstraintMsg(error, payload), "error");
 
-    // Provision a login account with default password if employee has an email
+    // Provision a login account (random temp password) if employee has an email
     const newEmpId = Array.isArray(newEmp) ? newEmp[0]?.id : newEmp?.id;
     if (payload.email && newEmpId) {
-      const { error: provErr } = await sb.rpc("provision_employee_login", { p_user_id: newEmpId });
-      if (provErr) console.warn("provision_employee_login:", provErr.message);
+      await provisionAndShowPassword(newEmpId, payload.name);
     }
 
     // create_employee RPC doesn't take the newer columns. Patch them in
@@ -896,9 +894,28 @@ async function resetEmployeePassword(id, name) {
     message: `Reset ${name}'s password to the default? They'll be required to set a new one on next login.`,
     confirmText: "Reset password",
   })) return;
-  const { error } = await sb.rpc("reset_employee_password", { p_user_id: id });
+  const { data: tempPw, error } = await sb.rpc("reset_employee_password", { p_user_id: id });
   if (error) return notice(error.message, "error");
-  notice(`Password reset. Default is "PASSWORD" — share that with ${name} so they can sign in once and pick a new one.`, "success");
+  await confirmDialog({
+    title: "Password reset",
+    message: `${name}'s temporary password is:\n\n${tempPw}\n\nShare it with them securely. They'll be required to choose a new one on first sign-in. This is shown only once.`,
+    confirmText: "Done",
+    cancelText: "",
+  });
+}
+
+// Provision a login and show the admin the generated one-time password.
+// Returns null (no dialog) when the account already existed.
+async function provisionAndShowPassword(empId, name) {
+  const { data: tempPw, error } = await sb.rpc("provision_employee_login", { p_user_id: empId });
+  if (error) { console.warn("provision_employee_login:", error.message); return; }
+  if (!tempPw) return; // linked to an existing auth account; no new password
+  await confirmDialog({
+    title: "Login created",
+    message: `Temporary password for ${name || "this employee"}:\n\n${tempPw}\n\nShare it with them securely. They'll choose their own on first sign-in. This is shown only once.`,
+    confirmText: "Done",
+    cancelText: "",
+  });
 }
 
 // Developer-only: wipe one user's timesheet+entries for a chosen week.

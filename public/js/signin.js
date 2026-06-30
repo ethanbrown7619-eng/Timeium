@@ -46,14 +46,19 @@ document.getElementById("signin-form").addEventListener("submit", async (e) => {
     email, password, options: { captchaToken },
   });
 
-  // Audit every attempt (success or failure) for forensic review.
-  // Fire-and-forget — UX shouldn't block on the audit write.
-  sb.rpc("record_login_attempt", {
-    p_email: email,
-    p_succeeded: !error,
-    p_failure_reason: error?.message || null,
-    p_user_agent: navigator.userAgent || null,
-  }).then(() => {}, () => {});
+  // Audit the attempt. Failures go through the anon endpoint (which can
+  // only ever write a failure row now); successes are recorded by an
+  // authenticated RPC that derives the email server-side, so neither
+  // path trusts a client-supplied success flag. Fire-and-forget.
+  if (error) {
+    sb.rpc("record_login_attempt", {
+      p_email: email,
+      p_failure_reason: error.message || null,
+      p_user_agent: navigator.userAgent || null,
+    }).then(() => {}, () => {});
+  } else {
+    sb.rpc("record_login_success").then(() => {}, () => {});
+  }
 
   if (error) {
     notice(error.message || "Sign in failed", "error");

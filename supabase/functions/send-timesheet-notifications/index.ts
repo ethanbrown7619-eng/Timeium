@@ -669,9 +669,16 @@ async function fireReminder(org: any, slot: 1 | 2, weekStart: string, weekEnd: s
         try { await sendEmail(e.email, subject, html); sent++; }
         catch (err) { console.error(`reminder send failed (user ${e.id})`, err); }
     }
-    const stampCol = slot === 1 ? "reminder_last_sent_at" : "reminder_2_last_sent_at";
-    await supabase.from("organisations")
-        .update({ [stampCol]: new Date().toISOString() }).eq("id", org.id);
+    // Only stamp the dedup marker if at least one email actually went out
+    // (or there was nobody to email). If every send failed — e.g. the SMTP
+    // relay was briefly down during the slot — leave the stamp unset so the
+    // next cron tick retries within the window instead of silently skipping
+    // the whole day.
+    if (sent > 0 || employees.length === 0) {
+        const stampCol = slot === 1 ? "reminder_last_sent_at" : "reminder_2_last_sent_at";
+        await supabase.from("organisations")
+            .update({ [stampCol]: new Date().toISOString() }).eq("id", org.id);
+    }
     return sent;
 }
 
@@ -681,10 +688,12 @@ async function fireOverdue(org: any, weekStart: string, weekEnd: string,
     const employees = await getUnsubmittedEmployees(org.id, weekStart);
 
     let sent = 0;
+    let attempted = 0;
     if (recipientMode === "employee" || recipientMode === "both") {
         const subject = `PTL Timesheet — OVERDUE, week ${formatDate(weekStart)}`;
         const html    = overdueEmployeeHtml(orgName, weekStart, weekEnd);
         for (const e of employees) {
+            attempted++;
             try { await sendEmail(e.email, subject, html); sent++; }
             catch (err) { console.error(`overdue (employee) send failed (user ${e.id})`, err); }
         }
@@ -694,12 +703,17 @@ async function fireOverdue(org: any, weekStart: string, weekEnd: string,
         const html    = overdueAdminHtml(orgName, weekStart, weekEnd, employees);
         const admins  = await getAdminEmails(org.id);
         for (const addr of admins) {
+            attempted++;
             try { await sendEmail(addr, subject, html); sent++; }
             catch (err) { console.error(`overdue (admin) send failed (${addr})`, err); }
         }
     }
-    await supabase.from("organisations")
-        .update({ overdue_last_sent_at: new Date().toISOString() }).eq("id", org.id);
+    // Stamp only if something sent, or there was nothing to send. All-failed
+    // leaves the stamp clear so the next tick retries within the window.
+    if (sent > 0 || attempted === 0) {
+        await supabase.from("organisations")
+            .update({ overdue_last_sent_at: new Date().toISOString() }).eq("id", org.id);
+    }
     return sent;
 }
 
@@ -780,8 +794,10 @@ async function fireDiscrepancy(org: any, weekStart: string, weekEnd: string,
         try { await sendEmail(addr, subject, html); sent++; }
         catch (err) { console.error(`discrepancy admin send failed (${addr})`, err); }
     }
-    await supabase.from("organisations")
-        .update({ discrepancy_last_sent_at: new Date().toISOString() }).eq("id", org.id);
+    if (sent > 0 || admins.length === 0) {
+        await supabase.from("organisations")
+            .update({ discrepancy_last_sent_at: new Date().toISOString() }).eq("id", org.id);
+    }
     return sent;
 }
 
@@ -925,6 +941,7 @@ async function fireManagerApproval(org: any, weekStart: string, weekEnd: string,
     if (!managers?.length) return 0;
 
     let sent = 0;
+    let attempted = 0;
     for (const mgr of managers as any[]) {
         const rollup = await buildManagerRollup(org.id, mgr, weekStart);
         if (!rollup) continue;
@@ -933,12 +950,15 @@ async function fireManagerApproval(org: any, weekStart: string, weekEnd: string,
         if (!anyPending) continue;
         const subject = `PTL Timesheet — Timesheets to approve, week ${formatDate(weekStart)}`;
         const html    = managerApprovalHtml(mgr.name || "there", orgName, weekStart, weekEnd, rollup);
+        attempted++;
         try { await sendEmail(mgr.email, subject, html); sent++; }
         catch (err) { console.error(`manager_approval send failed (mgr ${mgr.id})`, err); }
     }
-    await supabase.from("organisations")
-        .update({ manager_approval_last_sent_at: new Date().toISOString() })
-        .eq("id", org.id);
+    if (sent > 0 || attempted === 0) {
+        await supabase.from("organisations")
+            .update({ manager_approval_last_sent_at: new Date().toISOString() })
+            .eq("id", org.id);
+    }
     return sent;
 }
 
