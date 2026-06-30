@@ -255,6 +255,26 @@ let smtpFrom: string = NOTIFY_FROM;
 // at the top of processOrg. Falls back to DEBUG_REDIRECT_EMAIL env var when null.
 let currentDebugRedirect: string | null = null;
 
+// SMTP credentials + debug-redirect now live in public.org_secrets (the
+// columns on organisations were moved out per audit C1 and are NULL).
+// Fetch them (service_role bypasses RLS) and merge onto the org object
+// so resolveSmtpConfig / the debug-redirect logic read them as before.
+async function attachOrgSecrets(org: any): Promise<any> {
+    if (!org?.id) return org;
+    const { data: sec } = await supabase.from("org_secrets")
+        .select("smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, debug_redirect_email")
+        .eq("organisation_id", org.id).maybeSingle();
+    if (sec) {
+        org.smtp_host = sec.smtp_host;
+        org.smtp_port = sec.smtp_port;
+        org.smtp_user = sec.smtp_user;
+        org.smtp_pass = sec.smtp_pass;
+        org.smtp_from = sec.smtp_from;
+        org.debug_redirect_email = sec.debug_redirect_email;
+    }
+    return org;
+}
+
 function resolveSmtpConfig(org: any): SmtpConfig {
     const host = (org?.smtp_host as string) || SMTP_HOST || "";
     const portRaw = org?.smtp_port ?? null;
@@ -1144,6 +1164,7 @@ Deno.serve(async (req) => {
             return new Response(JSON.stringify({ ok: false, error: "Org not found" }),
                 withCors({ status: 404, headers: { "content-type": "application/json" } }));
         }
+        await attachOrgSecrets(org);
 
         let cfg: SmtpConfig;
         try { cfg = resolveSmtpConfig(org); }
@@ -1250,6 +1271,7 @@ Deno.serve(async (req) => {
             return new Response(JSON.stringify({ error: "Org not found" }),
                 withCors({ status: 404, headers: { "content-type": "application/json" } }));
         }
+        await attachOrgSecrets(org);
         // Test-send goes through rawSmtpSend directly so the response body
         // can include the full SMTP transcript verbatim, including any
         // server-side rejection.
@@ -1303,6 +1325,7 @@ Deno.serve(async (req) => {
     try {
         for (const org of orgs || []) {
             try {
+                await attachOrgSecrets(org);
                 results[(org as any).id] = await processOrg(
                     org, force_org_id ? { kind: force_kind ?? undefined } : {});
             } catch (err) {

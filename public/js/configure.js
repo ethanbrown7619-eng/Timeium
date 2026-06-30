@@ -341,13 +341,16 @@ function makeController(kind) {
     document.getElementById(`${prefix}-webhook-url`).value = webhookUrl();
     document.getElementById(`${prefix}-anon-key`).value    = cfg.supabaseAnonKey;
     try {
-      const { data, error } = await sb
-        .from("organisations")
-        .select(`${c.webhookKind}_webhook_key, ${c.webhookKind}_import_map`)
-        .eq("id", currentOrgId)
-        .maybeSingle();
-      if (error) throw error;
-      document.getElementById(`${prefix}-api-key`).value = data?.[`${c.webhookKind}_webhook_key`] || "";
+      // import_map stays on organisations; the webhook key moved to
+      // org_secrets (audit C1) and is read via the admin RPC.
+      const [mapResp, secResp] = await Promise.all([
+        sb.from("organisations").select(`${c.webhookKind}_import_map`).eq("id", currentOrgId).maybeSingle(),
+        sb.rpc("get_org_secrets_admin", { p_org_id: currentOrgId }),
+      ]);
+      if (mapResp.error) throw mapResp.error;
+      const data = mapResp.data;
+      const sec = Array.isArray(secResp.data) ? (secResp.data[0] || {}) : (secResp.data || {});
+      document.getElementById(`${prefix}-api-key`).value = sec?.[`${c.webhookKind}_webhook_key`] || "";
       const map = data?.[`${c.webhookKind}_import_map`] || {};
       document.getElementById(`${prefix}-mp-code`).value   = map.code_column        || "";
       document.getElementById(`${prefix}-mp-desc`).value   = map.description_column || "";
@@ -725,7 +728,9 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 /* ---------------------------------------------------------------- settings */
 
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, smtp_host, smtp_port, smtp_user, smtp_from, debug_redirect_email, notify_manager_approval, manager_approval_day, manager_approval_time";
+// SMTP / debug_redirect fields are NOT selected here — they moved to
+// public.org_secrets (audit C1) and are read via get_org_secrets_admin.
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, notify_manager_approval, manager_approval_day, manager_approval_time";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -795,14 +800,18 @@ async function loadSettings() {
     // Staff Types
     renderStaffTypes(data.employment_type_settings);
 
-    // SMTP (smtp_pass is never round-tripped — admin types a new one to
-    // change it, blank means keep existing).
-    document.getElementById("smtp-host").value = data.smtp_host || "";
-    document.getElementById("smtp-port").value = data.smtp_port ?? 2525;
-    document.getElementById("smtp-user").value = data.smtp_user || "";
+    // SMTP + debug-redirect now live in org_secrets (moved off the
+    // world-readable organisations table). Read them via the admin RPC;
+    // smtp_pass is never returned (admin types a new one to change it,
+    // blank means keep existing).
+    const { data: secRows } = await sb.rpc("get_org_secrets_admin", { p_org_id: currentOrgId });
+    const sec = Array.isArray(secRows) ? (secRows[0] || {}) : (secRows || {});
+    document.getElementById("smtp-host").value = sec.smtp_host || "";
+    document.getElementById("smtp-port").value = sec.smtp_port ?? 2525;
+    document.getElementById("smtp-user").value = sec.smtp_user || "";
     document.getElementById("smtp-pass").value = "";
-    document.getElementById("smtp-from").value = data.smtp_from || "";
-    document.getElementById("smtp-debug-redirect").value = data.debug_redirect_email || "";
+    document.getElementById("smtp-from").value = sec.smtp_from || "";
+    document.getElementById("smtp-debug-redirect").value = sec.debug_redirect_email || "";
 
     // Manager-approval digest
     document.getElementById("notify-manager-approval").checked = !!data.notify_manager_approval;
