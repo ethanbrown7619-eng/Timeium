@@ -56,6 +56,8 @@ document.querySelectorAll("[data-leave-tab]").forEach((btn) => {
 // ---------------------------------------------------------------- data
 
 let leaveTypes = [];
+let leaveRows = [];      // most recent My Requests rows (for amend prefill)
+let amendingId = null;   // request id being amended, or null in create mode
 
 async function loadLeaveTypes() {
   const { data, error } = await sb.from("leave_types")
@@ -96,6 +98,7 @@ async function loadRequests() {
     return;
   }
   const rows = data || [];
+  leaveRows = rows;
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="9" class="muted small" style="text-align:center;padding:24px">No leave requests yet. Click "Request leave" to submit one.</td></tr>`;
     return;
@@ -201,17 +204,27 @@ async function onMenuAction(act, id) {
     notice("Cancellation requested — an admin will action it", "success");
     await loadRequests();
   } else if (act === "req-amend") {
-    const note = await promptDialog({
-      title: "Request amendment",
-      message: "What needs to change? (dates, hours, etc.) An admin will action it.",
-      placeholder: "e.g. change Friday to a half day",
+    // Open the request modal pre-filled with the current leave so the
+    // employee can change it to what they'd like instead.
+    const r = leaveRows.find((x) => x.id === id);
+    if (!r) return;
+    openRequestModal({
+      amendId: id,
+      typeId: r.leave_type_id,
+      start: r.start_date,
+      // req-end is "return to work" = last leave day + 1.
+      returnDate: addDaysIso(r.end_date, 1),
+      hours: r.hours_per_day,
+      skipWeekends: r.skip_weekends,
+      reason: r.reason || "",
     });
-    if (note == null) return; // cancelled the prompt
-    const { error } = await sb.rpc("request_leave_change", { p_request_id: id, p_type: "amend", p_note: note.trim() || null });
-    if (error) return notice(error.message, "error");
-    notice("Amendment requested — an admin will action it", "success");
-    await loadRequests();
   }
+}
+
+function addDaysIso(iso, n) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return fmtDate(d);
 }
 
 // ---------------------------------------------------------------- modal
@@ -255,20 +268,41 @@ function updateRequestTotal() {
   el.addEventListener("change", updateRequestTotal);
 });
 
-document.getElementById("open-request-btn").addEventListener("click", () => {
-  // Default: start today, return to work tomorrow (= 1 day of leave today).
-  const today = new Date();
-  const tmrw = new Date(today.getTime() + 86400000);
-  document.getElementById("req-start").value = fmtDate(today);
-  document.getElementById("req-end").value = fmtDate(tmrw);
-  document.getElementById("req-hours").value = 8;
-  document.getElementById("req-skip-weekends").checked = true;
-  document.getElementById("req-reason").value = "";
+// Open the request modal. With no prefill it's a fresh request; with a
+// prefill (from "Request amendment") it's pre-populated and submitting
+// proposes an amendment instead of creating a new request.
+function openRequestModal(prefill = null) {
+  amendingId = prefill?.amendId || null;
+  const isAmend = !!amendingId;
+
+  document.getElementById("request-dialog-title").textContent =
+    isAmend ? "Request amendment" : "Request leave";
+  document.getElementById("req-submit-btn").textContent =
+    isAmend ? "Request amendment" : "Submit request";
+
+  if (isAmend) {
+    document.getElementById("req-type").value = String(prefill.typeId);
+    document.getElementById("req-start").value = prefill.start;
+    document.getElementById("req-end").value = prefill.returnDate;
+    document.getElementById("req-hours").value = prefill.hours;
+    document.getElementById("req-skip-weekends").checked = !!prefill.skipWeekends;
+    document.getElementById("req-reason").value = prefill.reason || "";
+  } else {
+    const today = new Date();
+    const tmrw = new Date(today.getTime() + 86400000);
+    document.getElementById("req-start").value = fmtDate(today);
+    document.getElementById("req-end").value = fmtDate(tmrw);
+    document.getElementById("req-hours").value = 8;
+    document.getElementById("req-skip-weekends").checked = true;
+    document.getElementById("req-reason").value = "";
+  }
   updateRequestTotal();
   dialog.showModal();
-});
+}
 
-document.getElementById("req-cancel-btn").addEventListener("click", () => dialog.close());
+document.getElementById("open-request-btn").addEventListener("click", () => openRequestModal());
+
+document.getElementById("req-cancel-btn").addEventListener("click", () => { amendingId = null; dialog.close(); });
 
 form.addEventListener("submit", async (e) => {
   // Default form submit on the dialog calls dialog.close() because
@@ -291,17 +325,33 @@ form.addEventListener("submit", async (e) => {
   const submitBtn = document.getElementById("req-submit-btn");
   submitBtn.disabled = true;
   try {
-    const { error } = await sb.rpc("submit_leave_request", {
-      p_leave_type_id: typeId,
-      p_start_date: startDate,
-      p_end_date: endDate,
-      p_hours_per_day: hoursPerDay,
-      p_skip_weekends: skipWeekends,
-      p_reason: reason,
-    });
-    if (error) throw error;
-    dialog.close();
-    notice("Leave request submitted", "success");
+    if (amendingId) {
+      const { error } = await sb.rpc("request_leave_amendment", {
+        p_request_id: amendingId,
+        p_leave_type_id: typeId,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_hours_per_day: hoursPerDay,
+        p_skip_weekends: skipWeekends,
+        p_reason: reason,
+      });
+      if (error) throw error;
+      dialog.close();
+      amendingId = null;
+      notice("Amendment requested — an admin will review it", "success");
+    } else {
+      const { error } = await sb.rpc("submit_leave_request", {
+        p_leave_type_id: typeId,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_hours_per_day: hoursPerDay,
+        p_skip_weekends: skipWeekends,
+        p_reason: reason,
+      });
+      if (error) throw error;
+      dialog.close();
+      notice("Leave request submitted", "success");
+    }
     await loadRequests();
   } catch (err) {
     notice(err.message || "Failed to submit", "error");

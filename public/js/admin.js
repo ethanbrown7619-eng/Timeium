@@ -1945,7 +1945,7 @@ async function loadAdminLeave() {
   // (user_id, reviewed_by, manager_reviewed_by), so a bare users(name)
   // is ambiguous. Pin it to the user_id FK by constraint name.
   let query = sb.from("leave_requests")
-    .select("id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_request_note, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
+    .select("id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_request_note, proposed_start_date, proposed_end_date, proposed_hours_per_day, proposed_skip_weekends, proposed_leave_type_id, created_at, users!leave_requests_user_id_fkey(name), leave_types(name)")
     .eq("organisation_id", currentOrgId);
 
   if (alSubView === "approvals") {
@@ -1989,18 +1989,27 @@ async function loadAdminLeave() {
     if (r.reason)              notes.push(escapeHtml(r.reason));
     if (r.manager_review_note) notes.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
     if (r.review_note)         notes.push(`<em class="muted small">Admin: ${escapeHtml(r.review_note)}</em>`);
+    const isAmend = r.change_request_type === "amend" && r.proposed_start_date;
     if (hasChange) {
       const label = r.change_request_type === "cancel" ? "Cancellation requested" : "Amendment requested";
-      const cn = r.change_request_note ? `: ${escapeHtml(r.change_request_note)}` : "";
-      notes.push(`<em class="small" style="color:var(--warning)">${label}${cn}</em>`);
+      let detail = r.change_request_note ? `: ${escapeHtml(r.change_request_note)}` : "";
+      if (isAmend) {
+        const pRange = r.proposed_start_date === r.proposed_end_date
+          ? r.proposed_start_date : `${r.proposed_start_date} → ${r.proposed_end_date}`;
+        const pTotal = leaveTotalHours(r.proposed_start_date, r.proposed_end_date, r.proposed_hours_per_day, r.proposed_skip_weekends);
+        detail = ` → change to ${escapeHtml(pRange)}, ${fmtHours(r.proposed_hours_per_day)}h/day (${fmtHours(pTotal)}h total)`;
+      }
+      notes.push(`<em class="small" style="color:var(--warning)">${label}${detail}</em>`);
     }
     // In the Change requests view, offer Revoke (pull off timesheet +
-    // cancel) and Dismiss (clear the flag, keep the leave). Elsewhere,
-    // pending rows get Approve/Reject.
+    // cancel) and Dismiss (clear the flag, keep the leave). Amendments
+    // also get Apply (swap in the proposed values). Elsewhere, pending
+    // rows get Approve/Reject.
     let actions = "";
     if (alSubView === "changes" || (hasChange && r.status === "approved")) {
       actions = `
-        <button class="small revoke-al-btn">Revoke</button>
+        ${isAmend ? `<button class="small apply-al-btn">Apply</button>` : ""}
+        <button class="${isAmend ? "ghost " : ""}small revoke-al-btn">Revoke</button>
         <button class="ghost small dismiss-al-btn">Dismiss</button>`;
     } else if (canAct) {
       actions = `
@@ -2065,6 +2074,18 @@ async function loadAdminLeave() {
       const { error: e } = await sb.rpc("dismiss_leave_change_request", { p_request_id: id });
       if (e) return notice(e.message, "error");
       notice("Change request dismissed", "success");
+      await loadAdminLeave();
+    });
+  });
+
+  body.querySelectorAll(".apply-al-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Apply amendment", message: "Apply the employee's proposed changes? The old leave hours are removed from the timesheet and the new ones populated.", confirmText: "Apply" })) return;
+      const { error: e } = await sb.rpc("apply_leave_amendment", { p_request_id: id });
+      if (e) return notice(e.message, "error");
+      notice("Amendment applied", "success");
+      invalidateWeekDashboard(currentOrgId);
       await loadAdminLeave();
     });
   });
