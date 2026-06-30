@@ -46,6 +46,54 @@ if (!currentOrgId) {
   notice("No organisation on this account.", "error", { sticky: true });
 }
 
+/* ---------------------------------------------------------------- view scope */
+//
+// A Timeclock viewer can be limited to "managed departments only"
+// (users.clock_view_scope = 'managed'); admins/devs always see all. When
+// scoped, every sub-tab below filters down to the employees in the
+// departments this user is the manager of. This is a display scope for
+// trusted managers, not an RLS boundary — the clock RPCs are SECURITY
+// DEFINER and still return the whole org; we filter client-side.
+
+const clockScopeMode = isAdminOrDev ? "all" : (ctx.clockViewScope || "all");
+// null  => unrestricted ('all'); otherwise the allow-sets for 'managed'.
+let clockScope = null;
+let clockScopeLoaded = false;
+
+async function loadClockScope() {
+  if (clockScopeLoaded) return;
+  if (clockScopeMode !== "managed") { clockScope = null; clockScopeLoaded = true; return; }
+  const myId = ctx.employee?.id;
+  const empty = { deptIds: new Set(), deptNames: new Set(), userIds: new Set(), names: new Set() };
+  if (!myId || !currentOrgId) { clockScope = empty; clockScopeLoaded = true; return; }
+  try {
+    const { data: depts } = await sb.from("departments")
+      .select("id, name")
+      .eq("organisation_id", currentOrgId)
+      .eq("manager_id", myId);
+    const deptIds   = new Set((depts || []).map((d) => d.id));
+    const deptNames = new Set((depts || []).map((d) => d.name).filter(Boolean));
+    let userIds = new Set(), names = new Set();
+    if (deptIds.size) {
+      const { data: us } = await sb.from("users")
+        .select("id, name")
+        .eq("organisation_id", currentOrgId)
+        .in("department_id", [...deptIds]);
+      userIds = new Set((us || []).map((u) => u.id));
+      names   = new Set((us || []).map((u) => u.name).filter(Boolean));
+    }
+    clockScope = { deptIds, deptNames, userIds, names };
+  } catch (err) {
+    console.warn("clock scope load failed; defaulting to no rows:", err?.message || err);
+    clockScope = empty;
+  }
+  clockScopeLoaded = true;
+}
+
+const scopeAllowsUserId = (uid)  => !clockScope || clockScope.userIds.has(uid);
+const scopeAllowsName   = (name) => !clockScope || clockScope.names.has(name);
+const scopeAllowsDeptId = (id)   => !clockScope || clockScope.deptIds.has(id);
+
 /* ---------------------------------------------------------------- sub-tabs */
 
 let tcSubView = "live";
@@ -269,6 +317,7 @@ async function loadLivePresence() {
   const countsEl = document.getElementById("tc-live-counts");
   try {
     await loadActiveEmployeeRoster();
+    await loadClockScope();
 
     // org_live_status is an RPC in Attendium, not a view. Takes p_org_id
     // explicitly and doesn't gate server-side — anyone with a valid
@@ -326,8 +375,12 @@ async function loadLivePresence() {
       }
     }
 
+    // Managed-departments scope: drop everyone outside this viewer's team
+    // before counting tiles and rendering rows.
+    const scopedRows = clockScope ? rows.filter((r) => scopeAllowsName(r.name)) : rows;
+
     const buckets = { onsite: 0, offsite: 0, break: 0, away: 0, leave: 0, absent: 0 };
-    for (const r of rows) {
+    for (const r of scopedRows) {
       const detail = r.status === "on_leave" ? r.leave_type : r.break_name;
       const { cls } = liveStatusLabel(r.status, detail);
       buckets[cls] = (buckets[cls] || 0) + 1;
@@ -345,7 +398,7 @@ async function loadLivePresence() {
       <div class="tile absent"><div class="num">${buckets.absent || 0}</div><div class="lbl">Not clocked in</div></div>
       <div class="tile guest"><div class="num" id="tc-guest-tile-num">—</div><div class="lbl">Guests on site</div></div>`;
 
-    liveRowsCache = rows;
+    liveRowsCache = scopedRows;
     renderLiveTable();
   } catch (err) {
     console.error("live presence load failed:", err);
@@ -504,6 +557,7 @@ async function loadClockComparison() {
   await loadOrgTolerance();
   await loadClockStandard();
   await loadUnpaidBreaks();
+  await loadClockScope();
 
   const ws = fmtDate(cvtWeek);
   const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
@@ -512,7 +566,8 @@ async function loadClockComparison() {
   const allCvtDepts = dash.departments;
   const cvtDeptById = new Map(allCvtDepts.map((d) => [d.id, d]));
   const employees = dash.employees.filter((e) =>
-    !isUserEffectiveOverhead(e, cvtDeptById.get(e.department_id)));
+    !isUserEffectiveOverhead(e, cvtDeptById.get(e.department_id))
+    && scopeAllowsDeptId(e.department_id));
   const deptMap = {};
   for (const d of allCvtDepts) if (!d.is_overhead) deptMap[d.id] = d.name;
   for (const e of employees) {
@@ -785,6 +840,7 @@ async function loadFlagReport() {
   summaryEl.innerHTML = "";
 
   await loadClockStandard();
+  await loadClockScope();
   const ws = fmtDate(flagWeek);
   let rows = [];
   try {
@@ -797,6 +853,7 @@ async function loadFlagReport() {
     // Re-derive the flag client-side: rows where our minute-truncated
     // hours actually meet the standard shouldn't carry 'red'.
     rows = (data || [])
+      .filter((r) => scopeAllowsUserId(r.user_id))
       .map((r) => ({
         ...r,
         flag: effectiveFlag(r.flag, finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), r.break_minutes)),
@@ -901,6 +958,7 @@ async function loadFullReport() {
   summaryEl.innerHTML = "";
 
   await loadClockStandard();
+  await loadClockScope();
   const ws = fmtDate(fullWeek);
   // Days where an auto-closed event happened. Used to promote 'red'
   // (Short shift) to 'yellow' (Auto-closed) in the row render — the
@@ -940,8 +998,9 @@ async function loadFullReport() {
   }
 
   // Hide rows with neither clock-in nor clock-out — they're just the
-  // RPC's filler for days an employee didn't work.
-  const worked = rows.filter((r) => r.first_in || r.last_out);
+  // RPC's filler for days an employee didn't work. Also drop anyone
+  // outside this viewer's managed-departments scope.
+  const worked = rows.filter((r) => (r.first_in || r.last_out) && scopeAllowsUserId(r.user_id));
   if (!worked.length) {
     summaryEl.innerHTML = `<div class="notice info" style="margin:0">No clock events this week.</div>`;
     tableEl.innerHTML = "";
@@ -1049,6 +1108,7 @@ async function loadOffsiteReport() {
   tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
   summaryEl.innerHTML = "";
 
+  await loadClockScope();
   const start   = fmtDate(offsiteWeek);
   const endExcl = fmtDate(addDays(offsiteWeek, 7));
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -1062,7 +1122,9 @@ async function loadOffsiteReport() {
       p_tz:       tz,
     });
     if (error) throw error;
-    rows = data || [];
+    // This RPC keys by name/department (no user_id), so scope by both.
+    rows = (data || []).filter((r) =>
+      !clockScope || clockScope.names.has(r.name) || clockScope.deptNames.has(r.department));
   } catch (err) {
     tableEl.innerHTML = `
       <div class="notice warn" style="margin:0">

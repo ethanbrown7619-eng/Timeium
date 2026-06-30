@@ -252,6 +252,14 @@
             <span>Timeclock viewer</span>
             <span class="small muted">— grants Admin tab access, but only to the TimeClock page (Live + Timeclock vs Timesheet)</span>
           </label>
+          <div id="clock-scope-wrap" class="hidden" style="margin:8px 0 0 26px">
+            <label class="small" style="display:block;margin-bottom:4px">Clock view scope</label>
+            <select id="f-clock-scope">
+              <option value="all">All clock events</option>
+              <option value="managed">Employees in managed departments only</option>
+            </select>
+            <span class="small muted" style="display:block;margin-top:4px">— "managed departments" are departments where this person is set as the manager. Admins always see all events.</span>
+          </div>
         </div>
 
         <div class="mb-md hidden" id="test-staff-wrap">

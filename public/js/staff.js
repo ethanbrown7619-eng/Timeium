@@ -226,7 +226,7 @@ async function loadEmployees() {
     .from("users")
     .select(
       // auth_user_id is required by openDialog and syncAdminRole; keep it.
-      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, receives_overtime, active, organisation_id, is_manager, is_test, auth_user_id, rate_source_department_id, can_view_clock_comparison"
+      "id, name, email, department, department_id, employee_code, cost_rate, sell_rate, employment_type, overtime_threshold_hours, receives_overtime, active, organisation_id, is_manager, is_test, auth_user_id, rate_source_department_id, can_view_clock_comparison, clock_view_scope"
     )
     .eq("organisation_id", currentOrgId)
     .order("name");
@@ -599,7 +599,18 @@ function openDialog(empId) {
   // saved value for existing ones. ?? not || so an explicit false sticks.
   document.getElementById("f-receives-ot").checked = emp?.receives_overtime ?? false;
   document.getElementById("f-admin").checked = emp?.auth_user_id ? adminUserIds.has(emp.auth_user_id) : false;
-  document.getElementById("f-clock-viewer").checked = !!emp?.can_view_clock_comparison;
+  const clockViewerCb = document.getElementById("f-clock-viewer");
+  clockViewerCb.checked = !!emp?.can_view_clock_comparison;
+  document.getElementById("f-clock-scope").value =
+    emp?.clock_view_scope === "managed" ? "managed" : "all";
+  // The scope selector is only meaningful when the person can reach the
+  // Timeclock page, so it tracks the viewer checkbox.
+  const refreshClockScopeUi = () => {
+    document.getElementById("clock-scope-wrap").classList
+      .toggle("hidden", !clockViewerCb.checked);
+  };
+  refreshClockScopeUi();
+  clockViewerCb.onchange = refreshClockScopeUi;
   if (ctx.isDeveloper) {
     document.getElementById("test-staff-wrap").classList.remove("hidden");
     document.getElementById("f-test").checked = emp?.is_test || false;
@@ -773,6 +784,11 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
     is_manager: document.getElementById("f-manager").checked,
     receives_overtime: document.getElementById("f-receives-ot").checked,
     can_view_clock_comparison: document.getElementById("f-clock-viewer").checked,
+    // Scope is only meaningful for a viewer; reset to 'all' when the
+    // viewer permission is off so a stale 'managed' doesn't linger.
+    clock_view_scope: document.getElementById("f-clock-viewer").checked
+      ? document.getElementById("f-clock-scope").value
+      : "all",
     is_test: ctx.isDeveloper ? document.getElementById("f-test").checked : undefined,
   };
 
@@ -841,6 +857,7 @@ document.getElementById("employee-form").addEventListener("submit", async (e) =>
         .update({
           rate_source_department_id: payload.rate_source_department_id,
           can_view_clock_comparison: payload.can_view_clock_comparison,
+          clock_view_scope: payload.clock_view_scope,
         })
         .eq("id", newEmpId)
         .eq("organisation_id", currentOrgId);
