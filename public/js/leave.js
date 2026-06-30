@@ -391,7 +391,7 @@ async function loadTeamPending() {
     p_status: "pending_manager",
   });
   if (error) {
-    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   const rows = data || [];
@@ -448,12 +448,12 @@ async function loadTeamForwarded() {
     p_status: "pending_admin",
   });
   if (error) {
-    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   const rows = data || [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r) => {
@@ -466,6 +466,7 @@ async function loadTeamForwarded() {
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td></td>
     </tr>`;
   }).join("");
 }

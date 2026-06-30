@@ -68,7 +68,11 @@
             it back to the employee.
           </p>
           <div style="overflow-x:auto">
-            <table>
+            <table style="table-layout:fixed;width:100%">
+              <colgroup>
+                <col style="width:15%"><col style="width:13%"><col style="width:17%">
+                <col style="width:10%"><col style="width:10%"><col style="width:19%"><col style="width:16%">
+              </colgroup>
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -93,7 +97,11 @@
             You've approved these — they're awaiting an admin's final sign-off.
           </p>
           <div style="overflow-x:auto">
-            <table>
+            <table style="table-layout:fixed;width:100%">
+              <colgroup>
+                <col style="width:15%"><col style="width:13%"><col style="width:17%">
+                <col style="width:10%"><col style="width:10%"><col style="width:19%"><col style="width:16%">
+              </colgroup>
               <thead>
                 <tr>
                   <th>Employee</th>
@@ -102,10 +110,11 @@
                   <th class="num">Hours/day</th>
                   <th class="num">Total hours</th>
                   <th>Reason</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="team-forwarded-body">
-                <tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">—</td></tr>
+                <tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">—</td></tr>
               </tbody>
             </table>
           </div>
