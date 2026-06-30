@@ -703,6 +703,21 @@ dialog::backdrop {
 
 .ts-grid .day-weekend { background: rgba(0,0,0,0.04); }
 
+/* Leave rows are read-only (managed from the Leave page). Render their
+   inputs as flat text on the row background — no white input bubble,
+   no border — so the value reads like the date cells rather than an
+   editable field. */
+.ts-grid tr.leave-locked-row .hours-input,
+.ts-grid tr.leave-locked-row .ac-job,
+.ts-grid tr.leave-locked-row .desc-input {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--text);
+  cursor: default;
+}
+.ts-grid tr.leave-locked-row { background: var(--surface-alt); }
+
 /* -------- leave balance card -------- */
 .leave-balance-grid {
   display: grid;

@@ -1176,7 +1176,7 @@ function rowHtml(e, idx, isSubmitted) {
   const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
 
   return `
-    <tr data-entry-id="${e.id}" data-idx="${idx}"${leaveLocked ? ' title="Leave is managed from the Leave page — request a change there"' : ""}>
+    <tr data-entry-id="${e.id}" data-idx="${idx}"${leaveLocked ? ' class="leave-locked-row" title="Leave is managed from the Leave page — request a change there"' : ""}>
       <td>
         <div class="ac-wrap">
           <input class="ac-job" value="${escapeHtml(job?.job_code || "")}" data-selected-id="${e.job_id || ""}" placeholder="Type to search…" ${ro} />
