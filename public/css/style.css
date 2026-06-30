@@ -1198,6 +1198,28 @@ details.card[open] > summary::before { content: "▾ "; }
 .tc-live-counts .tile.leave   { background: var(--info-blue-bg); border-color: #b8cfef; }
 .tc-live-counts .tile.absent  { background: var(--danger-bg); border-color: #f5b8b8; }
 .tc-live-counts .tile.guest   { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+
+/* Clickable status tiles act as a row filter on the Live table. */
+.tc-live-counts .tile.filterable {
+  cursor: pointer;
+  user-select: none;
+  transition: box-shadow .12s ease, opacity .12s ease, transform .05s ease;
+}
+.tc-live-counts .tile.filterable:hover { filter: brightness(0.97); }
+.tc-live-counts .tile.filterable:active { transform: translateY(1px); }
+/* When at least one tile is selected, fade the unselected ones so the
+   active filter stands out. */
+.tc-live-counts.has-filter .tile.filterable:not(.active) { opacity: 0.5; }
+/* Selected tile: inset ring + darker fill of its own colour. */
+.tc-live-counts .tile.filterable.active {
+  box-shadow: inset 0 0 0 2px rgba(15, 23, 42, 0.4);
+}
+.tc-live-counts .tile.onsite.active  { background: #bfe6c8; border-color: #7fbf90; }
+.tc-live-counts .tile.offsite.active { background: #bcd4f5; border-color: #7aa5e0; }
+.tc-live-counts .tile.break.active   { background: #fbdca6; border-color: #e6b65c; }
+.tc-live-counts .tile.away.active    { background: #d6dae0; border-color: #aab2bb; }
+.tc-live-counts .tile.leave.active   { background: #bcd4f5; border-color: #7aa5e0; }
+.tc-live-counts .tile.absent.active  { background: #f3c2c2; border-color: #df8a8a; }
 .tc-live-pill {
   display: inline-block;
   padding: 2px 8px;

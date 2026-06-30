@@ -195,6 +195,18 @@ let liveSortDir = "asc";
 let liveRowsCache = [];
 let liveEmpInfoByName = null; // null until first load completes
 
+// Status-tile filter: a set of status classes (onsite/offsite/break/away/
+// leave/absent). Empty = show everyone. Clicking a tile toggles its class
+// in/out of the set. Persists across the 30s refresh so the view stays put.
+const liveStatusFilter = new Set();
+
+// The status class ('onsite' etc.) a live row maps to — same mapping the
+// tiles use, so tile selection and row visibility stay in lockstep.
+function liveRowCls(r) {
+  const detail = r.status === "on_leave" ? r.leave_type : r.break_name;
+  return liveStatusLabel(r.status, detail).cls;
+}
+
 // Active employee roster — name, department, and employment_type. We use
 // this for two things:
 //   1. Decorate live rows with employment_type (the RPC doesn't return it).
@@ -243,14 +255,22 @@ function liveStatusRank(s) {
 function renderLiveTable() {
   const body = document.getElementById("tc-live-body");
   if (!body) return;
-  if (!liveRowsCache.length) {
-    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">No active employees.</td></tr>`;
+
+  const filtered = liveStatusFilter.size
+    ? liveRowsCache.filter((r) => liveStatusFilter.has(liveRowCls(r)))
+    : liveRowsCache;
+
+  if (!filtered.length) {
+    const msg = liveRowsCache.length && liveStatusFilter.size
+      ? "No employees match the selected status filter."
+      : "No active employees.";
+    body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center">${msg}</td></tr>`;
     updateLiveSortIndicators();
     return;
   }
 
   const dir = liveSortDir === "asc" ? 1 : -1;
-  const sorted = liveRowsCache.slice().sort((a, b) => {
+  const sorted = filtered.slice().sort((a, b) => {
     if (liveSortKey === "status") {
       const r = liveStatusRank(a.status) - liveStatusRank(b.status);
       if (r !== 0) return r * dir;
@@ -389,14 +409,39 @@ async function loadLivePresence() {
     // We render the tile here with a "—" placeholder so the position
     // doesn't shift when the count lands; refreshLive() always fires
     // visitor + employee fetches together so the gap is sub-second.
-    countsEl.innerHTML = `
-      <div class="tile onsite"><div class="num">${buckets.onsite || 0}</div><div class="lbl">On site</div></div>
-      <div class="tile offsite"><div class="num">${buckets.offsite || 0}</div><div class="lbl">Off site (job)</div></div>
-      <div class="tile break"><div class="num">${buckets.break || 0}</div><div class="lbl">Off site break</div></div>
-      <div class="tile away"><div class="num">${buckets.away || 0}</div><div class="lbl">Clocked out early</div></div>
-      <div class="tile leave"><div class="num">${buckets.leave || 0}</div><div class="lbl">On leave</div></div>
-      <div class="tile absent"><div class="num">${buckets.absent || 0}</div><div class="lbl">Not clocked in</div></div>
-      <div class="tile guest"><div class="num" id="tc-guest-tile-num">—</div><div class="lbl">Guests on site</div></div>`;
+    // The six employee-status tiles double as row filters; the Guests
+    // tile is a separate panel and stays non-interactive.
+    const statusTile = (cls, label, count) => {
+      const on = liveStatusFilter.has(cls);
+      return `<div class="tile ${cls} filterable${on ? " active" : ""}" data-filter="${cls}" role="button" tabindex="0" aria-pressed="${on}"><div class="num">${count}</div><div class="lbl">${label}</div></div>`;
+    };
+    countsEl.innerHTML =
+      statusTile("onsite",  "On site",           buckets.onsite  || 0) +
+      statusTile("offsite", "Off site (job)",    buckets.offsite || 0) +
+      statusTile("break",   "Off site break",    buckets.break   || 0) +
+      statusTile("away",    "Clocked out early", buckets.away    || 0) +
+      statusTile("leave",   "On leave",          buckets.leave   || 0) +
+      statusTile("absent",  "Not clocked in",    buckets.absent  || 0) +
+      `<div class="tile guest"><div class="num" id="tc-guest-tile-num">—</div><div class="lbl">Guests on site</div></div>`;
+    countsEl.classList.toggle("has-filter", liveStatusFilter.size > 0);
+
+    // Tiles are rebuilt every refresh, so (re)bind toggle handlers here.
+    countsEl.querySelectorAll("[data-filter]").forEach((tileEl) => {
+      const toggle = () => {
+        const cls = tileEl.dataset.filter;
+        if (liveStatusFilter.has(cls)) liveStatusFilter.delete(cls);
+        else liveStatusFilter.add(cls);
+        const on = liveStatusFilter.has(cls);
+        tileEl.classList.toggle("active", on);
+        tileEl.setAttribute("aria-pressed", String(on));
+        countsEl.classList.toggle("has-filter", liveStatusFilter.size > 0);
+        renderLiveTable();
+      };
+      tileEl.addEventListener("click", toggle);
+      tileEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+    });
 
     liveRowsCache = scopedRows;
     renderLiveTable();
