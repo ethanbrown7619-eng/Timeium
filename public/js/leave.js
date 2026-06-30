@@ -219,8 +219,44 @@ async function onMenuAction(act, id) {
 const dialog = document.getElementById("request-dialog");
 const form = document.getElementById("request-form");
 
+// The "Return to work on" field is the first day BACK at work, so the
+// last leave day is the day before it.
+function returnToEndDate(returnIso) {
+  if (!returnIso) return "";
+  const d = new Date(returnIso + "T00:00:00");
+  if (isNaN(d)) return "";
+  d.setDate(d.getDate() - 1);
+  return fmtDate(d);
+}
+
+// Live total shown in the modal as the inputs change.
+function updateRequestTotal() {
+  const start = document.getElementById("req-start").value;
+  const ret = document.getElementById("req-end").value;
+  const hours = Number(document.getElementById("req-hours").value);
+  const skip = document.getElementById("req-skip-weekends").checked;
+  const end = returnToEndDate(ret);
+  const totalEl = document.getElementById("req-total");
+  const daysEl = document.getElementById("req-total-days");
+  if (!end || end < start || !(hours > 0)) {
+    totalEl.textContent = "0 hours";
+    daysEl.textContent = "";
+    return;
+  }
+  const total = leaveTotalHours(start, end, hours, skip);
+  const days = hours > 0 ? Math.round(total / hours) : 0;
+  totalEl.textContent = `${fmtHours(total)} hour${total === 1 ? "" : "s"}`;
+  daysEl.textContent = `(${days} day${days === 1 ? "" : "s"}, last day ${end})`;
+}
+
+["req-start", "req-end", "req-hours", "req-skip-weekends"].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener("input", updateRequestTotal);
+  el.addEventListener("change", updateRequestTotal);
+});
+
 document.getElementById("open-request-btn").addEventListener("click", () => {
-  // Reset to a sensible default each open: today as start, +1 day as end.
+  // Default: start today, return to work tomorrow (= 1 day of leave today).
   const today = new Date();
   const tmrw = new Date(today.getTime() + 86400000);
   document.getElementById("req-start").value = fmtDate(today);
@@ -228,6 +264,7 @@ document.getElementById("open-request-btn").addEventListener("click", () => {
   document.getElementById("req-hours").value = 8;
   document.getElementById("req-skip-weekends").checked = true;
   document.getElementById("req-reason").value = "";
+  updateRequestTotal();
   dialog.showModal();
 });
 
@@ -240,14 +277,15 @@ form.addEventListener("submit", async (e) => {
 
   const typeId = Number(document.getElementById("req-type").value);
   const startDate = document.getElementById("req-start").value;
-  const endDate = document.getElementById("req-end").value;
+  const returnDate = document.getElementById("req-end").value;
+  const endDate = returnToEndDate(returnDate); // last leave day = day before return
   const hoursPerDay = Number(document.getElementById("req-hours").value);
   const skipWeekends = document.getElementById("req-skip-weekends").checked;
   const reason = document.getElementById("req-reason").value.trim() || null;
 
   if (!typeId) return notice("Pick a leave type", "warn");
-  if (!startDate || !endDate) return notice("Pick start and end dates", "warn");
-  if (endDate < startDate) return notice("End date is before start date", "warn");
+  if (!startDate || !returnDate) return notice("Pick a start date and a return-to-work date", "warn");
+  if (returnDate <= startDate) return notice("Return-to-work date must be after the start date", "warn");
   if (!(hoursPerDay > 0 && hoursPerDay <= 24)) return notice("Hours per day must be between 0 and 24", "warn");
 
   const submitBtn = document.getElementById("req-submit-btn");
