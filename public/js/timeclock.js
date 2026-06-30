@@ -804,27 +804,35 @@ function flagLabel(f) {
   }
 }
 
+// Round a clock timestamp to the NEAREST whole minute. Both the displayed
+// In/Out columns and the Raw-hours calc go through this, so the In/Out you
+// see always reconciles exactly with Raw (Raw = rounded-out − rounded-in,
+// which is a whole number of minutes). Returns NaN for an unparseable iso.
+function roundToMinuteMs(iso) {
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return NaN;
+  return Math.round(t / 60000) * 60000;
+}
+
 function fmtClockTime(iso) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d)) return "—";
-  // Truncate seconds so HH:MM is shown deterministically across browsers.
-  // Also lines up with rawHoursFromTimestamps below — what you see in the
-  // In/Out columns is exactly what gets fed into Raw.
-  d.setSeconds(0, 0);
-  return d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  const ms = roundToMinuteMs(iso);
+  if (isNaN(ms)) return "—";
+  // Rounded to the nearest minute (see roundToMinuteMs) so HH:MM is shown
+  // deterministically and matches what gets fed into Raw below.
+  return new Date(ms).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 // The shared Clock RPC computes raw_hours from second-precision timestamps,
 // while the UI displays In/Out at HH:MM precision. That mismatch makes the
-// Raw column look wrong by ~0.02h on shifts where the seconds happen to
-// straddle a minute boundary. We recompute client-side from the same
-// timestamps after truncating seconds, so the visible math reconciles.
+// Raw column look wrong by up to ~0.02h. We recompute client-side from the
+// same timestamps after rounding each end to the nearest minute, so the
+// visible In/Out and Raw always reconcile.
 function rawHoursFromTimestamps(firstIn, lastOut) {
   if (!firstIn || !lastOut) return 0;
-  const inMs  = new Date(firstIn).setSeconds(0, 0);
-  const outMs = new Date(lastOut).setSeconds(0, 0);
-  if (outMs <= inMs) return 0;
+  const inMs  = roundToMinuteMs(firstIn);
+  const outMs = roundToMinuteMs(lastOut);
+  if (isNaN(inMs) || isNaN(outMs) || outMs <= inMs) return 0;
   return Number(((outMs - inMs) / 3600000).toFixed(2));
 }
 
