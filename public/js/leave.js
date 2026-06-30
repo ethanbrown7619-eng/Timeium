@@ -28,6 +28,14 @@ const currentOrgId = employee.organisation_id;
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
 const canReviewTeam = isManager || isAdminOrDev;
 
+// Staff whose type receives no leave (e.g. contractors) don't get the Leave
+// tab; block direct /leave.html access too — unless they manage a team or
+// are an admin, who need it for Team Requests.
+if (ctx.receivesLeave === false && !canReviewTeam) {
+  location.replace("/timesheet.html");
+  throw new Error("staff type does not receive leave");
+}
+
 renderTopbar({
   sb, session, isDeveloper, isManager, isClockViewer, adminRow,
   orgs: null, currentOrgId, onOrgChange: () => {},

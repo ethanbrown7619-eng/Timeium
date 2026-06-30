@@ -552,9 +552,16 @@ export function renderTopbar(opts) {
 
   const isAdminOrDev = role === "admin" || role === "developer";
 
+  // Leave tab: hidden for staff whose type receives no leave at all, but
+  // always shown to managers/admins (they need the Team Requests sub-tab).
+  // receivesLeave comes from opts when the caller passes it, else the
+  // module-level value getUserContext just computed for this user.
+  const receivesLeave = (opts.receivesLeave ?? _lastReceivesLeave) !== false;
+  const canReviewTeamLeave = canSeeAdminNav || !!opts.isManager;
+
   const links = [
     { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
-    { key: "leave",      href: "/leave.html",       label: "Leave",          show: true },
+    { key: "leave",      href: "/leave.html",       label: "Leave",          show: receivesLeave || canReviewTeamLeave },
     { key: "department", href: "/department.html",   label: "My Departments", show: !!opts.isManager || role === "developer" },
     { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
     { key: "timeclock",  href: "/timeclock.html",    label: "Clock",          show: isAdminOrDev || !!opts.isClockViewer },
@@ -689,6 +696,11 @@ export async function routeAfterAuth(sb) {
 // the bound matters most for active users clicking between pages.
 const USER_CONTEXT_TTL_MS = 60_000;
 
+// Last-computed "does this user's staff type receive any leave" flag. Stashed
+// at module scope so renderTopbar can hide the Leave tab without every page
+// having to thread it through — every page calls getUserContext first.
+let _lastReceivesLeave = true;
+
 function userContextKey(session) {
   return `ptl-ctx:${session?.user?.id || "anon"}`;
 }
@@ -701,7 +713,10 @@ export async function getUserContext(sb, session, { force = false } = {}) {
       const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const { data, ts } = JSON.parse(cached);
-        if (Date.now() - ts < USER_CONTEXT_TTL_MS) return data;
+        if (Date.now() - ts < USER_CONTEXT_TTL_MS) {
+          _lastReceivesLeave = data?.receivesLeave !== false;
+          return data;
+        }
       }
     } catch (err) {
       console.warn("getUserContext cache read failed:", err);
@@ -723,6 +738,28 @@ export async function getUserContext(sb, session, { force = false } = {}) {
   const employee = meRes.status === "fulfilled" ? (meRes.value?.data || null) : null;
   const role = adminRow?.role || (isDeveloper ? "developer" : null);
 
+  // Does this user's staff type receive any leave at all? Read from the org's
+  // employment_type_settings (Configure > Staff Types). A type with all three
+  // entitlements off (e.g. Contractor by default) receives no leave, so the
+  // Leave tab is hidden for them. Defaults to TRUE on any uncertainty
+  // (unknown type, missing settings, read error) so we never wrongly hide it.
+  let receivesLeave = true;
+  try {
+    const empType = (employee?.employment_type || "").toLowerCase();
+    const orgId = employee?.organisation_id;
+    if (orgId && empType) {
+      const { data: orgCfg } = await sb.from("organisations")
+        .select("employment_type_settings").eq("id", orgId).maybeSingle();
+      const cfg = orgCfg?.employment_type_settings?.[empType];
+      if (cfg) {
+        receivesLeave = !!(cfg.public_holidays || cfg.sick_leave || cfg.annual_leave);
+      }
+    }
+  } catch (err) {
+    console.warn("receivesLeave lookup failed; defaulting to visible:", err?.message || err);
+  }
+  _lastReceivesLeave = receivesLeave;
+
   const data = {
     isDeveloper,
     adminRow,
@@ -736,6 +773,8 @@ export async function getUserContext(sb, session, { force = false } = {}) {
     // 'all' | 'managed' — when 'managed', the Timeclock page shows only
     // employees in departments this user manages. Admins/devs ignore it.
     clockViewScope: employee?.clock_view_scope === "managed" ? "managed" : "all",
+    // False only when the user's staff type has every leave entitlement off.
+    receivesLeave,
   };
 
   try {
