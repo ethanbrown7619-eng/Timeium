@@ -89,8 +89,11 @@ function statusBadge(status) {
 
 async function loadRequests() {
   const body = document.getElementById("leave-list-body");
+  // Pin the leave_types embed to the leave_type_id FK — leave_requests
+  // now also has proposed_leave_type_id, so a bare leave_types(name)
+  // embed is ambiguous.
   const { data, error } = await sb.from("leave_requests")
-    .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_requested_at, created_at, leave_types ( name )")
+    .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_requested_at, created_at, leave_types!leave_requests_leave_type_id_fkey ( name )")
     .eq("user_id", employee.id)
     .order("created_at", { ascending: false });
   if (error) {

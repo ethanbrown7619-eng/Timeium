@@ -304,7 +304,7 @@ async function loadMyLeaveRequests() {
 
   const { data } = await sb
     .from("leave_requests")
-    .select("id, start_date, end_date, hours_per_day, status, reason, leave_type_id, leave_types(name)")
+    .select("id, start_date, end_date, hours_per_day, status, reason, leave_type_id, leave_types!leave_requests_leave_type_id_fkey(name)")
     .eq("user_id", employee.id)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -1682,7 +1682,7 @@ async function loadOverheadLeaveRequests() {
 
   const { data } = await sb
     .from("leave_requests")
-    .select("id, start_date, end_date, hours_per_day, status, reason, leave_type_id, leave_types(name)")
+    .select("id, start_date, end_date, hours_per_day, status, reason, leave_type_id, leave_types!leave_requests_leave_type_id_fkey(name)")
     .eq("user_id", employee.id)
     .order("created_at", { ascending: false })
     .limit(20);
