@@ -226,10 +226,16 @@ async function xeroProxyAdmin(request, env, handler) {
   const orgId = Number(url.searchParams.get("org_id"));
   if (!Number.isInteger(orgId) || orgId <= 0) return jsonError(400, "org_id required");
 
-  const userInfo = await supabaseUser(env, jwt);
-  if (!userInfo) return jsonError(401, "Invalid session");
-
-  const isAdmin = await supabaseRpc(env, jwt, "is_admin_of", { p_org_id: orgId });
+  // No separate /auth/v1/user round-trip here: is_admin_of() runs with the
+  // caller's JWT and PostgREST 401s on an invalid/expired session, so the
+  // RPC call alone both authenticates and authorises. (xeroConnect still
+  // resolves the user because it needs the sub for the state token.)
+  let isAdmin;
+  try {
+    isAdmin = await supabaseRpc(env, jwt, "is_admin_of", { p_org_id: orgId });
+  } catch {
+    return jsonError(401, "Invalid session");
+  }
   if (isAdmin !== true) return jsonError(403, "Not an admin of this organisation");
 
   const conn = await loadConnection(env, orgId);
@@ -311,6 +317,12 @@ async function xeroCallback(request, url, env) {
     return htmlMessage("OAuth state invalid or expired. Please retry the connection.", 400);
   }
 
+  // Burn the state nonce so a captured state can't be replayed within its
+  // TTL. First insert wins; a duplicate (already used) is rejected.
+  if (!(await consumeStateNonce(env, claims.nonce))) {
+    return htmlMessage("This OAuth state has already been used. Please retry the connection.", 400);
+  }
+
   const redirectUri = `${url.origin}${XERO_REDIRECT_PATH}`;
   const tokens = await exchangeCodeForTokens(env, code, redirectUri);
   const connections = await fetchConnections(tokens.access_token);
@@ -371,6 +383,26 @@ async function fetchConnections(accessToken) {
 
 // Service-role write — bypasses RLS on xero_connections. The Worker is the
 // only place we use the service key.
+// Records the OAuth state nonce so it can only be used once. Returns true
+// if this is the first use (inserted), false if it was already consumed
+// (PostgREST 409 on the primary-key conflict). Fails open to true only if
+// the nonce is missing — older tokens without one still work.
+async function consumeStateNonce(env, nonce) {
+  if (!nonce || !env.SUPABASE_SERVICE_ROLE_KEY) return true;
+  const resp = await fetch(`${env.SUPABASE_URL}/rest/v1/xero_oauth_used_states`, {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify({ nonce }),
+  });
+  if (resp.status === 409) return false; // already used
+  return resp.ok;
+}
+
 async function persistConnection(env, row) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");

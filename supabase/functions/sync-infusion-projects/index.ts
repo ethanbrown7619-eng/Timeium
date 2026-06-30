@@ -88,6 +88,21 @@ async function syncOrg(
   return Number(data) || 0;
 }
 
+// Length-independent constant-time string compare for the service-key
+// check, so an attacker can't time-probe the token byte by byte.
+function constantTimeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  // Always compare a fixed number of bytes to avoid leaking length.
+  const len = Math.max(ab.length, bb.length);
+  let diff = ab.length ^ bb.length;
+  for (let i = 0; i < len; i++) {
+    diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  }
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   // Service-role-only. The function runs upsert_projects_from_infusion
   // with full RLS bypass, so accepting an org_id from an unauthenticated
@@ -97,7 +112,7 @@ Deno.serve(async (req: Request) => {
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (token !== SERVICE_KEY) {
+  if (!constantTimeEqual(token, SERVICE_KEY)) {
     return new Response(JSON.stringify({ ok: false, error: "Service role token required" }), {
       status: 401,
       headers: { "content-type": "application/json" },
