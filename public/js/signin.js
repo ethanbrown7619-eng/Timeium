@@ -46,20 +46,11 @@ document.getElementById("signin-form").addEventListener("submit", async (e) => {
     email, password, options: { captchaToken },
   });
 
-  // Audit the attempt. Failures go through the anon endpoint (which can
-  // only ever write a failure row now); successes are recorded by an
-  // authenticated RPC that derives the email server-side, so neither
-  // path trusts a client-supplied success flag. Fire-and-forget.
-  if (error) {
-    sb.rpc("record_login_attempt", {
-      p_email: email,
-      p_failure_reason: error.message || null,
-      p_user_agent: navigator.userAgent || null,
-    }).then(() => {}, () => {});
-  } else {
-    sb.rpc("record_login_success").then(() => {}, () => {});
-  }
-
+  // Attempts are recorded authoritatively by the Password Verification
+  // auth hook (migration 142) — inside the auth server, so they can't be
+  // forged from the client. We no longer record from here (doing so would
+  // double-count and skew the lockout). The check_login_locked pre-check
+  // above still reads that hook-populated data for a fast "locked" message.
   if (error) {
     notice(error.message || "Sign in failed", "error");
     turnstile.reset();
