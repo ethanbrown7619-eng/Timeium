@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#BEFA40" />
+    <title>My Clock · PTL Timesheet</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header class="topbar" id="topbar"></header>
+
+    <main class="container">
+      <div id="notice" class="notice hidden"></div>
+
+      <h2 style="margin:0 0 12px">My Clock</h2>
+
+      <div class="card">
+        <div class="row-flex mb-md">
+          <h3 style="margin:0">Clock events</h3>
+          <div class="grow"></div>
+          <button id="mc-prev" class="ghost small">←</button>
+          <span id="mc-week-label" class="small" style="margin:0 8px"></span>
+          <button id="mc-next" class="ghost small">→</button>
+        </div>
+        <p class="muted small" style="margin:0 0 12px">
+          If a time is wrong — you forgot to clock in or out, or the system
+          auto-clocked you out — request a fix and a reviewer will approve it.
+        </p>
+        <div style="overflow-x:auto">
+          <table class="small">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Event</th>
+                <th class="num">Time</th>
+                <th>Flags</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mc-events-body">
+              <tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 4px">My adjustment requests</h3>
+        <p class="muted small" style="margin:0 0 12px">
+          Pending requests can be cancelled until a reviewer actions them.
+        </p>
+        <div style="overflow-x:auto">
+          <table class="small">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th class="num">Recorded</th>
+                <th class="num">Requested</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Reviewer note</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="mc-requests-body">
+              <tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- Request-fix dialog -->
+    <dialog id="mc-adjust-dialog" style="border:none;border-radius:12px;padding:24px;max-width:420px;width:calc(100% - 48px)">
+      <h3 style="margin:0 0 8px">Request a time fix</h3>
+      <p id="mc-adjust-summary" class="small muted" style="margin:0 0 12px"></p>
+      <label class="small" for="mc-adjust-time" style="display:block;margin-bottom:4px">Correct time</label>
+      <input type="datetime-local" id="mc-adjust-time" style="width:100%;margin-bottom:12px" />
+      <label class="small" for="mc-adjust-reason" style="display:block;margin-bottom:4px">Reason (optional)</label>
+      <textarea id="mc-adjust-reason" rows="2" style="width:100%;margin-bottom:16px" placeholder="e.g. forgot to clock out, left at 4:30"></textarea>
+      <div class="row-flex">
+        <button type="button" class="ghost" id="mc-adjust-cancel">Cancel</button>
+        <div class="grow"></div>
+        <button type="button" class="primary" id="mc-adjust-submit">Submit request</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="/js/myclock.js"></script>
+  </body>
+</html>

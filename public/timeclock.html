@@ -28,6 +28,9 @@
         <button class="tab" data-tc-view="flags">Flag report</button>
         <button class="tab" data-tc-view="full">Full report</button>
         <button class="tab" data-tc-view="offsite">Off-site events</button>
+        <button class="tab" data-tc-view="adjust" id="tc-adjust-tab" style="display:none">
+          Adjustments<span id="tc-adjust-count" class="leave-count-badge" style="display:none"></span>
+        </button>
       </div>
 
       <!-- Live: who's on site / off site -->
@@ -147,6 +150,57 @@
         <div style="overflow-x:auto">
           <div id="offsite-table">
             <p class="muted small" style="text-align:center">Loading…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Adjustments: approve/decline employee clock-time fix requests. -->
+      <div id="tc-adjust" style="display:none">
+        <div class="card">
+          <h3 style="margin:0 0 4px">Pending adjustments</h3>
+          <p class="muted small" style="margin:0 0 12px">
+            Employees request these from their My Clock page. Approving
+            updates the clock event to the requested time (and clears the
+            auto-closed flag), so all reports pick the fix up.
+          </p>
+          <div style="overflow-x:auto">
+            <table class="small">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Event</th>
+                  <th class="num">Recorded</th>
+                  <th class="num">Requested</th>
+                  <th>Reason</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="tc-adjust-pending-body">
+                <tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 12px">Recently reviewed</h3>
+          <div style="overflow-x:auto">
+            <table class="small">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Event</th>
+                  <th class="num">Recorded</th>
+                  <th class="num">Requested</th>
+                  <th>Outcome</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody id="tc-adjust-reviewed-body">
+                <tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">—</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

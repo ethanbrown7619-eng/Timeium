@@ -11,6 +11,7 @@ import {
   makeLatestOnly,
   fetchWeekDashboardData,
   isUserEffectiveOverhead,
+  confirmDialog, promptDialog,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -107,6 +108,7 @@ function applySubView() {
   document.getElementById("tc-flags").style.display    = tcSubView === "flags"    ? "" : "none";
   document.getElementById("tc-full").style.display     = tcSubView === "full"     ? "" : "none";
   document.getElementById("tc-offsite").style.display  = tcSubView === "offsite"  ? "" : "none";
+  document.getElementById("tc-adjust").style.display   = tcSubView === "adjust"   ? "" : "none";
   if (tcSubView === "live") {
     startLivePresence();
   } else {
@@ -115,6 +117,7 @@ function applySubView() {
     if (tcSubView === "flags")    navLoadFlagReport();
     if (tcSubView === "full")     navLoadFullReport();
     if (tcSubView === "offsite")  navLoadOffsiteReport();
+    if (tcSubView === "adjust")   loadAdjustments();
   }
 }
 
@@ -1251,6 +1254,138 @@ async function loadOffsiteReport() {
   `;
 }
 
+/* ---------------------------------------------------------------- Adjustments */
+//
+// Employee clock-time fix requests (migration 146). The list RPC does its
+// own permission + scope filtering server-side: admins/devs and 'all'-scope
+// clock viewers see the whole org; 'managed'-scope viewers see only
+// requests from employees in departments they manage.
+
+const canReviewAdjustments = isAdminOrDev || ctx.isClockViewer;
+if (canReviewAdjustments) {
+  const tabBtn = document.getElementById("tc-adjust-tab");
+  if (tabBtn) tabBtn.style.display = "";
+}
+
+function setAdjustCount(n) {
+  const el = document.getElementById("tc-adjust-count");
+  if (!el) return;
+  if (n > 0) { el.textContent = String(n); el.style.display = ""; }
+  else el.style.display = "none";
+}
+
+function fmtAdjustTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString(undefined, {
+    weekday: "short", day: "numeric", month: "short",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
+async function loadAdjustments() {
+  if (!currentOrgId || !canReviewAdjustments) return;
+  const pendingBody  = document.getElementById("tc-adjust-pending-body");
+  const reviewedBody = document.getElementById("tc-adjust-reviewed-body");
+  try {
+    const { data, error } = await sb.rpc("list_clock_adjustment_requests", {
+      p_org_id: currentOrgId,
+      p_status: null,
+    });
+    if (error) throw error;
+    const rows = data || [];
+    const pending  = rows.filter((r) => r.status === "pending");
+    const reviewed = rows.filter((r) => r.status !== "pending")
+      .sort((a, b) => (b.reviewed_at || "").localeCompare(a.reviewed_at || ""))
+      .slice(0, 20);
+    setAdjustCount(pending.length);
+
+    if (!pending.length) {
+      pendingBody.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No pending adjustment requests.</td></tr>`;
+    } else {
+      pendingBody.innerHTML = pending.map((r) => `
+        <tr data-id="${r.id}">
+          <td>${escapeHtml(r.employee_name || "")}</td>
+          <td class="small muted">${escapeHtml(r.department_name || "")}</td>
+          <td><span class="tc-live-pill ${r.event_type === "in" ? "onsite" : "away"}">${r.event_type === "in" ? "In" : "Out"}</span></td>
+          <td class="num small">${escapeHtml(fmtAdjustTime(r.original_time))}</td>
+          <td class="num small"><strong>${escapeHtml(fmtAdjustTime(r.requested_time))}</strong></td>
+          <td class="small muted">${escapeHtml(r.reason || "")}</td>
+          <td style="white-space:nowrap;text-align:right">
+            <button class="small adjust-approve-btn">Approve</button>
+            <button class="ghost small adjust-decline-btn">Decline</button>
+          </td>
+        </tr>`).join("");
+
+      pendingBody.querySelectorAll(".adjust-approve-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = Number(btn.closest("tr").dataset.id);
+          if (!await confirmDialog({
+            title: "Approve adjustment",
+            message: "Approve this request? The clock event will be updated to the requested time.",
+            confirmText: "Approve",
+          })) return;
+          const { error: e } = await sb.rpc("review_clock_adjustment", {
+            p_request_id: id, p_approve: true, p_note: null,
+          });
+          if (e) return notice(e.message, "error");
+          notice("Adjustment approved — clock event updated", "success");
+          await loadAdjustments();
+        });
+      });
+      pendingBody.querySelectorAll(".adjust-decline-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = Number(btn.closest("tr").dataset.id);
+          const note = await promptDialog({
+            title: "Decline adjustment",
+            message: "Reason for declining (optional):",
+          });
+          if (note === null) return;
+          const { error: e } = await sb.rpc("review_clock_adjustment", {
+            p_request_id: id, p_approve: false, p_note: note || null,
+          });
+          if (e) return notice(e.message, "error");
+          notice("Adjustment declined", "success");
+          await loadAdjustments();
+        });
+      });
+    }
+
+    if (!reviewed.length) {
+      reviewedBody.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">Nothing reviewed yet.</td></tr>`;
+    } else {
+      reviewedBody.innerHTML = reviewed.map((r) => `
+        <tr>
+          <td>${escapeHtml(r.employee_name || "")}</td>
+          <td class="small">${r.event_type === "in" ? "In" : "Out"}</td>
+          <td class="num small">${escapeHtml(fmtAdjustTime(r.original_time))}</td>
+          <td class="num small">${escapeHtml(fmtAdjustTime(r.requested_time))}</td>
+          <td><span class="dept-badge ${r.status === "approved" ? "dept-badge-approved" : "dept-badge-rejected"}">${r.status === "approved" ? "Approved" : "Declined"}</span></td>
+          <td class="small muted">${escapeHtml(r.review_note || "")}</td>
+        </tr>`).join("");
+    }
+  } catch (err) {
+    console.error("adjustments load failed:", err);
+    pendingBody.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px;color:#c00">${escapeHtml(err.message || "Could not load adjustment requests")}</td></tr>`;
+  }
+}
+
+// Surface the pending count on the tab as soon as the page loads, so a
+// reviewer sitting on the Live tab still sees work waiting. Best-effort:
+// if migration 146 isn't applied yet the RPC 404s and the badge stays off.
+async function refreshAdjustCountOnBoot() {
+  if (!currentOrgId || !canReviewAdjustments) return;
+  try {
+    const { data } = await sb.rpc("list_clock_adjustment_requests", {
+      p_org_id: currentOrgId,
+      p_status: "pending",
+    });
+    setAdjustCount((data || []).length);
+  } catch { /* migration not applied yet */ }
+}
+
 /* ---------------------------------------------------------------- boot */
 
 applySubView();
+refreshAdjustCountOnBoot();
