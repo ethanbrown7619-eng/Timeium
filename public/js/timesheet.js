@@ -915,16 +915,23 @@ function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
     const q = (query || "").toLowerCase();
     let filtered;
     if (q) {
-      // Rank: code starts-with > code contains > description contains. Within
-      // each tier preserve the original (alphabetical) order. Enter picks
-      // the top-ranked row, which is virtually always the user's intent.
+      // Tokenised match: every whitespace-separated term must appear
+      // somewhere in the code or the description, so "0455 fitout" finds
+      // job 0455 "Office fitout" even though neither field contains the
+      // combined string. Rank by the first token: code starts-with >
+      // code contains > description-only. Within each tier preserve the
+      // original (alphabetical) order. Enter picks the top-ranked row,
+      // which is virtually always the user's intent.
+      const tokens = q.split(/\s+/).filter(Boolean);
       const tiers = [[], [], []];
       for (const it of items) {
         const label = it._label.toLowerCase();
         const desc = (it._desc || "").toLowerCase();
-        if (label.startsWith(q)) tiers[0].push(it);
-        else if (label.includes(q)) tiers[1].push(it);
-        else if (desc.includes(q)) tiers[2].push(it);
+        const hay = label + " " + desc;
+        if (!tokens.every((t) => hay.includes(t))) continue;
+        if (label.startsWith(tokens[0])) tiers[0].push(it);
+        else if (label.includes(tokens[0])) tiers[1].push(it);
+        else tiers[2].push(it);
       }
       filtered = tiers[0].concat(tiers[1], tiers[2]);
     } else {
@@ -945,7 +952,18 @@ function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
   }
 
   input.addEventListener("focus", () => { if (!requireQuery || input.value) render(input.value); });
-  input.addEventListener("input", () => render(input.value));
+  input.addEventListener("input", () => {
+    // Any manual edit invalidates a previous pick — the stored selection
+    // must never outlive the text the user saw when picking. Without this,
+    // a backspaced-empty box still carried the old job underneath (stale
+    // status badge, hidden job on submit). First keystroke clears the id
+    // and notifies the caller so e.g. the badge empties immediately.
+    if (input.dataset.selectedId) {
+      input.dataset.selectedId = "";
+      if (onClear) onClear();
+    }
+    render(input.value);
+  });
 
   input.addEventListener("keydown", (e) => {
     const els = list.querySelectorAll(".ac-item");
@@ -978,7 +996,14 @@ function setupAC(input, items, { onSelect, onClear, requireQuery = false }) {
     if (item && list._items) pick(list._items[Number(item.dataset.idx)]);
   });
 
-  input.addEventListener("blur", () => setTimeout(() => list.classList.remove("open"), 150));
+  input.addEventListener("blur", () => setTimeout(() => {
+    list.classList.remove("open");
+    // Leaving the field without picking anything: drop the half-typed
+    // search so the box's text always reflects the saved selection.
+    if (!input.dataset.selectedId && input.value && document.activeElement !== input) {
+      input.value = "";
+    }
+  }, 150));
 
   function pick(it) {
     input.value = it._label;
@@ -1254,8 +1279,18 @@ function wireRow(row, idx) {
       saveEntry(entries[idx], ["job_id"]);
       if (wasLeave) {
         // Dept/task were forced read-only; need a re-render so they go
-        // back to editable.
+        // back to editable. When the clear came from typing in the job
+        // box (not "(clear selection)"), the re-render would eat the
+        // in-progress search — carry the typed text and focus over to
+        // the fresh input so the search continues uninterrupted.
+        const typed = row.querySelector(".ac-job")?.value || "";
         replaceRowInPlace(idx);
+        const fresh = document.querySelector(`#ts-body tr[data-idx="${idx}"] .ac-job`);
+        if (fresh && typed) {
+          fresh.value = typed;
+          fresh.focus();
+          fresh.dispatchEvent(new Event("input"));
+        }
       } else {
         updateRowStatusBadge(row, entries[idx]);
       }
@@ -1511,17 +1546,21 @@ document.getElementById("submit-ts-btn").addEventListener("click", () => {
     return;
   }
 
-  // Validate that every entry has required fields
+  // Validate that every entry has required fields. A job is required on
+  // EVERY line — including zero-hour ones. (Duplicated rows are created
+  // with zero hours, and the old hours-gated check let a jobless
+  // duplicate slip through submission.) Dept/task requirements still
+  // apply only to lines that actually log hours.
   const incomplete = [];
   entries.forEach((e, i) => {
-    const hasHours = DAYS.some((d) => Number(e[`${d}_hours`]) > 0);
-    if (!hasHours) return;
-    const job = jobsById.get(e.job_id);
-    if (job?.is_leave) return;
     const missing = [];
     if (!e.job_id) missing.push("Job");
-    if (!e.dept_code_id) missing.push("Department");
-    if (requireTask && !e.task_id) missing.push("Task");
+    const job = jobsById.get(e.job_id);
+    const hasHours = DAYS.some((d) => Number(e[`${d}_hours`]) > 0);
+    if (hasHours && !job?.is_leave) {
+      if (!e.dept_code_id) missing.push("Department");
+      if (requireTask && !e.task_id) missing.push("Task");
+    }
     if (missing.length) incomplete.push({ row: i + 1, missing });
   });
   if (incomplete.length) {
