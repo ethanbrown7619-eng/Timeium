@@ -136,15 +136,20 @@ async function loadEvents() {
     }
 
     // A clock event cell: time plus a request-fix affordance (or the
-    // pending marker). Spell cells are display-only — the underlying
-    // status_events aren't adjustable.
-    const evCell = (ev) => {
+    // pending marker). Fix buttons only show on FLAGGED rows — showFix
+    // is passed per row, and a flagged row offers Fix on both its In and
+    // Out cells so whichever side is wrong can be requested. Spell cells
+    // are display-only — the underlying status_events aren't adjustable.
+    const evCell = (ev, showFix) => {
       if (!ev) return `<td class="num muted">—</td>`;
       const t = escapeHtml(fmtEventTime(ev.occurred_at));
-      const action = ev.pending_request_id
-        ? `<span class="small muted">(requested)</span>`
-        : `<button class="ghost small mc-request-btn" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Request a time fix">Fix</button>`;
-      return `<td class="num" data-sort-value="${escapeHtml(ev.occurred_at)}">${t} ${action}</td>`;
+      let action = "";
+      if (ev.pending_request_id) {
+        action = ` <span class="small muted">(requested)</span>`;
+      } else if (showFix) {
+        action = ` <button class="ghost small mc-request-btn" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Request a time fix">Fix</button>`;
+      }
+      return `<td class="num" data-sort-value="${escapeHtml(ev.occurred_at)}">${t}${action}</td>`;
     };
     const timeCell = (iso) => iso
       ? `<td class="num" data-sort-value="${escapeHtml(iso)}">${escapeHtml(fmtEventTime(iso))}</td>`
@@ -158,17 +163,21 @@ async function loadEvents() {
       const dayCell = `<td class="small" data-sort-value="${key}">${escapeHtml(dayLabel)}</td>`;
       const rows = (rowsByDay.get(key) || []).sort((a, b) => new Date(a.t) - new Date(b.t));
       if (!rows.length) {
-        html.push(`<tr>${dayCell}<td class="small muted">Not clocked in</td><td class="num muted">—</td><td class="num muted">—</td><td></td></tr>`);
+        // Weekends aren't expected workdays, so an empty Sat/Sun isn't
+        // flagged as "Not clocked in" — it just shows a neutral dash.
+        const isWeekend = i >= 5;
+        html.push(`<tr>${dayCell}<td class="small muted">${isWeekend ? "—" : "Not clocked in"}</td><td class="num muted">—</td><td class="num muted">—</td><td></td></tr>`);
         continue;
       }
       for (const r of rows) {
         if (r.kind === "shift") {
-          const flags = r.outEv?.auto_closed
+          const flagged = !!r.outEv?.auto_closed;
+          const flags = flagged
             ? `<span class="cvt-cell cvt-warn" style="padding:2px 8px;border-radius:999px;display:inline-block">Auto-closed</span>`
             : "";
           html.push(`<tr>${dayCell}
             <td><span class="tc-live-pill onsite">Shift</span></td>
-            ${evCell(r.inEv)}${evCell(r.outEv)}
+            ${evCell(r.inEv, flagged)}${evCell(r.outEv, flagged)}
             <td>${flags}</td></tr>`);
         } else {
           const s = r.spell;
