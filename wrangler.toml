@@ -2,6 +2,14 @@ name = "temporium"
 compatibility_date = "2024-10-01"
 main = "worker.js"
 
+# Workers Logs: persist invocation logs + console output in the dashboard
+# (Observability tab), so errors like the asset-serving 503s are visible
+# after the fact instead of only via a live tail. 100% sampling — this
+# app's request volume is tiny.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [assets]
 directory = "./public"
 not_found_handling = "single-page-application"
