@@ -82,7 +82,14 @@ export default {
     // Everything else falls through to the static assets binding.
     try {
       const response = await env.ASSETS.fetch(request);
-      return addSecurityHeaders(response, url.pathname);
+      // Header decoration must never take the site down: if it throws
+      // for any reason, serve the asset undecorated rather than 503.
+      try {
+        return addSecurityHeaders(response, url.pathname);
+      } catch (err) {
+        console.error("Header decoration failed:", err);
+        return response;
+      }
     } catch (err) {
       console.error("Asset fetch failed:", err);
       return new Response(
@@ -149,11 +156,20 @@ function addSecurityHeaders(response, pathname) {
       "form-action 'self'",
     ].join("; ")
   );
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+  // 101/204/205/304 are null-body statuses: constructing a Response for
+  // them with a (even empty) body stream throws a TypeError. With
+  // run_worker_first + no-cache, 304 revalidations now flow through here
+  // constantly — reconstructing them with response.body was 503ing every
+  // page load that hit the browser's ETag cache.
+  const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
+  return new Response(
+    NULL_BODY_STATUS.has(response.status) ? null : response.body,
+    {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    }
+  );
 }
 
 // ----------------------------------------------------------------------------
