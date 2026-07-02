@@ -2,12 +2,12 @@
 # GitHub's runners with wrangler — completely bypassing Cloudflare's
 # Workers Builds pipeline, which hung at "Initializing" indefinitely.
 #
-# Requires two repository secrets (GitHub → Settings → Secrets and
+# Requires ONE repository secret (GitHub → Settings → Secrets and
 # variables → Actions):
 #   CLOUDFLARE_API_TOKEN   — token with the "Edit Cloudflare Workers"
 #                            template (dash.cloudflare.com → My Profile →
 #                            API Tokens → Create Token)
-#   CLOUDFLARE_ACCOUNT_ID  — shown on the Workers & Pages overview page
+# The account ID is non-sensitive and lives in wrangler.toml (account_id).
 name: Deploy to Cloudflare
 
 # Manual-only: Cloudflare's git builds recovered, so this is a break-glass
@@ -31,5 +31,4 @@ jobs:
       - name: wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler@4 deploy
