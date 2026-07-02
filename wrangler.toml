@@ -1,6 +1,10 @@
 name = "temporium"
 compatibility_date = "2024-10-01"
 main = "worker.js"
+# Serve on the account's workers.dev subdomain. The recreated worker came
+# up with no active routes and the dashboard's Enable toggle was greyed
+# out — declaring it here makes every deploy enforce the route.
+workers_dev = true
 
 # Workers Logs: persist invocation logs + console output in the dashboard
 # (Observability tab), so errors like the asset-serving 503s are visible
