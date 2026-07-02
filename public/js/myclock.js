@@ -82,41 +82,108 @@ document.getElementById("mc-next").addEventListener("click", () => {
 
 /* ---------------------------------------------------------------- events */
 
+// One row per SPELL, grouped by day, with In and Out columns:
+//   * Shift rows pair the day's clock in/out events (a missing side shows
+//     "—", so a never-clocked day reads In — / Out —).
+//   * Break / off-site-job rows come from status_events (migration 147):
+//     Out = when they left site, In = when they scanned back in.
+// Every day of the selected week gets at least one row.
 async function loadEvents() {
   const body = document.getElementById("mc-events-body");
   try {
-    // Local-midnight week bounds as timestamptz — the RPC compares
+    // Local-midnight week bounds as timestamptz — the RPCs compare
     // against occurred_at directly, so no timezone drift.
     const start = new Date(weekStart); start.setHours(0, 0, 0, 0);
     const end = addDays(start, 7);
-    const { data, error } = await sb.rpc("list_my_clock_events", {
-      p_start:    start.toISOString(),
-      p_end_excl: end.toISOString(),
-    });
-    if (error) throw error;
-    const rows = data || [];
-    if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px">No clock events this week.</td></tr>`;
-      return;
+    const bounds = { p_start: start.toISOString(), p_end_excl: end.toISOString() };
+    const [evRes, spellRes] = await Promise.all([
+      sb.rpc("list_my_clock_events", bounds),
+      sb.rpc("list_my_offsite_spells", bounds),
+    ]);
+    if (evRes.error) throw evRes.error;
+    const events = evRes.data || [];
+    // Spells are best-effort: if migration 147 isn't applied yet the
+    // page still works, just without break/off-site rows.
+    if (spellRes.error) console.warn("list_my_offsite_spells unavailable:", spellRes.error.message);
+    const spells = spellRes.error ? [] : (spellRes.data || []);
+
+    const rowsByDay = new Map();
+    const dayPush = (iso, row) => {
+      const key = fmtDate(new Date(iso));
+      if (!rowsByDay.has(key)) rowsByDay.set(key, []);
+      rowsByDay.get(key).push(row);
+    };
+
+    // Pair the chronological in/out stream into shift rows.
+    let openIn = null;
+    const pushShift = (inEv, outEv) => {
+      const anchor = inEv?.occurred_at || outEv?.occurred_at;
+      dayPush(anchor, { kind: "shift", inEv, outEv, t: anchor });
+    };
+    for (const ev of events) {
+      if (ev.event_type === "in") {
+        if (openIn) pushShift(openIn, null); // in without an out (still on site / forgot)
+        openIn = ev;
+      } else {
+        pushShift(openIn, ev); // out without an in shows In as "—"
+        openIn = null;
+      }
     }
-    body.innerHTML = rows.map((r) => {
-      const isIn = r.event_type === "in";
-      const pill = `<span class="tc-live-pill ${isIn ? "onsite" : "away"}">${isIn ? "In" : "Out"}</span>`;
-      const flags = [
-        r.auto_closed ? `<span class="cvt-cell cvt-warn" style="padding:2px 8px;border-radius:999px;display:inline-block">Auto-closed</span>` : "",
-        r.source ? `<span class="small muted">${escapeHtml(r.source)}</span>` : "",
-      ].filter(Boolean).join(" ");
-      const action = r.pending_request_id
-        ? `<span class="small muted">Change requested</span>`
-        : `<button class="ghost small mc-request-btn" data-event-id="${r.id}" data-type="${r.event_type}" data-time="${escapeHtml(r.occurred_at)}">Request fix</button>`;
-      return `<tr>
-        <td class="small">${escapeHtml(fmtEventDay(r.occurred_at))}</td>
-        <td>${pill}</td>
-        <td class="num">${escapeHtml(fmtEventTime(r.occurred_at))}</td>
-        <td>${flags}</td>
-        <td style="text-align:right">${action}</td>
-      </tr>`;
-    }).join("");
+    if (openIn) pushShift(openIn, null);
+
+    for (const s of spells) {
+      dayPush(s.started_at, { kind: s.kind, spell: s, t: s.started_at });
+    }
+
+    // A clock event cell: time plus a request-fix affordance (or the
+    // pending marker). Spell cells are display-only — the underlying
+    // status_events aren't adjustable.
+    const evCell = (ev) => {
+      if (!ev) return `<td class="num muted">—</td>`;
+      const t = escapeHtml(fmtEventTime(ev.occurred_at));
+      const action = ev.pending_request_id
+        ? `<span class="small muted">(requested)</span>`
+        : `<button class="ghost small mc-request-btn" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Request a time fix">Fix</button>`;
+      return `<td class="num" data-sort-value="${escapeHtml(ev.occurred_at)}">${t} ${action}</td>`;
+    };
+    const timeCell = (iso) => iso
+      ? `<td class="num" data-sort-value="${escapeHtml(iso)}">${escapeHtml(fmtEventTime(iso))}</td>`
+      : `<td class="num muted">—</td>`;
+
+    const html = [];
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(start, i);
+      const key = fmtDate(d);
+      const dayLabel = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+      const dayCell = `<td class="small" data-sort-value="${key}">${escapeHtml(dayLabel)}</td>`;
+      const rows = (rowsByDay.get(key) || []).sort((a, b) => new Date(a.t) - new Date(b.t));
+      if (!rows.length) {
+        html.push(`<tr>${dayCell}<td class="small muted">Not clocked in</td><td class="num muted">—</td><td class="num muted">—</td><td></td></tr>`);
+        continue;
+      }
+      for (const r of rows) {
+        if (r.kind === "shift") {
+          const flags = r.outEv?.auto_closed
+            ? `<span class="cvt-cell cvt-warn" style="padding:2px 8px;border-radius:999px;display:inline-block">Auto-closed</span>`
+            : "";
+          html.push(`<tr>${dayCell}
+            <td><span class="tc-live-pill onsite">Shift</span></td>
+            ${evCell(r.inEv)}${evCell(r.outEv)}
+            <td>${flags}</td></tr>`);
+        } else {
+          const s = r.spell;
+          const label = r.kind === "break"
+            ? `Break${s.break_name ? ` (${escapeHtml(s.break_name)})` : ""}`
+            : "Off-site job";
+          const pillCls = r.kind === "break" ? "break" : "offsite";
+          html.push(`<tr>${dayCell}
+            <td><span class="tc-live-pill ${pillCls}">${label}</span></td>
+            ${timeCell(s.returned_at)}${timeCell(s.started_at)}
+            <td>${!s.returned_at ? `<span class="small muted">no scan back in</span>` : ""}</td></tr>`);
+        }
+      }
+    }
+    body.innerHTML = html.join("");
 
     body.querySelectorAll(".mc-request-btn").forEach((btn) => {
       btn.addEventListener("click", () => openAdjustDialog({

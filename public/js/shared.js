@@ -527,6 +527,68 @@ export function escapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
+/* ---------------------------------------------------------------- sortable tables */
+//
+// Global click-to-sort for every data table in the app. One delegated
+// listener — shared.js is imported by every page — so tables rendered at
+// any time, including string-rendered ones, sort with zero extra wiring.
+//
+// Skipped: tables marked data-no-sort (editable grids where row order is
+// meaningful), multi-row theads (the clock-vs-timesheet grid), headers
+// with their own sort handling (.tc-live-sort on the Live table), and
+// empty header cells (action columns).
+//
+// Cell value: a td's data-sort-value attribute when present (used for
+// dates/times whose display text doesn't sort lexically), else trimmed
+// text. Numeric-looking values (incl. "7.5h", "45m", "80%") compare
+// numerically. Empty / "—" cells always sink to the bottom. Placeholder
+// rows (one cell spanning the table) stay pinned at the bottom.
+
+document.addEventListener("click", (e) => {
+  const th = e.target.closest("thead th");
+  if (!th || th.classList.contains("tc-live-sort")) return;
+  const table = th.closest("table");
+  if (!table || table.dataset.noSort != null) return;
+  const thead = th.closest("thead");
+  if (!thead || thead.rows.length !== 1) return;
+  if (!th.textContent.trim()) return;
+  const tbody = table.tBodies[0];
+  if (!tbody || tbody.rows.length < 2) return;
+
+  const col = th.cellIndex;
+  const dir = th.dataset.sortDir === "asc" ? "desc" : "asc";
+  for (const h of thead.rows[0].cells) delete h.dataset.sortDir;
+  th.dataset.sortDir = dir;
+
+  const pinned = [], sortable = [];
+  for (const tr of Array.from(tbody.rows)) {
+    if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) pinned.push(tr);
+    else sortable.push(tr);
+  }
+  const val = (tr) => {
+    const td = tr.cells[col];
+    if (!td) return "";
+    const v = (td.dataset.sortValue ?? td.textContent).trim();
+    return v === "—" ? "" : v;
+  };
+  const num = (s) => {
+    const cleaned = s.replace(/[,$%]/g, "").replace(/(hrs?|mins?|[hm])$/i, "").trim();
+    return cleaned !== "" && !isNaN(cleaned) ? Number(cleaned) : null;
+  };
+  const sign = dir === "asc" ? 1 : -1;
+  sortable.sort((a, b) => {
+    const av = val(a), bv = val(b);
+    if (!av && !bv) return 0;
+    if (!av) return 1;  // empties last in both directions
+    if (!bv) return -1;
+    const an = num(av), bn = num(bv);
+    if (an != null && bn != null) return (an - bn) * sign;
+    return av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" }) * sign;
+  });
+  for (const tr of sortable) tbody.appendChild(tr);
+  for (const tr of pinned) tbody.appendChild(tr);
+});
+
 /* ---------------------------------------------------------------- topbar */
 
 /**

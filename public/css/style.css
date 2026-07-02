@@ -1199,6 +1199,16 @@ details.card[open] > summary::before { content: "▾ "; }
 .tc-live-counts .tile.absent  { background: var(--danger-bg); border-color: #f5b8b8; }
 .tc-live-counts .tile.guest   { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
 
+/* Global click-to-sort headers (shared.js delegate). Single-row theads
+   only — matches the delegate's own rules — and never on tables that
+   opt out with data-no-sort. */
+table:not([data-no-sort]) > thead > tr:only-child > th:not(:empty) {
+  cursor: pointer;
+  user-select: none;
+}
+thead th[data-sort-dir="asc"]::after  { content: " ↑"; }
+thead th[data-sort-dir="desc"]::after { content: " ↓"; }
+
 /* Clickable status tiles act as a row filter on the Live table. */
 .tc-live-counts .tile.filterable {
   cursor: pointer;
