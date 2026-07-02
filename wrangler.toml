@@ -5,11 +5,13 @@ main = "worker.js"
 [assets]
 directory = "./public"
 not_found_handling = "single-page-application"
-# Route static assets THROUGH the worker instead of serving them directly.
-# Without this, asset requests bypass the worker entirely — the security
-# headers, cache-control policy, and country block in worker.js silently
-# never run for HTML/JS/CSS.
-run_worker_first = true
+# NOTE: run_worker_first is intentionally OFF. Static assets are served
+# directly by Cloudflare, bypassing the worker — exactly as they were
+# before the perf work. Turning it on routed every HTML/JS/CSS response
+# through the worker, which surfaced a 304-handling bug and 503'd the
+# whole site. All the perceived-speed upgrades are client-side (vendored
+# supabase-js, modulepreload, skeletons, toasts), so they don't need the
+# worker in the asset path. Not worth the outage risk for header coverage.
 
 # Override via: wrangler secret put SUPABASE_URL (etc.) — or set here as vars for
 # values that are safe to expose (the anon key is public, URL is public).
