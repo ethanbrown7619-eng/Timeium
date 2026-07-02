@@ -481,8 +481,9 @@ async function loadTeamForwarded() {
 
 // ---------------------------------------------------------------- init
 
-await loadLeaveTypes();
-await loadRequests();
+// Independent fetches — the requests table embeds its type names, so it
+// doesn't need the leaveTypes list (that's for the request dialog).
+await Promise.all([loadLeaveTypes(), loadRequests()]);
 // Pre-load the team pending count so the badge shows on first paint even
 // while the My Requests tab is active.
 if (canReviewTeam) loadTeamPending();

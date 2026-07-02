@@ -8,6 +8,7 @@ import {
   renderTopbar,
   requireDeveloper,
   confirmDialog,
+  skeletonRows,
 } from "/js/shared.js";
 
 // XLSX (~600KB) loaded only when the user actually triggers an import.
@@ -139,7 +140,7 @@ function makeController(kind) {
     const body = document.getElementById(`${prefix}-body`);
     if (body) {
       const colCount = kind === "jobs" ? 7 : (c.hasStatus ? 6 : 5);
-      body.innerHTML = `<tr><td colspan="${colCount}" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
+      body.innerHTML = skeletonRows(colCount);
     }
     try {
       // No COUNT at all. A real COUNT(*) re-evaluates the row-level-
@@ -1384,8 +1385,8 @@ async function loadXeroMapping() {
   if (!currentOrgId) return;
   const empBody = document.getElementById("xero-employees-body");
   const ltBody = document.getElementById("xero-leavetypes-body");
-  empBody.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
-  ltBody.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
+  empBody.innerHTML = skeletonRows(3);
+  ltBody.innerHTML = skeletonRows(3);
 
   // Fetch each half independently so one failure doesn't blank the other.
   const empPromise = (async () => {
@@ -1688,7 +1689,7 @@ async function loadLeaveJobMapping() {
   if (!currentOrgId) return;
   const body = document.getElementById("leave-job-body");
   if (!body) return;
-  body.innerHTML = `<tr><td colspan="3" class="muted small" style="text-align:center">Loading…</td></tr>`;
+  body.innerHTML = skeletonRows(3);
   try {
     const [jobsResp, typesResp] = await Promise.all([
       sb.from("jobs")

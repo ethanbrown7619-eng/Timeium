@@ -1,8 +1,14 @@
 // Supabase client bootstrap.
-// Loads supabase-js from esm.sh (no build step) and reads Supabase URL/anon
-// key from /config.json (served by the Cloudflare Worker).
+// Loads supabase-js from a locally vendored single-file bundle (no build
+// step, no third-party fetch on the critical path — a CDN request inside
+// the module graph used to block every page load) and reads Supabase
+// URL/anon key from /config.json (served by the Cloudflare Worker).
+//
+// The bundle is @supabase/supabase-js@2.45.4 built with:
+//   esbuild index.js --bundle --format=esm --target=es2020 --minify
+// Regenerate the same way when upgrading the library version.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { createClient } from "/js/vendor/supabase-js.js";
 
 let _client = null;
 let _config = null;

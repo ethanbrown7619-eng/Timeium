@@ -9,6 +9,11 @@
     <meta name="theme-color" content="#BEFA40" />
     <title>Admin · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <link rel="preconnect" href="https://kyfydyownbgwhquorchn.supabase.co" crossorigin />
+    <link rel="modulepreload" href="/js/admin.js" />
+    <link rel="modulepreload" href="/js/shared.js" />
+    <link rel="modulepreload" href="/js/supabase-client.js" />
+    <link rel="modulepreload" href="/js/vendor/supabase-js.js" />
   </head>
   <body>
     <header class="topbar" id="topbar"></header>
@@ -61,7 +66,7 @@
                 </tr>
               </thead>
               <tbody id="emp-body">
-                <tr><td colspan="5" class="muted small" style="text-align:center">Loading…</td></tr>
+                <tr class="skel-row"><td colspan="5"><span class="skel"></span></td></tr><tr class="skel-row"><td colspan="5"><span class="skel"></span></td></tr><tr class="skel-row"><td colspan="5"><span class="skel"></span></td></tr>
               </tbody>
             </table>
           </div>
@@ -103,7 +108,7 @@
               <button id="inf-approve-all-btn" class="ghost" disabled>Approve all</button>
             </div>
             <div id="inf-approval-list">
-              <p class="muted small" style="text-align:center;margin:0">Loading…</p>
+              <div style="display:grid;gap:12px;padding:8px 0"><span class="skel"></span><span class="skel"></span><span class="skel"></span></div>
             </div>
           </div>
 
@@ -150,7 +155,7 @@
           </div>
 
           <div id="lv-preview" style="overflow-x:auto;max-height:500px;overflow-y:auto;margin-bottom:16px">
-            <p class="muted small" style="text-align:center">Loading…</p>
+            <div style="display:grid;gap:12px;padding:8px 0"><span class="skel"></span><span class="skel"></span><span class="skel"></span></div>
           </div>
 
           <div class="row-flex">
@@ -233,7 +238,7 @@
                 </tr>
               </thead>
               <tbody id="admin-leave-body">
-                <tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>
+                <tr class="skel-row"><td colspan="8"><span class="skel"></span></td></tr><tr class="skel-row"><td colspan="8"><span class="skel"></span></td></tr><tr class="skel-row"><td colspan="8"><span class="skel"></span></td></tr>
               </tbody>
             </table>
           </div>

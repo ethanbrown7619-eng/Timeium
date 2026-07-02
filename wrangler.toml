@@ -5,6 +5,11 @@ main = "worker.js"
 [assets]
 directory = "./public"
 not_found_handling = "single-page-application"
+# Route static assets THROUGH the worker instead of serving them directly.
+# Without this, asset requests bypass the worker entirely — the security
+# headers, cache-control policy, and country block in worker.js silently
+# never run for HTML/JS/CSS.
+run_worker_first = true
 
 # Override via: wrangler secret put SUPABASE_URL (etc.) — or set here as vars for
 # values that are safe to expose (the anon key is public, URL is public).

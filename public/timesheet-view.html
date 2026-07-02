@@ -9,6 +9,11 @@
     <meta name="theme-color" content="#BEFA40" />
     <title>View Timesheet · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <link rel="preconnect" href="https://kyfydyownbgwhquorchn.supabase.co" crossorigin />
+    <link rel="modulepreload" href="/js/timesheet-view.js" />
+    <link rel="modulepreload" href="/js/shared.js" />
+    <link rel="modulepreload" href="/js/supabase-client.js" />
+    <link rel="modulepreload" href="/js/vendor/supabase-js.js" />
   </head>
   <body>
     <header class="topbar" id="topbar"></header>
@@ -48,7 +53,7 @@
             <tr id="date-row" class="small muted"></tr>
           </thead>
           <tbody id="view-body">
-            <tr><td colspan="13" class="muted small" style="text-align:center">Loading…</td></tr>
+            <tr class="skel-row"><td colspan="13"><span class="skel"></span></td></tr><tr class="skel-row"><td colspan="13"><span class="skel"></span></td></tr><tr class="skel-row"><td colspan="13"><span class="skel"></span></td></tr>
           </tbody>
           <tfoot>
             <tr id="totals-row">

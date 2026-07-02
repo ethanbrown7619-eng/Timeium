@@ -12,6 +12,7 @@ import {
   fetchWeekDashboardData,
   isUserEffectiveOverhead,
   confirmDialog, promptDialog,
+  skeletonBlock,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -599,13 +600,12 @@ async function loadClockComparison() {
   if (!currentOrgId) return;
   const tableEl = document.getElementById("cvt-table");
   const summaryEl = document.getElementById("cvt-summary");
-  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  tableEl.innerHTML = skeletonBlock();
   summaryEl.innerHTML = "";
 
-  await loadOrgTolerance();
-  await loadClockStandard();
-  await loadUnpaidBreaks();
-  await loadClockScope();
+  // Four independent config fetches — batched so the tab pays one round
+  // trip of latency instead of four.
+  await Promise.all([loadOrgTolerance(), loadClockStandard(), loadUnpaidBreaks(), loadClockScope()]);
 
   const ws = fmtDate(cvtWeek);
   const dash = await fetchWeekDashboardData(sb, currentOrgId, ws);
@@ -892,11 +892,10 @@ async function loadFlagReport() {
   if (!currentOrgId) return;
   const tableEl   = document.getElementById("flag-table");
   const summaryEl = document.getElementById("flag-summary");
-  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  tableEl.innerHTML = skeletonBlock();
   summaryEl.innerHTML = "";
 
-  await loadClockStandard();
-  await loadClockScope();
+  await Promise.all([loadClockStandard(), loadClockScope()]);
   const ws = fmtDate(flagWeek);
   let rows = [];
   try {
@@ -1010,11 +1009,10 @@ async function loadFullReport() {
   if (!currentOrgId) return;
   const tableEl   = document.getElementById("full-table");
   const summaryEl = document.getElementById("full-summary");
-  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  tableEl.innerHTML = skeletonBlock();
   summaryEl.innerHTML = "";
 
-  await loadClockStandard();
-  await loadClockScope();
+  await Promise.all([loadClockStandard(), loadClockScope()]);
   const ws = fmtDate(fullWeek);
   // Days where an auto-closed event happened. Used to promote 'red'
   // (Short shift) to 'yellow' (Auto-closed) in the row render — the
@@ -1161,7 +1159,7 @@ async function loadOffsiteReport() {
   if (!currentOrgId) return;
   const tableEl   = document.getElementById("offsite-table");
   const summaryEl = document.getElementById("offsite-summary");
-  tableEl.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  tableEl.innerHTML = skeletonBlock();
   summaryEl.innerHTML = "";
 
   await loadClockScope();

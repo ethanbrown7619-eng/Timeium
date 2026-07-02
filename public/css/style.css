@@ -1199,6 +1199,26 @@ details.card[open] > summary::before { content: "▾ "; }
 .tc-live-counts .tile.absent  { background: var(--danger-bg); border-color: #f5b8b8; }
 .tc-live-counts .tile.guest   { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
 
+/* Skeleton shimmer placeholders — shown while data loads so content
+   areas are never blank and don't jump when rows land. */
+.skel {
+  display: inline-block;
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #e9ecef 25%, #f6f7f8 37%, #e9ecef 63%);
+  background-size: 400% 100%;
+  animation: skelShimmer 1.4s ease infinite;
+}
+.skel-row td { padding-top: 12px; padding-bottom: 12px; }
+@keyframes skelShimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+}
+
 /* Global click-to-sort headers (shared.js delegate). Single-row theads
    only — matches the delegate's own rules — and never on tables that
    opt out with data-no-sort. */

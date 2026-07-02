@@ -433,7 +433,29 @@ export function notice(message, level = "info", { sticky = false } = {}) {
   el.className = `notice ${level}`;
   el.textContent = message;
 
+  // Screen readers announce toasts without focus moving to them. Errors
+  // interrupt (assertive); everything else waits its turn (polite).
+  el.setAttribute("role", level === "error" ? "alert" : "status");
+  el.setAttribute("aria-live", level === "error" ? "assertive" : "polite");
+
   const usePopover = typeof el.showPopover === "function";
+  const dismiss = () => {
+    if (usePopover) { try { el.hidePopover(); } catch {} }
+    el.classList.add("hidden");
+  };
+
+  // Tap/click anywhere on the toast dismisses it immediately.
+  if (!el._noticeDismissWired) {
+    el._noticeDismissWired = true;
+    el.style.cursor = "pointer";
+    el.title = "Dismiss";
+    el.addEventListener("click", () => {
+      clearTimeout(notice._t);
+      if (typeof el.hidePopover === "function") { try { el.hidePopover(); } catch {} }
+      el.classList.add("hidden");
+    });
+  }
+
   if (usePopover) {
     if (el.getAttribute("popover") !== "manual") el.setAttribute("popover", "manual");
     el.classList.remove("hidden");
@@ -447,11 +469,26 @@ export function notice(message, level = "info", { sticky = false } = {}) {
 
   clearTimeout(notice._t);
   if (!sticky) {
-    notice._t = setTimeout(() => {
-      if (usePopover) { try { el.hidePopover(); } catch {} }
-      el.classList.add("hidden");
-    }, 5000);
+    // Errors linger longer — they carry information the user has to act
+    // on, and 5s was tight for reading an unfamiliar message.
+    notice._t = setTimeout(dismiss, level === "error" ? 6500 : 5000);
   }
+}
+
+// Skeleton shimmer placeholders for loading states — a content area
+// should never sit blank or on a bare "Loading…" while data is in
+// flight. Table flavour spans the row; block flavour suits div-rendered
+// tables.
+export function skeletonRows(cols, count = 3) {
+  return Array.from({ length: count }, () =>
+    `<tr class="skel-row"><td colspan="${cols}"><span class="skel"></span></td></tr>`
+  ).join("");
+}
+
+export function skeletonBlock(lines = 4) {
+  return `<div style="display:grid;gap:12px;padding:8px 0">${
+    Array.from({ length: lines }, () => `<span class="skel"></span>`).join("")
+  }</div>`;
 }
 
 /* ---------------------------------------------------------------- dialogs */
@@ -750,14 +787,14 @@ export async function routeAfterAuth(sb) {
 // Pages that just need the basic role context call getUserContext().
 // Admin/staff pages that also need org switching call requireAdmin().
 
-// Short TTL so permission changes made by an admin (manager flag,
-// clock-comparison access, department move) propagate to the affected
-// user's browser within ~1 minute on their next page navigation. The
-// previous 5-minute value made permission flips feel sticky. Note: the
-// cache lives in sessionStorage, so a tab that's left open and never
-// navigated will still hold the stale context until the TTL expires —
-// the bound matters most for active users clicking between pages.
-const USER_CONTEXT_TTL_MS = 60_000;
+// Stale-while-revalidate: a cache hit is served INSTANTLY (0 network
+// round trips on the navigation's critical path) and a background
+// refresh rewrites the cache, so permission changes made by an admin
+// (manager flag, clock-viewer access, department move) land one page
+// navigation later — faster propagation than the old 60s hard TTL gave,
+// without ever blocking a page on the network. The TTL is only the
+// hard bound for serving without revalidation having caught up.
+const USER_CONTEXT_TTL_MS = 5 * 60_000;
 
 // Last-computed "does this user's staff type receive any leave" flag. Stashed
 // at module scope so renderTopbar can hide the Leave tab without every page
@@ -778,6 +815,10 @@ export async function getUserContext(sb, session, { force = false } = {}) {
         const { data, ts } = JSON.parse(cached);
         if (Date.now() - ts < USER_CONTEXT_TTL_MS) {
           _lastReceivesLeave = data?.receivesLeave !== false;
+          // Serve the cache instantly; refresh it in the background so
+          // the next navigation sees any permission changes.
+          fetchFreshUserContext(sb, session, cacheKey).catch((err) =>
+            console.warn("context revalidate failed:", err?.message || err));
           return data;
         }
       }
@@ -786,6 +827,10 @@ export async function getUserContext(sb, session, { force = false } = {}) {
     }
   }
 
+  return fetchFreshUserContext(sb, session, cacheKey);
+}
+
+async function fetchFreshUserContext(sb, session, cacheKey) {
   const [devRes, adminRes, meRes] = await Promise.allSettled([
     sb.rpc("is_developer"),
     sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),

@@ -11,6 +11,7 @@ import {
   fetchWeekDashboardData, invalidateWeekDashboard,
   isUserEffectiveOverhead,
   flagTruncationRisk,
+  skeletonRows, skeletonBlock,
 } from "/js/shared.js";
 
 // XLSX is ~600KB. Load only when an Export button is actually clicked.
@@ -795,7 +796,7 @@ async function buildInfusionRows() {
 document.getElementById("inf-preview-btn").addEventListener("click", async () => {
   const preview = document.getElementById("inf-preview");
   const summary = document.getElementById("inf-summary");
-  preview.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  preview.innerHTML = skeletonBlock();
 
   try {
     infRows = await buildInfusionRows();
@@ -1483,7 +1484,7 @@ document.getElementById("lv-include-drafts")?.addEventListener("change", () => l
 async function loadWagedReport() {
   const preview = document.getElementById("lv-preview");
   const summary = document.getElementById("lv-summary");
-  preview.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  preview.innerHTML = skeletonBlock();
 
   try {
     lvWagedRows = await buildLeaveRowsForWeeks([fmtDate(lvWeek)], "waged", document.getElementById("lv-include-drafts").checked);
@@ -1560,7 +1561,7 @@ function getMondaysInMonth(year, month) {
 async function loadSalariedReport() {
   const preview = document.getElementById("lv-sal-preview");
   const summary = document.getElementById("lv-sal-summary");
-  preview.innerHTML = `<p class="muted small" style="text-align:center">Loading…</p>`;
+  preview.innerHTML = skeletonBlock();
 
   try {
     const weeks = getMondaysInMonth(lvMonth.getFullYear(), lvMonth.getMonth());
@@ -1939,7 +1940,7 @@ async function loadAdminLeave() {
   const body = document.getElementById("admin-leave-body");
   const filterEl = document.getElementById("admin-leave-filter");
   if (!body || !currentOrgId) return;
-  body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">Loading…</td></tr>`;
+  body.innerHTML = skeletonRows(8);
 
   // Disambiguate the users embed: leave_requests has three FKs to users
   // (user_id, reviewed_by, manager_reviewed_by), so a bare users(name)

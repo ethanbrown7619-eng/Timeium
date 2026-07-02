@@ -82,7 +82,7 @@ export default {
     // Everything else falls through to the static assets binding.
     try {
       const response = await env.ASSETS.fetch(request);
-      return addSecurityHeaders(response);
+      return addSecurityHeaders(response, url.pathname);
     } catch (err) {
       console.error("Asset fetch failed:", err);
       return new Response(
@@ -100,14 +100,31 @@ export default {
   },
 };
 
-function addSecurityHeaders(response) {
+// Per-type cache policy. HTML and unhashed JS/CSS use no-cache so every
+// load revalidates (a cheap 304 via the assets binding's ETag) — a
+// max-age window on unhashed ES modules could pair a stale shared.js
+// with a fresh page module right after a deploy and break every import.
+// Long-lived media (icons, images, fonts) cache for 7 days; rename the
+// file when it changes.
+function cacheControlFor(pathname) {
+  if (/\.(png|jpe?g|gif|webp|ico|svg|woff2?)$/i.test(pathname)) {
+    return "public, max-age=604800";
+  }
+  return "no-cache";
+}
+
+function addSecurityHeaders(response, pathname) {
   const headers = new Headers(response.headers);
+  if (pathname) headers.set("Cache-Control", cacheControlFor(pathname));
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-  // CSP allows esm.sh because supabase-js and xlsx are loaded from there.
+  // CSP allows esm.sh for the LAZY export libraries only (xlsx, jspdf —
+  // dynamically imported when an admin clicks an export button).
+  // supabase-js itself is vendored locally (js/vendor/supabase-js.js) so
+  // no third-party fetch sits on the page-load critical path.
   // All page scripts live in external /js/*.js files so script-src can
   // refuse 'unsafe-inline' — meaningful XSS containment, since an
   // injected <script>…</script> would now be blocked by the browser.
