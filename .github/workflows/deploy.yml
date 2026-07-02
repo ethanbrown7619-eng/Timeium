@@ -10,9 +10,10 @@
 #   CLOUDFLARE_ACCOUNT_ID  — shown on the Workers & Pages overview page
 name: Deploy to Cloudflare
 
+# Manual-only: Cloudflare's git builds recovered, so this is a break-glass
+# fallback for the next time Workers Builds hangs — trigger it from the
+# GitHub Actions tab (needs the two secrets described above).
 on:
-  push:
-    branches: [claude/continue-ptl-timesheet-blVcV]
   workflow_dispatch: {}
 
 concurrency:
