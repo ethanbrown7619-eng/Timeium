@@ -13,6 +13,13 @@ head_sampling_rate = 1
 [assets]
 directory = "./public"
 not_found_handling = "single-page-application"
+# REQUIRED for worker.js's env.ASSETS.fetch() fallthrough to work: the
+# assets binding is only exposed to the worker when declared here. This
+# was missing from day one — env.ASSETS was undefined — but the line was
+# dead code while assets served worker-free, so it never showed. Turning
+# run_worker_first on routed every page through the worker and the
+# undefined binding 503'd the whole site.
+binding = "ASSETS"
 # NOTE: run_worker_first is intentionally OFF. Static assets are served
 # directly by Cloudflare, bypassing the worker — exactly as they were
 # before the perf work. Turning it on routed every HTML/JS/CSS response

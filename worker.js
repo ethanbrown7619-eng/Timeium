@@ -81,6 +81,16 @@ export default {
 
     // Everything else falls through to the static assets binding.
     try {
+      // Guard the exact failure that once 503'd the site: env.ASSETS only
+      // exists when wrangler.toml declares `binding = "ASSETS"` under
+      // [assets]. Fail loudly and specifically, never as a mystery 503.
+      if (!env.ASSETS) {
+        console.error('env.ASSETS is undefined — declare binding = "ASSETS" under [assets] in wrangler.toml');
+        return new Response("Server misconfiguration: assets binding missing.", {
+          status: 500,
+          headers: { "content-type": "text/plain", "cache-control": "no-store" },
+        });
+      }
       const response = await env.ASSETS.fetch(request);
       // Header decoration must never take the site down: if it throws
       // for any reason, serve the asset undecorated rather than 503.
