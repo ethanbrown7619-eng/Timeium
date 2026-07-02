@@ -129,6 +129,13 @@ const DAY_NAMES = ["sunday","monday","tuesday","wednesday","thursday","friday","
 let weekStart = null;
 let timesheetId = null;
 let tsStatus = "draft";
+
+// Leave jobs that are locked this week because they were populated by an
+// APPROVED leave request (managed from the Leave page, not editable here).
+// A leave line the user adds by hand has no backing approved request, so
+// its job isn't in this set and its hours stay editable. Rebuilt per week
+// in loadWeek. Empty in admin mode (admins edit everything).
+let lockedLeaveJobIds = new Set();
 let tsSubmittedAt = null;
 let entries = [];
 let jobs = [];
@@ -864,8 +871,11 @@ async function loadWeek() {
     return;
   }
 
-  // Status and entries don't depend on each other — fetch in parallel.
-  const [statusRes, entriesRes] = await Promise.allSettled([
+  // Status, entries, and the locked-leave-job set don't depend on each
+  // other — fetch in parallel.
+  const weekEnd = fmtDate(addDays(weekStart, 6));
+  const weekStartStr = fmtDate(weekStart);
+  const [statusRes, entriesRes, lockedRes] = await Promise.allSettled([
     sb.from("timesheets")
       .select("status, submitted_at, notes")
       .eq("id", timesheetId)
@@ -875,7 +885,28 @@ async function loadWeek() {
       .eq("timesheet_id", timesheetId)
       .order("sort_order")
       .order("id"),
+    // Approved leave requests for this user overlapping this week → their
+    // mapped leave jobs are the ones that stay locked. Skipped in admin
+    // mode (admins edit everything, so nothing is locked).
+    ADMIN_MODE || !employee?.id
+      ? Promise.resolve({ data: [] })
+      : sb.from("leave_requests")
+          .select("leave_types!leave_requests_leave_type_id_fkey(job_id)")
+          .eq("user_id", employee.id)
+          .eq("status", "approved")
+          .lte("start_date", weekEnd)
+          .gte("end_date", weekStartStr),
   ]);
+
+  lockedLeaveJobIds = new Set();
+  if (lockedRes.status === "fulfilled" && !lockedRes.value?.error) {
+    for (const r of lockedRes.value?.data || []) {
+      const jid = r.leave_types?.job_id;
+      if (jid) lockedLeaveJobIds.add(jid);
+    }
+  } else if (lockedRes.status === "rejected") {
+    console.warn("locked-leave-jobs load failed:", lockedRes.reason);
+  }
 
   if (statusRes.status === "fulfilled") {
     const data = statusRes.value?.data;
@@ -1191,12 +1222,16 @@ function rowHtml(e, idx, isSubmitted) {
   const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
 
   const isLeaveRow = !!job?.is_leave;
-  // Leave rows are owned by the leave request → approval flow: the
-  // employee can't edit or remove the hours it populated. Admin/manager
-  // override mode keeps full control. Submitted timesheets are read-only
-  // for everyone via `ro`.
-  const leaveLocked = isLeaveRow && !ADMIN_MODE;
+  // Only leave rows populated by an APPROVED leave request are locked —
+  // those are owned by the Leave page's approval flow and their hours
+  // can't be edited or removed here. A leave line the employee added by
+  // hand (no approved request backing this job this week) stays fully
+  // editable so they can enter their own hours. Admin/manager override
+  // keeps full control; submitted timesheets are read-only via `ro`.
+  const leaveLocked = isLeaveRow && !ADMIN_MODE && lockedLeaveJobIds.has(e.job_id);
   const ro = (isSubmitted || leaveLocked) ? "readonly" : "";
+  // Dept/Task stay hidden for every leave row (leave has no dept/task),
+  // manual or approved alike.
   const deptRo = isSubmitted || isLeaveRow ? "readonly" : "";
   const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
 
