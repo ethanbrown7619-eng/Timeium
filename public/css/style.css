@@ -207,6 +207,56 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
 }
 
+/* Dropdown nav groups (Team / Reports / Operations / Exports / Organization).
+   The group button reuses the same pill styling as a plain nav link. */
+.topbar nav .nav-group { position: relative; display: inline-flex; }
+.topbar nav .nav-group-btn {
+  color: var(--text-muted);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.topbar nav .nav-group-btn::after { content: " ▾"; font-size: 10px; opacity: 0.6; }
+.topbar nav .nav-group-btn:hover { background: var(--surface-alt); color: var(--text); }
+.topbar nav .nav-group.active .nav-group-btn {
+  color: var(--ptl-black);
+  background: var(--ptl-lime);
+  box-shadow: 0 2px 8px rgba(190, 250, 64, 0.4), 0 1px 2px rgba(0,0,0,0.06);
+  font-weight: 600;
+}
+.topbar nav .nav-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 190px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.14);
+  padding: 6px;
+  z-index: 60;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+}
+.topbar nav .nav-group:hover > .nav-dropdown,
+.topbar nav .nav-group:focus-within > .nav-dropdown,
+.topbar nav .nav-group.open > .nav-dropdown { display: flex; }
+.topbar nav .nav-dropdown a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.topbar nav .nav-dropdown a:hover { transform: none; }
+
 .topbar .who {
   color: var(--text-muted);
   font-size: 13px;

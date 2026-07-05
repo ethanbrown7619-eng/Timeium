@@ -667,25 +667,65 @@ export function renderTopbar(opts) {
     role === "admin" || role === "manager" || role === "developer";
 
   const isAdminOrDev = role === "admin" || role === "developer";
+  const isManager = !!opts.isManager;
+  const isClockViewer = !!opts.isClockViewer;
+  // Who can actually use the Clock page's data (live/off-site/reports/fixes)
+  // — the clock RPCs are gated to admins/devs and clock-comparison viewers
+  // (a plain department manager isn't authorised unless also a viewer).
+  const canClock = isAdminOrDev || isClockViewer;
 
   // Leave tab: hidden for staff whose type receives no leave at all, but
   // always shown to managers/admins (they need the Team Requests sub-tab).
-  // receivesLeave comes from opts when the caller passes it, else the
-  // module-level value getUserContext just computed for this user.
   const receivesLeave = (opts.receivesLeave ?? _lastReceivesLeave) !== false;
-  const canReviewTeamLeave = canSeeAdminNav || !!opts.isManager;
+  const canReviewTeamLeave = canSeeAdminNav || isManager;
 
-  const links = [
-    { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
-    { key: "leave",      href: "/leave.html",       label: "Leave",          show: receivesLeave || canReviewTeamLeave },
-    { key: "myclock",    href: "/myclock.html",     label: "My Clock",       show: true },
-    { key: "department", href: "/department.html",   label: "My Departments", show: !!opts.isManager || role === "developer" },
-    { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
-    { key: "timeclock",  href: "/timeclock.html",    label: "Clock",          show: isAdminOrDev || !!opts.isClockViewer },
-    { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
-    { key: "configure",  href: "/configure.html",    label: "Configure",      show: role === "developer" },
-    { key: "settings",   href: "/settings.html",     label: "Settings",       show: true },
+  // New IA (grouped): flat links for everyone, dropdown groups for
+  // managers (Team, Reports) and admins (Operations, Exports,
+  // Organization). Group items deep-link to a page + sub-tab via #hash.
+  const nav = [
+    { type: "link", href: "/timesheet.html", label: "Timesheets", show: true },
+    { type: "link", href: "/myclock.html",   label: "Time Clock", show: true },
+    { type: "link", href: "/leave.html",     label: "Leave",      show: receivesLeave || canReviewTeamLeave },
+    { type: "group", label: "Team", show: isManager || canClock, items: [
+      { href: "/department.html",        label: "Approvals",   show: isManager || role === "developer" },
+      { href: "/timeclock.html#live",    label: "Live Status", show: canClock },
+      { href: "/timeclock.html#offsite", label: "Off-Site",    show: canClock },
+      { href: "/timeclock.html#adjust",  label: "Clock Fixes", show: canClock },
+    ] },
+    { type: "group", label: "Reports", show: canClock, items: [
+      { href: "/timeclock.html#clockvts", label: "Time Audit",        show: canClock },
+      { href: "/timeclock.html#flags",    label: "Incomplete Shifts", show: canClock },
+      { href: "/timeclock.html#full",     label: "Summary",           show: canClock },
+    ] },
+    { type: "group", label: "Operations", show: isAdminOrDev, items: [
+      { href: "/admin.html#tab=dashboard", label: "Global Dashboard", show: isAdminOrDev },
+      { href: "/admin.html#tab=leave",     label: "Leave Approvals",  show: isAdminOrDev },
+    ] },
+    { type: "group", label: "Exports", show: isAdminOrDev, items: [
+      { href: "/admin.html#tab=infusion",    label: "ERP Data",     show: isAdminOrDev },
+      { href: "/admin.html#tab=leavereport", label: "Payroll Data", show: isAdminOrDev },
+    ] },
+    { type: "group", label: "Organization", show: isAdminOrDev, items: [
+      { href: "/staff.html#employees",   label: "Employees",   show: isAdminOrDev },
+      { href: "/staff.html#departments", label: "Departments", show: isAdminOrDev },
+      { href: "/staff.html#hierarchy",   label: "Hierarchy",   show: isAdminOrDev },
+    ] },
+    { type: "link", href: "/configure.html", label: "Configure", show: role === "developer" },
+    { type: "link", href: "/settings.html",  label: "Profile",   show: true },
   ];
+
+  // Active detection from the URL so deep-linked items highlight right.
+  const curPath = location.pathname;
+  const curHash = location.hash;
+  const itemOnThisPage = (href) => href.split("#")[0] === curPath;
+  const itemActive = (href) => {
+    if (!itemOnThisPage(href)) return false;
+    const h = href.includes("#") ? "#" + href.split("#")[1] : "";
+    return h ? h === curHash : true;
+  };
+  const groupActive = (g) =>
+    g.items.some((i) => i.show && itemOnThisPage(i.href) &&
+      (curHash === "" || itemActive(i.href)));
 
   const orgSwitcher =
     opts.isDeveloper && Array.isArray(opts.orgs)
@@ -709,12 +749,21 @@ export function renderTopbar(opts) {
       <span class="brand-name">Timesheet</span>
     </div>
     <nav class="ready">
-      ${links
-        .filter((l) => l.show)
-        .map(
-          (l) =>
-            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
-        )
+      ${nav
+        .filter((n) => n.show)
+        .map((n) => {
+          if (n.type === "link") {
+            return `<a href="${n.href}" class="${itemActive(n.href) ? "active" : ""}">${n.label}</a>`;
+          }
+          const items = n.items.filter((i) => i.show);
+          if (!items.length) return "";
+          return `<div class="nav-group${groupActive(n) ? " active" : ""}">
+            <button type="button" class="nav-group-btn">${n.label}</button>
+            <div class="nav-dropdown">
+              ${items.map((i) => `<a href="${i.href}" class="${itemActive(i.href) ? "active" : ""}">${i.label}</a>`).join("")}
+            </div>
+          </div>`;
+        })
         .join("")}
     </nav>
     <div class="grow"></div>
@@ -730,6 +779,21 @@ export function renderTopbar(opts) {
       .getElementById("org-switcher")
       .addEventListener("change", (e) => opts.onOrgChange(Number(e.target.value)));
   }
+
+  // Dropdown groups: hover opens them on desktop (CSS); click toggles for
+  // touch / keyboard. Only one open at a time; outside-click closes.
+  el.querySelectorAll(".nav-group-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const group = btn.closest(".nav-group");
+      const wasOpen = group.classList.contains("open");
+      el.querySelectorAll(".nav-group.open").forEach((g) => g.classList.remove("open"));
+      if (!wasOpen) group.classList.add("open");
+    });
+  });
+  document.addEventListener("click", () => {
+    el.querySelectorAll(".nav-group.open").forEach((g) => g.classList.remove("open"));
+  });
 
   document.getElementById("signout-link").addEventListener("click", async (e) => {
     e.preventDefault();

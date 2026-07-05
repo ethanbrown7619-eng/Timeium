@@ -101,25 +101,38 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     activeTab = btn.dataset.tab;
     document.getElementById("tab-employees").style.display   = activeTab === "employees"   ? "" : "none";
     document.getElementById("tab-departments").style.display = activeTab === "departments" ? "" : "none";
-    document.getElementById("tab-org").style.display         = activeTab === "org"         ? "" : "none";
-    document.getElementById("tab-management").style.display  = activeTab === "management"  ? "" : "none";
-    if (activeTab === "org")         renderOrg();
+    document.getElementById("tab-hierarchy").style.display   = activeTab === "hierarchy"   ? "" : "none";
+    if (activeTab === "hierarchy")   renderHierarchy();
     if (activeTab === "departments") renderDepartments();
-    if (activeTab === "management")  renderManagement();
   });
 });
 
-// Sub-tabs inside the Organisation panel (Departments view / Reporting tree).
+// Sub-tabs inside the Hierarchy panel: Departments view / Reporting tree
+// (both Organisation content) + Manager assignments (the old Management
+// tab, folded in here).
 document.querySelectorAll("[data-org-view]").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("[data-org-view]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     activeOrgView = btn.dataset.orgView;
     document.getElementById("org-columns").style.display = activeOrgView === "columns" ? "" : "none";
-    document.getElementById("org-tree").style.display = activeOrgView === "tree" ? "" : "none";
-    renderOrg();
+    document.getElementById("org-tree").style.display    = activeOrgView === "tree" ? "" : "none";
+    document.getElementById("mgmt-columns").style.display = activeOrgView === "management" ? "" : "none";
+    const hint = document.getElementById("hierarchy-hint");
+    if (hint) {
+      hint.innerHTML = activeOrgView === "management"
+        ? `Drag department cards between managers to reassign them. To make someone a manager, edit their employee profile and check the <strong>Manager</strong> box.`
+        : `Drag employee cards between departments to reassign them. Set each department's manager from its header dropdown.`;
+    }
+    renderHierarchy();
   });
 });
+
+// Render whichever Hierarchy sub-view is active.
+function renderHierarchy() {
+  if (activeOrgView === "management") renderManagement();
+  else renderOrg();
+}
 
 /* ---------------------------------------------------------------- filters */
 
@@ -187,6 +200,15 @@ if (!ctx.isAdminOrHigher) {
 /* ---------------------------------------------------------------- load */
 
 await reloadAll();
+
+// Deep-link: the grouped top-nav points here with #employees / #departments
+// / #hierarchy. Open that tab once data is loaded.
+{
+  const wanted = location.hash.slice(1);
+  if (["departments", "hierarchy"].includes(wanted)) {
+    document.querySelector(`[data-tab="${wanted}"]`)?.click();
+  }
+}
 
 if (ctx.isDeveloper) {
   const delTestBtn = document.getElementById("delete-test-btn");

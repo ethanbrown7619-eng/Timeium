@@ -98,7 +98,10 @@ const scopeAllowsDeptId = (id)   => !clockScope || clockScope.deptIds.has(id);
 
 /* ---------------------------------------------------------------- sub-tabs */
 
-let tcSubView = "live";
+// Deep-link: the grouped top-nav points here with a #hash (e.g.
+// /timeclock.html#adjust from "Clock Fixes"). Open that sub-tab on load.
+const TC_VIEWS = ["live", "clockvts", "flags", "full", "offsite", "adjust"];
+let tcSubView = TC_VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "live";
 
 function applySubView() {
   document.querySelectorAll("[data-tc-view]").forEach((b) => {
