@@ -718,9 +718,12 @@ export function renderTopbar(opts) {
   ];
 
   // Active detection from the URL so deep-linked items highlight right.
-  const curPath = location.pathname;
+  // Compare by page name (basename minus .html) so it's robust to clean
+  // URLs (/staff), .html URLs (/staff.html), and trailing slashes.
+  const pageOf = (p) => ((p || "").split("?")[0].split("/").pop() || "index").replace(/\.html$/, "") || "index";
+  const curPage = pageOf(location.pathname);
   const curHash = location.hash;
-  const itemOnThisPage = (href) => href.split("#")[0] === curPath;
+  const itemOnThisPage = (href) => pageOf(href.split("#")[0]) === curPage;
   const itemActive = (href) => {
     if (!itemOnThisPage(href)) return false;
     const h = href.includes("#") ? "#" + href.split("#")[1] : "";
