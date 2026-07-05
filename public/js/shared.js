@@ -73,10 +73,21 @@ function cachedRoleIsAdmin() {
 
 // Round a number to at most 2 decimal places and strip trailing zeros.
 // Cleans up float-summation noise like 40.00000000000001 → "40", 40.5 → "40.5".
+// Format a fractional-hour value as hours + minutes, e.g.
+//   0.75 -> "45m",  8 -> "8h",  8.5 -> "8h 30m",  8.33 -> "8h 20m".
+// The minute portion is always shown in minutes (never a decimal hour).
+// Zero renders as "0" so empty-ish totals stay clean. Minutes are rounded
+// to the nearest whole minute.
 export function fmtHours(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return "";
-  return String(Number(v.toFixed(2)));
+  const totalMin = Math.round(Math.abs(v) * 60);
+  if (totalMin === 0) return "0";
+  const sign = v < 0 ? "-" : "";
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h && m) return `${sign}${h}h ${m}m`;
+  return h ? `${sign}${h}h` : `${sign}${m}m`;
 }
 
 // Per PTL policy:
@@ -609,6 +620,12 @@ document.addEventListener("click", (e) => {
     return v === "—" ? "" : v;
   };
   const num = (s) => {
+    // "8h 30m" / "45m" / "8h" → total minutes, so hour columns sort
+    // numerically even though they read as h/m text.
+    const hm = s.match(/^(?:(\d+(?:\.\d+)?)\s*h)?\s*(?:(\d+(?:\.\d+)?)\s*m)?$/i);
+    if (hm && (hm[1] != null || hm[2] != null)) {
+      return Number(hm[1] || 0) * 60 + Number(hm[2] || 0);
+    }
     const cleaned = s.replace(/[,$%]/g, "").replace(/(hrs?|mins?|[hm])$/i, "").trim();
     return cleaned !== "" && !isNaN(cleaned) ? Number(cleaned) : null;
   };

@@ -3,7 +3,7 @@
 import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
-  DAYS, getMonday, fmtDate, fmtShortDate, addDays,
+  DAYS, getMonday, fmtDate, fmtShortDate, addDays, fmtHours,
   TS_STATUS, isTsSubmittedOrApproved,
   confirmDialog,
   invalidateWeekDashboard,
@@ -536,7 +536,7 @@ async function loadCurrentWeekCard() {
           <div class="ts-progress-fill rejected" style="width:${pct}%"></div>
         </div>
         <div class="row-flex mt-sm" style="gap:16px">
-          <span>${totalHours} / ${TARGET}h</span>
+          <span>${fmtHours(totalHours)} / ${TARGET}h</span>
           <span class="muted small">${taskCount} task${taskCount !== 1 ? "s" : ""}</span>
         </div>
         <p style="margin:12px 0 0">
@@ -553,7 +553,7 @@ async function loadCurrentWeekCard() {
           <div class="ts-progress-fill" style="width:${pct}%"></div>
         </div>
         <div class="row-flex mt-sm" style="gap:16px">
-          <span>${totalHours} / ${TARGET}h</span>
+          <span>${fmtHours(totalHours)} / ${TARGET}h</span>
           <span class="muted small">${taskCount} task${taskCount !== 1 ? "s" : ""}</span>
           <div class="grow"></div>
           <span class="ts-countdown ${urgencyClass}" id="countdown"></span>
@@ -684,7 +684,7 @@ async function renderCalendar() {
     const statusBadge = ts
       ? `<span class="status-badge status-${ts.status}">${ts.status}</span>`
       : `<span class="muted small">—</span>`;
-    const hours = ts ? `${ts.hours}h` : "";
+    const hours = ts ? fmtHours(ts.hours) : "";
     const action = ts
       ? `<a href="#" class="week-action" data-week="${ws}">View</a>`
       : `<a href="#" class="week-action" data-week="${ws}">Create</a>`;
@@ -715,7 +715,7 @@ async function renderCalendar() {
   rows += `<tr class="cal-total-row">
     <td colspan="7" style="text-align:right"><strong>${monthName} total</strong></td>
     <td></td>
-    <td class="small"><strong>${calMonthTotal}h</strong></td>
+    <td class="small"><strong>${fmtHours(calMonthTotal)}</strong></td>
     <td></td>
   </tr>`;
 
@@ -1472,10 +1472,10 @@ function updateTotals() {
   let weekTotal = 0;
   for (const d of DAYS) {
     const dayTotal = entries.reduce((sum, e) => sum + Number(e[`${d}_hours`] || 0), 0);
-    document.getElementById(`total-${d}`).textContent = dayTotal || "";
+    document.getElementById(`total-${d}`).textContent = dayTotal ? fmtHours(dayTotal) : "";
     weekTotal += dayTotal;
   }
-  document.getElementById("total-week").innerHTML = `<strong>${weekTotal}</strong>`;
+  document.getElementById("total-week").innerHTML = `<strong>${fmtHours(weekTotal)}</strong>`;
 }
 
 /* ---------------------------------------------------------------- save entry */

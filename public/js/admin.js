@@ -235,7 +235,7 @@ async function loadDashboard(signal) {
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptName(e.department_id))}</td>
         <td><span class="${badgeClass}">${badge}</span></td>
-        <td class="small">${hours ? fmtHours(hours) + "h" : ""}</td>
+        <td class="small">${hours ? fmtHours(hours) : ""}</td>
         <td>${viewCell}</td>
       </tr>`;
   }).join("");
@@ -1339,7 +1339,7 @@ function renderLvRows(previewId, rows) {
             <td><strong>${escapeHtml(r.event)}</strong></td>
             <td>${escapeHtml(r.event_detail)}</td>
             <td>${escapeHtml(r.note)}</td>
-            <td class="num"><strong>${r.hours}</strong></td>
+            <td class="num"><strong>${fmtHours(r.hours)}</strong></td>
           </tr>
         `).join("")}
       </tbody>
@@ -1394,7 +1394,7 @@ async function lvExportToPdf(rows, filename, { title, periodLabel }) {
   const leaveCount = sorted.filter((r) => r.event === "Leave").length;
   const otCount    = sorted.filter((r) => r.event === "Overtime").length;
   const totalHours = sorted.reduce((s, r) => s + Number(r.hours || 0), 0);
-  const summary    = `${leaveCount} leave entries · ${otCount} overtime entries · ${totalHours.toFixed(2)} total hours`;
+  const summary    = `${leaveCount} leave entries · ${otCount} overtime entries · ${fmtHours(totalHours)} total hours`;
   doc.setFontSize(10);
   doc.setTextColor(90);
   doc.text(summary, 40, 76);
@@ -1887,7 +1887,7 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
             : `<tr>
                 <td>${escapeHtml(r.name)}</td>
                 <td>${r.entries}</td>
-                <td class="num">${r.hours}h</td>
+                <td class="num">${fmtHours(r.hours)}</td>
                 <td>${r.hasLeave ? "✓" : ""}</td>
                 <td>${r.hasOvertime ? "✓" : ""}</td>
               </tr>`

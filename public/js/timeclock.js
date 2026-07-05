@@ -12,7 +12,7 @@ import {
   fetchWeekDashboardData,
   isUserEffectiveOverhead,
   confirmDialog, promptDialog,
-  skeletonBlock,
+  skeletonBlock, fmtHours,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -726,7 +726,7 @@ function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
   }
 
   function fmtH(v) {
-    return v ? v.toFixed(1) : "–";
+    return v ? fmtHours(v) : "–";
   }
 
   const dateCells = DAYS.map((_, i) => {
@@ -969,8 +969,8 @@ async function loadFlagReport() {
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
-            <td class="num small">${(r.first_in && r.last_out) ? raw.toFixed(2) : "—"}</td>
-            <td class="num"><strong>${(r.first_in && r.last_out) ? hrs.toFixed(2) : "—"}</strong></td>
+            <td class="num small">${(r.first_in && r.last_out) ? fmtHours(raw) : "—"}</td>
+            <td class="num"><strong>${(r.first_in && r.last_out) ? fmtHours(hrs) : "—"}</strong></td>
           </tr>`;
         }).join("")}
       </tbody>
@@ -1073,7 +1073,7 @@ async function loadFullReport() {
   summaryEl.innerHTML = `<div class="notice info" style="margin:0">
     <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
     <strong>${uniqueEmps}</strong> employee${uniqueEmps === 1 ? "" : "s"},
-    <strong>${totalHours.toFixed(1)}h</strong> total.
+    <strong>${fmtHours(totalHours)}</strong> total.
   </div>`;
 
   tableEl.innerHTML = `
@@ -1107,9 +1107,9 @@ async function loadFullReport() {
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
-            <td class="num small">${(r.first_in && r.last_out) ? raw.toFixed(2) : "—"}</td>
+            <td class="num small">${(r.first_in && r.last_out) ? fmtHours(raw) : "—"}</td>
             <td class="num small">${r.break_minutes ? r.break_minutes + "m" : "—"}</td>
-            <td class="num"><strong>${(r.first_in && r.last_out) ? hrs.toFixed(2) : "—"}</strong></td>
+            <td class="num"><strong>${(r.first_in && r.last_out) ? fmtHours(hrs) : "—"}</strong></td>
             <td>${f ? `<span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span>` : ""}</td>
           </tr>`;
         }).join("")}

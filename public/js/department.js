@@ -232,7 +232,7 @@ async function loadDashboard(signal) {
         <td>${escapeHtml(e.name)}</td>
         <td class="muted small">${escapeHtml(deptNameMap[e.department_id] || "")}</td>
         <td><span class="${badgeClass}">${badge}</span></td>
-        <td class="small">${hours ? fmtHours(hours) + "h" : ""}</td>
+        <td class="small">${hours ? fmtHours(hours) : ""}</td>
         <td style="white-space:nowrap">${actions}</td>
       </tr>`;
   }).join("");
