@@ -658,6 +658,8 @@ document.addEventListener("click", (e) => {
  * @param {function(number):void} opts.onOrgChange
  * @param {"admin"|"staff"|""} opts.active
  */
+let _topbarHashHandler = null;
+
 export function renderTopbar(opts) {
   const el = document.getElementById("topbar");
   if (!el) return;
@@ -700,6 +702,7 @@ export function renderTopbar(opts) {
     { type: "group", label: "Operations", show: isAdminOrDev, items: [
       { href: "/admin.html#tab=dashboard", label: "Global Dashboard", show: isAdminOrDev },
       { href: "/admin.html#tab=leave",     label: "Leave Approvals",  show: isAdminOrDev },
+      { href: "/admin.html#tab=devtools",  label: "Dev Tools",        show: role === "developer" },
     ] },
     { type: "group", label: "Exports", show: isAdminOrDev, items: [
       { href: "/admin.html#tab=infusion",    label: "ERP Data",     show: isAdminOrDev },
@@ -723,9 +726,18 @@ export function renderTopbar(opts) {
     const h = href.includes("#") ? "#" + href.split("#")[1] : "";
     return h ? h === curHash : true;
   };
-  const groupActive = (g) =>
-    g.items.some((i) => i.show && itemOnThisPage(i.href) &&
-      (curHash === "" || itemActive(i.href)));
+  // Resolve the single active group for the current URL. Prefer an exact
+  // hash match (e.g. #adjust → Team); otherwise the first group that owns
+  // any item on this page (bare page with no hash → its first group).
+  const groups = nav.filter((n) => n.type === "group" && n.show);
+  let activeGroup = groups.find((g) => g.items.some((i) => i.show && itemActive(i.href)))
+    || groups.find((g) => g.items.some((i) => i.show && itemOnThisPage(i.href)))
+    || null;
+  const hasExactItem = (g) => g.items.some((i) => i.show && itemActive(i.href));
+  // In the sub-tab bar, mark the URL-matched item active; if none matched
+  // (bare page), light up the group's first visible item.
+  const subActive = (g, i, idx, firstIdx) =>
+    itemActive(i.href) || (!hasExactItem(g) && idx === firstIdx);
 
   const orgSwitcher =
     opts.isDeveloper && Array.isArray(opts.orgs)
@@ -757,12 +769,9 @@ export function renderTopbar(opts) {
           }
           const items = n.items.filter((i) => i.show);
           if (!items.length) return "";
-          return `<div class="nav-group${groupActive(n) ? " active" : ""}">
-            <button type="button" class="nav-group-btn">${n.label}</button>
-            <div class="nav-dropdown">
-              ${items.map((i) => `<a href="${i.href}" class="${itemActive(i.href) ? "active" : ""}">${i.label}</a>`).join("")}
-            </div>
-          </div>`;
+          // A group is a single top-level link to its first item; its
+          // members render as a second-row sub-tab bar (below) when active.
+          return `<a href="${items[0].href}" class="${n === activeGroup ? "active" : ""}">${n.label}</a>`;
         })
         .join("")}
     </nav>
@@ -780,20 +789,24 @@ export function renderTopbar(opts) {
       .addEventListener("change", (e) => opts.onOrgChange(Number(e.target.value)));
   }
 
-  // Dropdown groups: hover opens them on desktop (CSS); click toggles for
-  // touch / keyboard. Only one open at a time; outside-click closes.
-  el.querySelectorAll(".nav-group-btn").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const group = btn.closest(".nav-group");
-      const wasOpen = group.classList.contains("open");
-      el.querySelectorAll(".nav-group.open").forEach((g) => g.classList.remove("open"));
-      if (!wasOpen) group.classList.add("open");
-    });
-  });
-  document.addEventListener("click", () => {
-    el.querySelectorAll(".nav-group.open").forEach((g) => g.classList.remove("open"));
-  });
+  // Second-row sub-tab bar: when the current page belongs to a group,
+  // render that group's items as a persistent tab strip below the header
+  // (replacing each page's own top-level tab bar). Same-page items switch
+  // via #hash; the page listens for hashchange to swap views.
+  document.getElementById("topbar-subnav")?.remove();
+  if (activeGroup) {
+    const items = activeGroup.items.filter((i) => i.show);
+    // With no exact hash match, highlight the first item that lives on the
+    // current page (e.g. bare /timeclock.html → Live Status, not Approvals).
+    const fallbackIdx = Math.max(0, items.findIndex((i) => itemOnThisPage(i.href)));
+    const subHtml = `<div id="topbar-subnav" class="subnav"><div class="subnav-inner">${
+      items
+        .map((i, idx) =>
+          `<a href="${i.href}" class="subnav-tab${subActive(activeGroup, i, idx, fallbackIdx) ? " active" : ""}">${i.label}</a>`)
+        .join("")
+    }</div></div>`;
+    el.insertAdjacentHTML("afterend", subHtml);
+  }
 
   document.getElementById("signout-link").addEventListener("click", async (e) => {
     e.preventDefault();
@@ -812,6 +825,14 @@ export function renderTopbar(opts) {
     }
     location.replace("/signin.html");
   });
+
+  // Re-paint on hash change so the active nav highlight and the sub-tab
+  // strip follow same-page navigation (e.g. Team ↔ Reports on the Clock
+  // page, or Operations ↔ Exports on Admin). Guarded so exactly one
+  // listener is ever attached across re-renders.
+  if (_topbarHashHandler) window.removeEventListener("hashchange", _topbarHashHandler);
+  _topbarHashHandler = () => renderTopbar(opts);
+  window.addEventListener("hashchange", _topbarHashHandler);
 }
 
 /* ---------------------------------------------------------------- router */

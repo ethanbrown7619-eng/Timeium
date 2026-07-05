@@ -201,14 +201,17 @@ if (!ctx.isAdminOrHigher) {
 
 await reloadAll();
 
-// Deep-link: the grouped top-nav points here with #employees / #departments
-// / #hierarchy. Open that tab once data is loaded.
-{
+// Deep-link: the grouped top-nav's Organization sub-tab strip points here
+// with #employees / #departments / #hierarchy. Open that tab on load and
+// whenever the hash changes (same-page sub-tab clicks).
+function openTabFromHash() {
   const wanted = location.hash.slice(1);
-  if (["departments", "hierarchy"].includes(wanted)) {
+  if (["employees", "departments", "hierarchy"].includes(wanted) && wanted !== activeTab) {
     document.querySelector(`[data-tab="${wanted}"]`)?.click();
   }
 }
+openTabFromHash();
+window.addEventListener("hashchange", openTabFromHash);
 
 if (ctx.isDeveloper) {
   const delTestBtn = document.getElementById("delete-test-btn");

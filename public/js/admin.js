@@ -111,6 +111,12 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
   });
 });
 
+// The top-bar sub-tab strip (Operations / Exports) switches tabs via #hash.
+window.addEventListener("hashchange", () => {
+  const t = tabFromHash();
+  if (t && t !== activeTab) { activeTab = t; applyActiveTab(); }
+});
+
 /* ================================================================
  * Dashboard tab
  * ================================================================ */

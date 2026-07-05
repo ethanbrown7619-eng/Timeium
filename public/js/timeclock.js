@@ -132,6 +132,12 @@ document.querySelectorAll("[data-tc-view]").forEach((btn) => {
   });
 });
 
+// The top-bar sub-tab strip switches views by changing the #hash.
+window.addEventListener("hashchange", () => {
+  const v = location.hash.slice(1);
+  if (TC_VIEWS.includes(v) && v !== tcSubView) { tcSubView = v; applySubView(); }
+});
+
 /* ---------------------------------------------------------------- Live */
 
 let liveTimer = null;
