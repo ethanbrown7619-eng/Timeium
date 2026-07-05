@@ -805,7 +805,7 @@ export function renderTopbar(opts) {
     const subHtml = `<div id="topbar-subnav" class="subnav"><div class="subnav-inner">${
       items
         .map((i, idx) =>
-          `<a href="${i.href}" class="subnav-tab${subActive(activeGroup, i, idx, fallbackIdx) ? " active" : ""}">${i.label}</a>`)
+          `<a href="${i.href}" class="tab${subActive(activeGroup, i, idx, fallbackIdx) ? " active" : ""}">${i.label}</a>`)
         .join("")
     }</div></div>`;
     el.insertAdjacentHTML("afterend", subHtml);
