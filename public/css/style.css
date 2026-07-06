@@ -831,6 +831,93 @@ dialog::backdrop {
 .ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
 .ts-grid .row-total { background: var(--surface-alt); }
 
+/* ================= Timesheet UI polish (Fable brief) ================= */
+
+/* V1 — "quiet cells": editable grid inputs are borderless/transparent at
+   rest and reveal their box only on hover/focus, so the grid reads calm
+   instead of a wall of fields. Read-only/submitted rows keep their flat
+   look (they were never bordered when readonly). */
+.ts-grid .hours-input,
+.ts-grid .desc-input,
+.ts-grid .ac-wrap input {
+  border-color: transparent;
+  background: transparent;
+  transition: border-color .15s ease, background .15s ease;
+}
+.ts-grid tr:hover .hours-input,
+.ts-grid tr:hover .desc-input,
+.ts-grid tr:hover .ac-wrap input,
+.ts-grid .hours-input:hover,
+.ts-grid .desc-input:hover,
+.ts-grid .ac-wrap input:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+.ts-grid .hours-input:focus,
+.ts-grid .desc-input:focus,
+.ts-grid .ac-wrap input:focus { background: var(--surface); }
+.ts-grid input[readonly]:hover { border-color: transparent; background: transparent; }
+
+/* Row hover — faint lime wash so you can track your row across 14 columns. */
+.ts-grid tbody tr:hover td { background: rgba(190, 250, 64, 0.06); }
+
+/* Today's column — the "where do I type" affordance. */
+.ts-grid .day-today { background: rgba(190, 250, 64, 0.12); }
+.ts-grid th.day-today { border-top: 2px solid var(--ptl-lime); }
+.ts-grid tbody tr:hover td.day-today { background: rgba(190, 250, 64, 0.18); }
+
+/* Tabular figures so hour digits + the ticking countdown don't wobble. */
+.ts-grid .day-col, .ts-grid .row-total, .ts-grid tfoot td,
+.ts-countdown, .cw-hours, .save-state { font-variant-numeric: tabular-nums; }
+
+/* V3 — daily-total feedback in the tfoot. */
+.ts-grid tfoot td.total-empty { color: var(--text-muted); font-weight: 500; }
+.ts-grid tfoot td.total-ot { color: var(--warn-text-dark); background: var(--overtime); }
+.ts-grid tfoot td#total-week { font-size: 14px; }
+.ts-grid tfoot td#total-week.total-hit strong {
+  background: rgba(190, 250, 64, 0.35);
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+/* V7 — never render an empty status pill on jobless rows. */
+.status-badge:empty { display: none; }
+
+/* L1 — skeleton row matches a real input row's height so nothing shifts. */
+.ts-grid .ts-skel-row td { padding: 11px 5px; }
+.skel-sm { height: 18px; }
+.skel-chip { height: 16px; width: 60%; border-radius: 999px; }
+.cal-skel-row td { padding: 14px 8px; }
+
+/* L4 — hub current-week skeleton (shape-matched) + stable card height. */
+.cw-skel { display: grid; gap: 12px; padding: 4px 0; }
+.cw-skel .skel { height: 12px; }
+.cw-skel .cw-skel-hero { height: 24px; }
+.cw-skel .cw-skel-btn { height: 38px; width: 220px; border-radius: var(--radius-box); }
+#current-week-body { min-height: 132px; }
+
+/* L3 — autosave state indicator. */
+.save-state { font-size: 12px; color: var(--text-muted); white-space: nowrap; transition: color .2s ease; }
+.save-state.saved { color: var(--ptl-lime-dark); }
+.save-state.saved .tick { font-weight: 700; }
+.save-state.error { color: var(--danger); }
+
+/* Editor week ‹ / › nav. */
+.ts-week-nav { align-items: center; }
+.ts-week-nav .ghost { padding: 4px 10px; font-size: 18px; line-height: 1; }
+
+/* V5 — rejection banner as a design-system danger surface. */
+.banner-danger {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-box);
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-left: 3px solid var(--danger);
+  animation: fadeSlideIn 0.35s cubic-bezier(0, 0, 0.2, 1) backwards;
+}
+
 /* -------- autocomplete -------- */
 
 .ac-wrap { position: relative; }

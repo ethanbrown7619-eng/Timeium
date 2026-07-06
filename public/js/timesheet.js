@@ -233,10 +233,23 @@ function ensureLookups() { return (lookupsPromise ||= loadLookups()); }
 
 /* ---------------------------------------------------------------- views */
 
+function prefersReducedMotion() {
+  return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Wrap a DOM-swapping function in a same-document view transition (a soft
+// crossfade) when supported and motion is allowed; otherwise run it plainly.
+function vtSwap(fn) {
+  if (document.startViewTransition && !prefersReducedMotion()) document.startViewTransition(fn);
+  else fn();
+}
+
 function showHub() {
-  document.getElementById("hub-view").style.display = "";
-  document.getElementById("editor-view").style.display = "none";
-  document.querySelector(".container").classList.remove("ts-container");
+  vtSwap(() => {
+    document.getElementById("hub-view").style.display = "";
+    document.getElementById("editor-view").style.display = "none";
+    document.querySelector(".container").classList.remove("ts-container");
+  });
   loadCurrentWeekCard();
   // Leave-request widgets are dormant — code kept for future re-enable.
   // loadLeaveBalances();
@@ -410,12 +423,84 @@ document.getElementById("leave-request-form")?.addEventListener("submit", async 
   }
 });
 
+// Bumped on every loadWeek() call; a stale in-flight load bails when it
+// sees a newer token (latest-only week switching).
+let loadSeq = 0;
+// Same idea for the hub calendar's month switching.
+let calSeq = 0;
+
+// One skeleton row shaped like a real editor row (input per column at the
+// same ~34px height) so nothing shifts when real rows replace it.
+const TS_SKELETON_ROWS = 4;
+function tsGridSkeletonRow() {
+  return `<tr class="ts-skel-row" aria-hidden="true">
+    <td><span class="skel"></span></td>
+    <td><span class="skel skel-chip"></span></td>
+    <td><span class="skel"></span></td>
+    <td><span class="skel"></span></td>
+    <td><span class="skel"></span></td>
+    ${DAYS.map(() => `<td class="day-col"><span class="skel skel-sm"></span></td>`).join("")}
+    <td class="day-col"><span class="skel skel-sm"></span></td>
+    <td></td>
+  </tr>`;
+}
+
+// Render the editor's date header row from weekStart alone (pure math — no
+// data needed), marking weekends, holidays, and today. Used both for the
+// instant paint and after holidays resolve in loadWeek.
+function renderEditorDateRow() {
+  const dateRow = document.getElementById("date-row");
+  if (!dateRow) return;
+  const todayKey = fmtDate(new Date());
+  dateRow.innerHTML = `<td colspan="5"></td>` +
+    DAYS.map((_, i) => {
+      const d = addDays(weekStart, i);
+      const hol = holidays[fmtDate(d)];
+      const cls = [
+        "day-col",
+        i >= 5 ? "day-weekend" : "",
+        hol ? "day-holiday" : "",
+        fmtDate(d) === todayKey ? "day-today" : "",
+      ].filter(Boolean).join(" ");
+      const title = hol ? ` title="${escapeHtml(hol)}"` : "";
+      return `<td class="${cls}"${title}>${fmtShortDate(d)}</td>`;
+    }).join("") +
+    `<td class="day-col"></td><td></td>`;
+}
+
+// Paint the editor's frame instantly from weekStart before any network
+// round trip — label, dates, a shaped skeleton, and a reset of every
+// transient bit so the previous week never bleeds through.
+function paintEditorLoading() {
+  document.getElementById("week-label").textContent =
+    ADMIN_MODE ? `${employee.name} · ${weekLabel()}` : weekLabel();
+  renderEditorDateRow();
+  document.getElementById("ts-body").innerHTML =
+    Array.from({ length: TS_SKELETON_ROWS }, tsGridSkeletonRow).join("");
+  const status = document.getElementById("ts-status");
+  if (status) status.innerHTML = `<span class="skel skel-chip"></span>`;
+  const banner = document.getElementById("rejection-banner");
+  if (banner) banner.hidden = true;
+  document.getElementById("submit-ts-btn").style.display = "none";
+  document.getElementById("ts-locked-msg").style.display = "none";
+  for (const d of DAYS) {
+    const el = document.getElementById(`total-${d}`);
+    if (el) { el.textContent = "—"; el.className = "day-col"; }
+  }
+  const wk = document.getElementById("total-week");
+  if (wk) wk.innerHTML = "<strong>—</strong>";
+  setSaveState("idle");
+}
+
 function showEditor(ws) {
   if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   weekStart = ws;
-  document.getElementById("hub-view").style.display = "none";
-  document.getElementById("editor-view").style.display = "";
-  document.querySelector(".container").classList.add("ts-container");
+  vtSwap(() => {
+    document.getElementById("hub-view").style.display = "none";
+    document.getElementById("editor-view").style.display = "";
+    document.querySelector(".container").classList.add("ts-container");
+    paintEditorLoading();
+  });
   loadWeek();
 }
 
@@ -423,6 +508,11 @@ document.getElementById("back-to-hub").addEventListener("click", () => {
   if (ADMIN_MODE) { location.href = ADMIN_RETURN; return; }
   showHub();
 });
+
+// Week ‹ / › — jump straight to the adjacent week without a hub round trip.
+// L1's synchronous paint + latest-only loadWeek make holding these instant.
+document.getElementById("week-prev")?.addEventListener("click", () => showEditor(addDays(weekStart, -7)));
+document.getElementById("week-next")?.addEventListener("click", () => showEditor(addDays(weekStart, 7)));
 
 /* ---------------------------------------------------------------- current week card */
 
@@ -513,10 +603,10 @@ async function loadCurrentWeekCard() {
         <p style="margin:0"><strong>${weekStr}</strong></p>
         <p style="font-size:18px;margin:8px 0 0;color:#5a7a00">Timesheet submitted</p>
         <div class="ts-progress-bar mt-sm">
-          <div class="ts-progress-fill submitted" style="width:${pct}%"></div>
+          <div class="ts-progress-fill submitted" style="width:0%" data-fill="${pct}"></div>
         </div>
         <p class="muted small" style="margin:6px 0 0">
-          ${totalHours}h logged across ${taskCount} task${taskCount !== 1 ? "s" : ""}
+          ${fmtHours(totalHours)} logged across ${taskCount} task${taskCount !== 1 ? "s" : ""}
           · <a href="#" id="view-current">View timesheet →</a>
         </p>
       `;
@@ -533,7 +623,7 @@ async function loadCurrentWeekCard() {
           Your manager sent this timesheet back. Update the entries and resubmit.
         </p>
         <div class="ts-progress-bar mt-sm">
-          <div class="ts-progress-fill rejected" style="width:${pct}%"></div>
+          <div class="ts-progress-fill rejected" style="width:0%" data-fill="${pct}"></div>
         </div>
         <div class="row-flex mt-sm" style="gap:16px">
           <span>${fmtHours(totalHours)} / ${TARGET}h</span>
@@ -550,7 +640,7 @@ async function loadCurrentWeekCard() {
       body.innerHTML = `
         <p style="margin:0"><strong>${weekStr}</strong></p>
         <div class="ts-progress-bar mt-sm">
-          <div class="ts-progress-fill" style="width:${pct}%"></div>
+          <div class="ts-progress-fill" style="width:0%" data-fill="${pct}"></div>
         </div>
         <div class="row-flex mt-sm" style="gap:16px">
           <span>${fmtHours(totalHours)} / ${TARGET}h</span>
@@ -573,6 +663,15 @@ async function loadCurrentWeekCard() {
       }
       tick();
       countdownInterval = setInterval(tick, 1000);
+    }
+
+    // Animate the progress fill from 0 → target on paint (the CSS width
+    // transition can't fire when the element is inserted already-filled).
+    const fill = body.querySelector(".ts-progress-fill[data-fill]");
+    if (fill) {
+      const target = `${fill.dataset.fill}%`;
+      if (prefersReducedMotion()) fill.style.width = target;
+      else requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = target; }));
     }
 
     document.getElementById("view-current")?.addEventListener("click", (e) => {
@@ -633,20 +732,28 @@ async function renderCalendar() {
   let start = getMonday(first);
   const end = new Date(year, month + 1, 7);
 
+  const myCal = ++calSeq;
   const cacheKey = `${year}-${String(month).padStart(2, "0")}`;
   let tsMap;
   const cached = calCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CAL_TTL_MS) {
+    // Cache hit → render synchronously so month back-and-forth is instant.
     tsMap = cached.tsMap;
     await ensureHolidaysForCalMonth();
+    if (myCal !== calSeq) return;
   } else {
+    // Show a height-matched skeleton so the label never sits over the old
+    // month's rows and the card doesn't jump when rows land.
+    body.innerHTML = `<tr class="cal-skel-row">${Array.from({ length: 10 }, () => `<td><span class="skel skel-sm"></span></td>`).join("")}</tr>`.repeat(5);
     try {
       // Fetch the month's timesheet data in parallel with the holidays load.
       const [data] = await Promise.all([fetchCalendarMonth(start, end), ensureHolidaysForCalMonth()]);
+      if (myCal !== calSeq) return; // a newer month was requested
       tsMap = data;
       calCache.set(cacheKey, { tsMap, ts: Date.now() });
     } catch (err) {
       console.warn("calendar load failed:", err);
+      if (myCal !== calSeq) return;
       tsMap = {};
     }
   }
@@ -816,32 +923,25 @@ async function loadWeek() {
   // week in a different year (URL deep-link to an old archive or future
   // schedule), pull that year's holidays now so the date row marks them
   // and autofillPublicHolidays sees them.
+  // Latest-only guard: opening week B while week A is still loading must
+  // never let A's rows render last. Each call claims a token; any await
+  // that resolves after a newer call bails before touching the DOM.
+  const myToken = ++loadSeq;
   await Promise.all([
     ensureLookups(),
     holidaysPromise,
     orgDeadlinePromise,
     loadHolidaysForYear(weekStart.getFullYear()),
   ]);
+  if (myToken !== loadSeq) return;
 
   document.getElementById("week-label").textContent =
     ADMIN_MODE ? `${employee.name} · ${weekLabel()}` : weekLabel();
   if (ADMIN_MODE) document.title = `Admin edit — ${employee.name} · PTL Timesheet`;
 
-  const dateRow = document.getElementById("date-row");
-  dateRow.innerHTML = `<td colspan="5"></td>` +
-    DAYS.map((_, i) => {
-      const d = addDays(weekStart, i);
-      const isWeekend = i >= 5;
-      const hol = holidays[fmtDate(d)];
-      const cls = [
-        "day-col",
-        isWeekend ? "day-weekend" : "",
-        hol ? "day-holiday" : "",
-      ].filter(Boolean).join(" ");
-      const title = hol ? ` title="${escapeHtml(hol)}"` : "";
-      return `<td class="${cls}"${title}>${fmtShortDate(d)}</td>`;
-    }).join("") +
-    `<td class="day-col"></td><td></td>`;
+  // Re-render the date row now that holidays are loaded (adds holiday marks
+  // on top of the instant paint's weekend/today marks).
+  renderEditorDateRow();
 
   try {
     if (ADMIN_MODE) {
@@ -897,6 +997,7 @@ async function loadWeek() {
           .lte("start_date", weekEnd)
           .gte("end_date", weekStartStr),
   ]);
+  if (myToken !== loadSeq) return;
 
   lockedLeaveJobIds = new Set();
   if (lockedRes.status === "fulfilled" && !lockedRes.value?.error) {
@@ -1220,6 +1321,7 @@ function rowHtml(e, idx, isSubmitted) {
   const dept = deptCodesById.get(e.dept_code_id);
   const task = tasksById.get(e.task_id);
   const rowTotal = DAYS.reduce((sum, d) => sum + Number(e[`${d}_hours`] || 0), 0);
+  const todayKey = fmtDate(new Date());
 
   const isLeaveRow = !!job?.is_leave;
   // Only leave rows populated by an APPROVED leave request are locked —
@@ -1259,14 +1361,16 @@ function rowHtml(e, idx, isSubmitted) {
       <td>
         <input class="desc-input" value="${escapeHtml(e.description || "")}" placeholder="Description…" style="width:100%" ${ro} />
       </td>
-      ${DAYS.map((d, i) => `
-        <td class="day-col${i >= 5 ? " day-weekend" : ""}">
+      ${DAYS.map((d, i) => {
+        const isToday = fmtDate(addDays(weekStart, i)) === todayKey;
+        return `
+        <td class="day-col${i >= 5 ? " day-weekend" : ""}${isToday ? " day-today" : ""}">
           <input type="number" class="hours-input" data-day="${d}"
             value="${Number(e[`${d}_hours`]) || ""}" min="0" max="24" step="0.25"
             style="text-align:center" ${ro} />
-        </td>
-      `).join("")}
-      <td class="day-col row-total"><strong>${rowTotal}</strong></td>
+        </td>`;
+      }).join("")}
+      <td class="day-col row-total"><strong>${fmtHours(rowTotal)}</strong></td>
       <td class="row-actions-cell">
         ${(isSubmitted || leaveLocked) ? (leaveLocked ? `<span class="small muted" title="Leave is managed from the Leave page">🔒</span>` : "") : `
           <div class="row-menu-wrap">
@@ -1374,7 +1478,7 @@ function wireRow(row, idx) {
       const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(24, raw)) : 0;
       entries[idx][`${day}_hours`] = clamped;
       const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
-      row.querySelector(".row-total strong").textContent = rowTotal;
+      row.querySelector(".row-total strong").textContent = fmtHours(rowTotal);
       updateTotals();
       clearTimeout(timer);
       timer = setTimeout(() => saveEntry(entries[idx], [`${day}_hours`]), 400);
@@ -1470,12 +1574,20 @@ function replaceRowInPlace(idx) {
 
 function updateTotals() {
   let weekTotal = 0;
-  for (const d of DAYS) {
+  DAYS.forEach((d, i) => {
     const dayTotal = entries.reduce((sum, e) => sum + Number(e[`${d}_hours`] || 0), 0);
-    document.getElementById(`total-${d}`).textContent = dayTotal ? fmtHours(dayTotal) : "";
+    const cell = document.getElementById(`total-${d}`);
+    const isWeekend = i >= 5;
+    cell.textContent = dayTotal ? fmtHours(dayTotal) : "";
+    // Overtime policy (matches computeOvertime): all weekend hours, and
+    // any weekday over 8, read as overtime; empty days sink to muted.
+    const ot = (isWeekend && dayTotal > 0) || (!isWeekend && dayTotal > 8);
+    cell.className = `day-col${isWeekend ? " day-weekend" : ""}${!dayTotal ? " total-empty" : ot ? " total-ot" : ""}`;
     weekTotal += dayTotal;
-  }
-  document.getElementById("total-week").innerHTML = `<strong>${fmtHours(weekTotal)}</strong>`;
+  });
+  const wk = document.getElementById("total-week");
+  wk.innerHTML = `<strong>${fmtHours(weekTotal)}</strong>`;
+  wk.classList.toggle("total-hit", weekTotal >= 40);
 }
 
 /* ---------------------------------------------------------------- save entry */
@@ -1486,6 +1598,22 @@ function updateTotals() {
 // stale value persisted while the UI shows the later one). Different
 // rows save in parallel — the chain is scoped per entry.id.
 const saveChains = new Map();
+
+// Autosave status indicator. saves are silent + debounced, so surface a
+// small "Saving… / All changes saved" state next to the week label so the
+// user has evidence their hours persisted (and we can warn on unload).
+let saveInFlight = 0;
+function setSaveState(state) {
+  const el = document.getElementById("save-state");
+  if (!el) return;
+  if (state === "saving") { el.textContent = "Saving…"; el.className = "save-state saving"; }
+  else if (state === "saved") { el.innerHTML = "All changes saved <span class=\"tick\">✓</span>"; el.className = "save-state saved"; }
+  else if (state === "error") { el.textContent = "Couldn't save — check your connection"; el.className = "save-state error"; }
+  else { el.textContent = ""; el.className = "save-state"; }
+}
+window.addEventListener("beforeunload", (e) => {
+  if (saveInFlight > 0) { e.preventDefault(); e.returnValue = ""; }
+});
 
 async function saveEntry(entry, changedFields) {
   if (!Array.isArray(changedFields) || !changedFields.length) return;
@@ -1500,6 +1628,8 @@ async function saveEntry(entry, changedFields) {
       update[f] = entry[f];
     }
   }
+  saveInFlight++;
+  setSaveState("saving");
   const prev = saveChains.get(entry.id) || Promise.resolve();
   const next = prev.then(async () => {
     try {
@@ -1508,13 +1638,19 @@ async function saveEntry(entry, changedFields) {
       invalidateCalCache();
     } catch (err) {
       console.error("Save failed", err);
+      setSaveState("error");
       notice(err.message || "Failed to save", "error");
+      throw err;
     }
   });
   saveChains.set(entry.id, next);
-  next.finally(() => {
-    if (saveChains.get(entry.id) === next) saveChains.delete(entry.id);
-  });
+  next
+    .then(() => { if (saveInFlight === 1) setSaveState("saved"); })
+    .catch(() => {})
+    .finally(() => {
+      saveInFlight = Math.max(0, saveInFlight - 1);
+      if (saveChains.get(entry.id) === next) saveChains.delete(entry.id);
+    });
 }
 
 /* ---------------------------------------------------------------- add row */
@@ -1617,7 +1753,7 @@ document.getElementById("submit-ts-btn").addEventListener("click", () => {
   const msgEl = document.getElementById("submit-confirm-msg");
   const warnEl = document.getElementById("submit-confirm-warn");
 
-  msgEl.textContent = `Submit ${totalHours}h across ${taskCount} task${taskCount !== 1 ? "s" : ""}?`;
+  msgEl.textContent = `Submit ${fmtHours(totalHours)} across ${taskCount} task${taskCount !== 1 ? "s" : ""}?`;
   warnEl.textContent = totalHours < 40
     ? `This timesheet has less than 40 hours logged. You won't be able to edit it after submission.`
     : `You won't be able to edit it after submission.`;

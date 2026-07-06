@@ -61,7 +61,15 @@
       <div id="hub-view">
         <div id="current-week-card" class="card ts-current-card">
           <h2 style="margin-top:0">My Current Timesheet</h2>
-          <div id="current-week-body">Loading…</div>
+          <div id="current-week-body">
+            <div class="cw-skel">
+              <span class="skel" style="width:45%"></span>
+              <span class="skel cw-skel-hero" style="width:30%"></span>
+              <span class="skel" style="height:10px;border-radius:999px"></span>
+              <span class="skel" style="width:55%"></span>
+              <span class="skel cw-skel-btn"></span>
+            </div>
+          </div>
         </div>
 
         <div class="card" id="leave-balance-card" style="display:none">
@@ -115,14 +123,19 @@
       <!-- ==================== Editor view ==================== -->
       <div id="editor-view" style="display:none" class="ts-container-inner">
         <div class="row-flex mb-md">
-          <button class="ghost" id="back-to-hub">← Back to My Timesheets</button>
-          <h2 id="week-label" style="margin:0;min-width:220px;text-align:center"></h2>
+          <button class="ghost" id="back-to-hub">← Back</button>
+          <div class="row-flex ts-week-nav" style="gap:2px">
+            <button class="ghost small" id="week-prev" aria-label="Previous week">‹</button>
+            <h2 id="week-label" style="margin:0;min-width:220px;text-align:center"></h2>
+            <button class="ghost small" id="week-next" aria-label="Next week">›</button>
+          </div>
+          <span id="save-state" class="save-state" aria-live="polite"></span>
           <div class="grow"></div>
           <div id="ts-status"></div>
           <button class="ghost" id="import-last-week">Import last week's tasks</button>
         </div>
 
-        <div id="rejection-banner" hidden style="margin:0 0 12px;padding:10px 14px;border-radius:8px;background:#fdecea;border:1px solid #f5b5b0;color:#7a1d16">
+        <div id="rejection-banner" hidden class="banner-danger">
           <strong style="display:block;margin-bottom:2px">Rejected — please fix and resubmit</strong>
           <span id="rejection-banner-note" style="white-space:pre-wrap"></span>
         </div>
