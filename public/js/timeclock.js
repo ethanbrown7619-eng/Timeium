@@ -173,13 +173,14 @@ document.getElementById("tc-live-refresh")?.addEventListener("click", () => refr
 // client-side sentinels: "on_leave" (active approved leave for today,
 // label carries the leave type) and "not_clocked_in" (active staff with
 // no shift today and not on leave). The base RPC statuses are
-// exhaustively: on_site | off_site_job | off_site_break | clocked_out_early.
+// exhaustively: on_site | off_site_job | off_site_personal | off_site_break | clocked_out_early.
 // The second arg carries break name for off_site_break, or the leave
 // type name for on_leave.
 function liveStatusLabel(s, detail) {
   switch ((s || "").toLowerCase()) {
     case "on_site":            return { label: "On site",                                               cls: "onsite"  };
     case "off_site_job":       return { label: "Off site (job)",                                        cls: "offsite" };
+    case "off_site_personal":  return { label: "Off site (personal)",                                   cls: "offsite" };
     case "off_site_break":     return { label: detail ? `Off site break (${detail})` : "Off site break", cls: "break"   };
     case "clocked_out_early":  return { label: "Clocked out early",                                     cls: "away"    };
     case "on_leave":           return { label: detail || "On leave",                                    cls: "leave"   };
