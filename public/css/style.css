@@ -778,8 +778,11 @@ dialog::backdrop {
 .ts-grid .col-dept { width: 7%; }
 .ts-grid .col-task { width: 9%; }
 .ts-grid .col-desc { /* auto — fills remaining space */ }
-.ts-grid .day-col { text-align: center; width: 46px; }
-.ts-grid .col-total { text-align: center; width: 42px; }
+/* Wide enough for the "Xh Ym" hours format (e.g. "13h 15m") on one
+   line in the totals row — 46/42px fit plain decimals but wrapped the
+   h/m style onto two lines. */
+.ts-grid .day-col { text-align: center; width: 58px; }
+.ts-grid .col-total { text-align: center; width: 64px; }
 .ts-grid .col-actions { width: 28px; }
 .ts-grid .hours-input {
   border: 1px solid var(--border);
@@ -811,8 +814,8 @@ dialog::backdrop {
   background: var(--surface);
 }
 .ts-grid .desc-input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3); }
-.ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
-.ts-grid .row-total { background: var(--surface-alt); }
+.ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; font-size: 12px; white-space: nowrap; }
+.ts-grid .row-total { background: var(--surface-alt); white-space: nowrap; }
 
 /* ================= Timesheet UI polish (Fable brief) ================= */
 
