@@ -131,9 +131,14 @@
           </div>
           <span id="save-state" class="save-state" aria-live="polite"></span>
           <div class="grow"></div>
-          <button class="ghost small" id="common-jobs-btn" title="Common jobs reference"
-            aria-label="Common jobs reference" aria-haspopup="dialog"
-            style="border-radius:999px;font-weight:700;padding:4px 11px">ⓘ</button>
+          <button class="ghost info-btn" id="common-jobs-btn" title="Common jobs reference"
+            aria-label="Common jobs reference" aria-haspopup="dialog">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.75" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="8" cy="4.9" r="1" fill="currentColor"/>
+              <rect x="7.3" y="7" width="1.4" height="4.4" rx="0.7" fill="currentColor"/>
+            </svg>
+          </button>
           <div id="ts-status"></div>
           <button class="ghost" id="import-last-week">Import last week's tasks</button>
         </div>
@@ -205,7 +210,8 @@
         </div>
         <p class="muted small" style="margin:0 0 12px">
           General-purpose 90000-series job codes for time that doesn't belong
-          to a specific customer job.
+          to a specific customer job. <strong>Double-click a row</strong> to
+          add it to this week's timesheet.
         </p>
         <div style="max-height:60vh;overflow-y:auto">
           <table class="small" data-no-sort>
@@ -216,25 +222,25 @@
                 <th>Description</th>
               </tr>
             </thead>
-            <tbody>
-              <tr><td>90000</td><td></td><td>Stock Component purchases and labour</td></tr>
-              <tr><td>90001</td><td></td><td>Sales quotes, trials, testing</td></tr>
-              <tr><td>90002</td><td style="text-align:center">A</td><td>PTL - Premises cleaning and smoko room</td></tr>
-              <tr><td>90003</td><td></td><td>PTL - Production equipment and building maintenance</td></tr>
-              <tr><td>90004</td><td style="text-align:center">Y</td><td>PTL - Design unproductive</td></tr>
-              <tr><td>90005</td><td style="text-align:center">Z</td><td>PTL - Automation unproductive</td></tr>
-              <tr><td>90006</td><td style="text-align:center">A</td><td>PTL - Workshop unproductive</td></tr>
-              <tr><td>90007</td><td style="text-align:center">T</td><td>IT systems</td></tr>
-              <tr><td>90008</td><td></td><td>PTL - Health &amp; Safety</td></tr>
-              <tr><td>90009</td><td></td><td>PTL - Training</td></tr>
-              <tr><td>90010</td><td></td><td>PTL - Administration &amp; Project management for front line managers</td></tr>
-              <tr><td>90011</td><td></td><td>Research and Development</td></tr>
-              <tr><td>90012</td><td></td><td>Lean process flow improvement</td></tr>
-              <tr><td>90019</td><td></td><td>Student work experience &amp; internships.</td></tr>
-              <tr><td>90020</td><td></td><td>Production Manager jobs</td></tr>
-              <tr><td>90021</td><td></td><td>Customer support (where no specific job is applicable) - Controls Call outs</td></tr>
-              <tr><td>90022</td><td></td><td>General Meetings</td></tr>
-              <tr><td>90023</td><td style="text-align:center">J</td><td>Inwards Goods &amp; Quality Control Tasks</td></tr>
+            <tbody id="common-jobs-body">
+              <tr class="cj-row" data-job-code="90000"><td>90000</td><td></td><td>Stock Component purchases and labour</td></tr>
+              <tr class="cj-row" data-job-code="90001"><td>90001</td><td></td><td>Sales quotes, trials, testing</td></tr>
+              <tr class="cj-row" data-job-code="90002" data-dept-code="A"><td>90002</td><td style="text-align:center">A</td><td>PTL - Premises cleaning and smoko room</td></tr>
+              <tr class="cj-row" data-job-code="90003"><td>90003</td><td></td><td>PTL - Production equipment and building maintenance</td></tr>
+              <tr class="cj-row" data-job-code="90004" data-dept-code="Y"><td>90004</td><td style="text-align:center">Y</td><td>PTL - Design unproductive</td></tr>
+              <tr class="cj-row" data-job-code="90005" data-dept-code="Z"><td>90005</td><td style="text-align:center">Z</td><td>PTL - Automation unproductive</td></tr>
+              <tr class="cj-row" data-job-code="90006" data-dept-code="A"><td>90006</td><td style="text-align:center">A</td><td>PTL - Workshop unproductive</td></tr>
+              <tr class="cj-row" data-job-code="90007" data-dept-code="T"><td>90007</td><td style="text-align:center">T</td><td>IT systems</td></tr>
+              <tr class="cj-row" data-job-code="90008"><td>90008</td><td></td><td>PTL - Health &amp; Safety</td></tr>
+              <tr class="cj-row" data-job-code="90009"><td>90009</td><td></td><td>PTL - Training</td></tr>
+              <tr class="cj-row" data-job-code="90010"><td>90010</td><td></td><td>PTL - Administration &amp; Project management for front line managers</td></tr>
+              <tr class="cj-row" data-job-code="90011"><td>90011</td><td></td><td>Research and Development</td></tr>
+              <tr class="cj-row" data-job-code="90012"><td>90012</td><td></td><td>Lean process flow improvement</td></tr>
+              <tr class="cj-row" data-job-code="90019"><td>90019</td><td></td><td>Student work experience &amp; internships.</td></tr>
+              <tr class="cj-row" data-job-code="90020"><td>90020</td><td></td><td>Production Manager jobs</td></tr>
+              <tr class="cj-row" data-job-code="90021"><td>90021</td><td></td><td>Customer support (where no specific job is applicable) - Controls Call outs</td></tr>
+              <tr class="cj-row" data-job-code="90022"><td>90022</td><td></td><td>General Meetings</td></tr>
+              <tr class="cj-row" data-job-code="90023" data-dept-code="J"><td>90023</td><td style="text-align:center">J</td><td>Inwards Goods &amp; Quality Control Tasks</td></tr>
             </tbody>
           </table>
         </div>

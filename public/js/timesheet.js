@@ -1766,13 +1766,73 @@ document.getElementById("submit-cancel-btn").addEventListener("click", () => {
 });
 
 // Common-jobs reference card — static lookup of the 90000-series codes,
-// content lives in the dialog markup in timesheet.html.
+// content lives in the dialog markup in timesheet.html. Double-clicking
+// a row adds that job to the current week, resolving the real job /
+// dept-code ids from the loaded lookups so the new row plays by the
+// same rules as a hand-entered one (submit validation still requires a
+// department on any row that logs hours).
 document.getElementById("common-jobs-btn").addEventListener("click", () => {
   document.getElementById("common-jobs-dialog").showModal();
 });
 document.getElementById("common-jobs-close").addEventListener("click", () => {
   document.getElementById("common-jobs-dialog").close();
 });
+
+document.getElementById("common-jobs-body").addEventListener("dblclick", (e) => {
+  const tr = e.target.closest("tr[data-job-code]");
+  if (tr) addCommonJobRow(tr.dataset.jobCode, tr.dataset.deptCode || null);
+});
+
+async function addCommonJobRow(jobCode, deptLetter) {
+  if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
+  // Same lock rule as "+ Add task": no new rows on a submitted/approved
+  // sheet (admin-edit mode bypasses, matching the rest of the editor).
+  if (!ADMIN_MODE && isTsSubmittedOrApproved(tsStatus)) {
+    return notice(`This timesheet has been ${tsStatus} and cannot be edited`, "warn");
+  }
+  // Resolve against the real jobs list — the reference card is static,
+  // so the job must actually exist to keep the job-required rule intact.
+  const job = jobs.find((j) => j.job_code === jobCode && j.status === "ACTIVE")
+    || jobs.find((j) => j.job_code === jobCode);
+  if (!job) {
+    return notice(`Job ${jobCode} isn't in the jobs list — ask an admin to import it`, "warn");
+  }
+  // Dept letter from the card → active department code. Same ACTIVE-only
+  // policy as the dept autocomplete.
+  const dept = deptLetter
+    ? deptCodes.find((d) => d.code === deptLetter && d.status === "ACTIVE") || null
+    : null;
+  // Match the import flow's spirit: don't stack an identical row.
+  if (entries.some((en) => en.job_id === job.id && (en.dept_code_id || null) === (dept?.id || null))) {
+    return notice(`${jobCode} is already on this timesheet`, "warn");
+  }
+  const sortOrder = Math.max(-1, ...entries.map((e) => Number(e.sort_order) || 0)) + 1;
+  try {
+    const { data, error } = await sb
+      .from("timesheet_entries")
+      .insert({
+        timesheet_id: timesheetId,
+        sort_order: sortOrder,
+        job_id: job.id,
+        dept_code_id: dept?.id ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    entries.push(data);
+    renderGrid();
+    invalidateCalCache();
+    if (deptLetter && !dept) {
+      notice(`${jobCode} added — dept code ${deptLetter} isn't active, pick a department before submitting`, "warn");
+    } else if (!dept) {
+      notice(`${jobCode} added — set its department before submitting`, "success");
+    } else {
+      notice(`${jobCode} added with dept ${dept.code}`, "success");
+    }
+  } catch (err) {
+    notice(err.message || "Failed to add row", "error");
+  }
+}
 
 document.getElementById("submit-confirm-btn").addEventListener("click", async () => {
   const dialog = document.getElementById("submit-confirm-dialog");
