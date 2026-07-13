@@ -98,10 +98,7 @@ const scopeAllowsDeptId = (id)   => !clockScope || clockScope.deptIds.has(id);
 
 /* ---------------------------------------------------------------- sub-tabs */
 
-// Deep-link: the grouped top-nav points here with a #hash (e.g.
-// /timeclock.html#adjust from "Clock Fixes"). Open that sub-tab on load.
-const TC_VIEWS = ["live", "clockvts", "flags", "full", "offsite", "adjust"];
-let tcSubView = TC_VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "live";
+let tcSubView = "live";
 
 function applySubView() {
   document.querySelectorAll("[data-tc-view]").forEach((b) => {
@@ -130,12 +127,6 @@ document.querySelectorAll("[data-tc-view]").forEach((btn) => {
     tcSubView = btn.dataset.tcView;
     applySubView();
   });
-});
-
-// The top-bar sub-tab strip switches views by changing the #hash.
-window.addEventListener("hashchange", () => {
-  const v = location.hash.slice(1);
-  if (TC_VIEWS.includes(v) && v !== tcSubView) { tcSubView = v; applySubView(); }
 });
 
 /* ---------------------------------------------------------------- Live */

@@ -7,7 +7,7 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#BEFA40" />
-    <title>Operations · PTL Timesheet</title>
+    <title>Admin · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="preconnect" href="https://kyfydyownbgwhquorchn.supabase.co" crossorigin />
     <link rel="modulepreload" href="/js/admin.js" />
@@ -21,18 +21,18 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="tabs" id="admin-tabs" style="display:none">
-        <button class="tab active" data-tab="dashboard">Global Dashboard</button>
+      <div class="tabs" id="admin-tabs">
+        <button class="tab active" data-tab="dashboard">Dashboard</button>
+        <button class="tab" data-tab="infusion">Infusion Export</button>
         <button class="tab" data-tab="leave">
-          Leave Approvals<span id="admin-leave-count" class="leave-count-badge" style="display:none"></span>
+          Leave<span id="admin-leave-count" class="leave-count-badge" style="display:none"></span>
         </button>
-        <button class="tab" data-tab="infusion">ERP Data</button>
-        <button class="tab" data-tab="leavereport">Payroll Data</button>
+        <button class="tab" data-tab="leavereport">Leave / Overtime</button>
       </div>
 
       <!-- ==================== Dashboard ==================== -->
       <section id="tab-dashboard" class="tab-panel">
-        <h2 style="margin:0 0 4px">Global Dashboard</h2>
+        <h2 style="margin:0 0 4px">Admin Dashboard</h2>
         <div class="row-flex mb-md">
           <button class="ghost" id="dash-prev">←</button>
           <h3 id="week-label" style="margin:0;min-width:240px;text-align:center"></h3>
@@ -76,7 +76,7 @@
 
       <!-- ==================== Infusion Export ==================== -->
       <section id="tab-infusion" class="tab-panel" style="display:none">
-        <h2 style="margin:0 0 4px">ERP Data</h2>
+        <h2 style="margin:0 0 4px">Infusion Export</h2>
         <p class="muted mb-md">Generate an Excel file formatted for Infusion import.</p>
 
         <div class="card">
@@ -130,7 +130,7 @@
       </section>
       <!-- ==================== Leave / Overtime Report ==================== -->
       <section id="tab-leavereport" class="tab-panel" style="display:none">
-        <h2 style="margin:0 0 4px">Payroll Data</h2>
+        <h2 style="margin:0 0 4px">Leave / Overtime Report</h2>
         <p class="muted mb-md">Export leave and overtime hours for payroll processing.</p>
 
         <div class="tabs sub" id="lv-sub-tabs">

@@ -7,7 +7,7 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#BEFA40" />
-    <title>Organization · PTL Timesheet</title>
+    <title>Staff · PTL Timesheet</title>
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="preconnect" href="https://kyfydyownbgwhquorchn.supabase.co" crossorigin />
     <link rel="modulepreload" href="/js/staff.js" />
@@ -21,10 +21,11 @@
     <main class="container">
       <div id="notice" class="notice hidden"></div>
 
-      <div class="tabs" style="display:none">
+      <div class="tabs">
         <button class="tab active" data-tab="employees">Employees</button>
         <button class="tab" data-tab="departments">Departments</button>
-        <button class="tab" data-tab="hierarchy">Hierarchy</button>
+        <button class="tab" data-tab="org">Organisation</button>
+        <button class="tab" data-tab="management">Management</button>
       </div>
 
       <!-- ============================================================ -->
@@ -119,18 +120,17 @@
       </section>
 
       <!-- ============================================================ -->
-      <!-- Hierarchy tab (merged Organisation + Management)             -->
+      <!-- Organisation tab                                             -->
       <!-- ============================================================ -->
-      <section id="tab-hierarchy" class="tab-panel" style="display:none">
+      <section id="tab-org" class="tab-panel" style="display:none">
         <div class="card">
           <div class="row-flex mb-md">
             <div class="tabs sub">
               <button class="tab active" data-org-view="columns">Departments view</button>
               <button class="tab" data-org-view="tree">Reporting tree</button>
-              <button class="tab" data-org-view="management">Manager assignments</button>
             </div>
             <div class="grow"></div>
-            <span class="muted small" id="hierarchy-hint">
+            <span class="muted small">
               Drag employee cards between departments to reassign them. Set
               each department's manager from its header dropdown.
             </span>
@@ -138,7 +138,23 @@
 
           <div id="org-columns" class="org-columns"></div>
           <div id="org-tree" class="org-tree" style="display:none"></div>
-          <div id="mgmt-columns" class="org-columns" style="display:none"></div>
+        </div>
+      </section>
+      <!-- ============================================================ -->
+      <!-- Management tab                                               -->
+      <!-- ============================================================ -->
+      <section id="tab-management" class="tab-panel" style="display:none">
+        <div class="card">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Department assignments</h2>
+            <div class="grow"></div>
+            <span class="muted small">
+              Drag department cards between managers to reassign them.
+              To make someone a manager, edit their employee profile and
+              check the <strong>Manager</strong> box.
+            </span>
+          </div>
+          <div id="mgmt-columns" class="org-columns"></div>
         </div>
       </section>
     </main>

@@ -658,8 +658,6 @@ document.addEventListener("click", (e) => {
  * @param {function(number):void} opts.onOrgChange
  * @param {"admin"|"staff"|""} opts.active
  */
-let _topbarHashHandler = null;
-
 export function renderTopbar(opts) {
   const el = document.getElementById("topbar");
   if (!el) return;
@@ -669,78 +667,25 @@ export function renderTopbar(opts) {
     role === "admin" || role === "manager" || role === "developer";
 
   const isAdminOrDev = role === "admin" || role === "developer";
-  const isManager = !!opts.isManager;
-  const isClockViewer = !!opts.isClockViewer;
-  // Who can actually use the Clock page's data (live/off-site/reports/fixes)
-  // — the clock RPCs are gated to admins/devs and clock-comparison viewers
-  // (a plain department manager isn't authorised unless also a viewer).
-  const canClock = isAdminOrDev || isClockViewer;
 
   // Leave tab: hidden for staff whose type receives no leave at all, but
   // always shown to managers/admins (they need the Team Requests sub-tab).
+  // receivesLeave comes from opts when the caller passes it, else the
+  // module-level value getUserContext just computed for this user.
   const receivesLeave = (opts.receivesLeave ?? _lastReceivesLeave) !== false;
-  const canReviewTeamLeave = canSeeAdminNav || isManager;
+  const canReviewTeamLeave = canSeeAdminNav || !!opts.isManager;
 
-  // New IA (grouped): flat links for everyone, dropdown groups for
-  // managers (Team, Reports) and admins (Operations, Exports,
-  // Organization). Group items deep-link to a page + sub-tab via #hash.
-  const nav = [
-    { type: "link", href: "/timesheet.html", label: "Timesheets", show: true },
-    { type: "link", href: "/myclock.html",   label: "Time Clock", show: true },
-    { type: "link", href: "/leave.html",     label: "Leave",      show: receivesLeave || canReviewTeamLeave },
-    { type: "group", label: "Team", show: isManager || canClock, items: [
-      { href: "/department.html",        label: "Approvals",   show: isManager || role === "developer" },
-      { href: "/timeclock.html#live",    label: "Live Status", show: canClock },
-      { href: "/timeclock.html#offsite", label: "Off-Site",    show: canClock },
-      { href: "/timeclock.html#adjust",  label: "Clock Fixes", show: canClock },
-    ] },
-    { type: "group", label: "Reports", show: canClock, items: [
-      { href: "/timeclock.html#clockvts", label: "Time Audit",        show: canClock },
-      { href: "/timeclock.html#flags",    label: "Incomplete Shifts", show: canClock },
-      { href: "/timeclock.html#full",     label: "Summary",           show: canClock },
-    ] },
-    { type: "group", label: "Operations", show: isAdminOrDev, items: [
-      { href: "/admin.html#tab=dashboard", label: "Global Dashboard", show: isAdminOrDev },
-      { href: "/admin.html#tab=leave",     label: "Leave Approvals",  show: isAdminOrDev },
-      { href: "/admin.html#tab=devtools",  label: "Dev Tools",        show: role === "developer" },
-    ] },
-    { type: "group", label: "Exports", show: isAdminOrDev, items: [
-      { href: "/admin.html#tab=infusion",    label: "ERP Data",     show: isAdminOrDev },
-      { href: "/admin.html#tab=leavereport", label: "Payroll Data", show: isAdminOrDev },
-    ] },
-    { type: "group", label: "Organization", show: isAdminOrDev, items: [
-      { href: "/staff.html#employees",   label: "Employees",   show: isAdminOrDev },
-      { href: "/staff.html#departments", label: "Departments", show: isAdminOrDev },
-      { href: "/staff.html#hierarchy",   label: "Hierarchy",   show: isAdminOrDev },
-    ] },
-    { type: "link", href: "/configure.html", label: "Configure", show: role === "developer" },
-    { type: "link", href: "/settings.html",  label: "Profile",   show: true },
+  const links = [
+    { key: "timesheet",  href: "/timesheet.html",   label: "My Timesheets",  show: true },
+    { key: "leave",      href: "/leave.html",       label: "Leave",          show: receivesLeave || canReviewTeamLeave },
+    { key: "myclock",    href: "/myclock.html",     label: "My Clock",       show: true },
+    { key: "department", href: "/department.html",   label: "My Departments", show: !!opts.isManager || role === "developer" },
+    { key: "staff",      href: "/staff.html",        label: "Staff",          show: canSeeAdminNav },
+    { key: "timeclock",  href: "/timeclock.html",    label: "Clock",          show: isAdminOrDev || !!opts.isClockViewer },
+    { key: "admin",      href: "/admin.html",        label: "Admin",          show: isAdminOrDev },
+    { key: "configure",  href: "/configure.html",    label: "Configure",      show: role === "developer" },
+    { key: "settings",   href: "/settings.html",     label: "Settings",       show: true },
   ];
-
-  // Active detection from the URL so deep-linked items highlight right.
-  // Compare by page name (basename minus .html) so it's robust to clean
-  // URLs (/staff), .html URLs (/staff.html), and trailing slashes.
-  const pageOf = (p) => ((p || "").split("?")[0].split("/").pop() || "index").replace(/\.html$/, "") || "index";
-  const curPage = pageOf(location.pathname);
-  const curHash = location.hash;
-  const itemOnThisPage = (href) => pageOf(href.split("#")[0]) === curPage;
-  const itemActive = (href) => {
-    if (!itemOnThisPage(href)) return false;
-    const h = href.includes("#") ? "#" + href.split("#")[1] : "";
-    return h ? h === curHash : true;
-  };
-  // Resolve the single active group for the current URL. Prefer an exact
-  // hash match (e.g. #adjust → Team); otherwise the first group that owns
-  // any item on this page (bare page with no hash → its first group).
-  const groups = nav.filter((n) => n.type === "group" && n.show);
-  let activeGroup = groups.find((g) => g.items.some((i) => i.show && itemActive(i.href)))
-    || groups.find((g) => g.items.some((i) => i.show && itemOnThisPage(i.href)))
-    || null;
-  const hasExactItem = (g) => g.items.some((i) => i.show && itemActive(i.href));
-  // In the sub-tab bar, mark the URL-matched item active; if none matched
-  // (bare page), light up the group's first visible item.
-  const subActive = (g, i, idx, firstIdx) =>
-    itemActive(i.href) || (!hasExactItem(g) && idx === firstIdx);
 
   const orgSwitcher =
     opts.isDeveloper && Array.isArray(opts.orgs)
@@ -764,18 +709,12 @@ export function renderTopbar(opts) {
       <span class="brand-name">Timesheet</span>
     </div>
     <nav class="ready">
-      ${nav
-        .filter((n) => n.show)
-        .map((n) => {
-          if (n.type === "link") {
-            return `<a href="${n.href}" class="${itemActive(n.href) ? "active" : ""}">${n.label}</a>`;
-          }
-          const items = n.items.filter((i) => i.show);
-          if (!items.length) return "";
-          // A group is a single top-level link to its first item; its
-          // members render as a second-row sub-tab bar (below) when active.
-          return `<a href="${items[0].href}" class="${n === activeGroup ? "active" : ""}">${n.label}</a>`;
-        })
+      ${links
+        .filter((l) => l.show)
+        .map(
+          (l) =>
+            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
+        )
         .join("")}
     </nav>
     <div class="grow"></div>
@@ -790,25 +729,6 @@ export function renderTopbar(opts) {
     document
       .getElementById("org-switcher")
       .addEventListener("change", (e) => opts.onOrgChange(Number(e.target.value)));
-  }
-
-  // Second-row sub-tab bar: when the current page belongs to a group,
-  // render that group's items as a persistent tab strip below the header
-  // (replacing each page's own top-level tab bar). Same-page items switch
-  // via #hash; the page listens for hashchange to swap views.
-  document.getElementById("topbar-subnav")?.remove();
-  if (activeGroup) {
-    const items = activeGroup.items.filter((i) => i.show);
-    // With no exact hash match, highlight the first item that lives on the
-    // current page (e.g. bare /timeclock.html → Live Status, not Approvals).
-    const fallbackIdx = Math.max(0, items.findIndex((i) => itemOnThisPage(i.href)));
-    const subHtml = `<div id="topbar-subnav" class="subnav"><div class="subnav-inner">${
-      items
-        .map((i, idx) =>
-          `<a href="${i.href}" class="tab${subActive(activeGroup, i, idx, fallbackIdx) ? " active" : ""}">${i.label}</a>`)
-        .join("")
-    }</div></div>`;
-    el.insertAdjacentHTML("afterend", subHtml);
   }
 
   document.getElementById("signout-link").addEventListener("click", async (e) => {
@@ -828,14 +748,6 @@ export function renderTopbar(opts) {
     }
     location.replace("/signin.html");
   });
-
-  // Re-paint on hash change so the active nav highlight and the sub-tab
-  // strip follow same-page navigation (e.g. Team ↔ Reports on the Clock
-  // page, or Operations ↔ Exports on Admin). Guarded so exactly one
-  // listener is ever attached across re-renders.
-  if (_topbarHashHandler) window.removeEventListener("hashchange", _topbarHashHandler);
-  _topbarHashHandler = () => renderTopbar(opts);
-  window.addEventListener("hashchange", _topbarHashHandler);
 }
 
 /* ---------------------------------------------------------------- router */
