@@ -816,30 +816,10 @@ dialog::backdrop {
 
 /* ================= Timesheet UI polish (Fable brief) ================= */
 
-/* V1 — "quiet cells": editable grid inputs are borderless/transparent at
-   rest and reveal their box only on hover/focus, so the grid reads calm
-   instead of a wall of fields. Read-only/submitted rows keep their flat
-   look (they were never bordered when readonly). */
-.ts-grid .hours-input,
-.ts-grid .desc-input,
-.ts-grid .ac-wrap input {
-  border-color: transparent;
-  background: transparent;
-  transition: border-color .15s ease, background .15s ease;
-}
-.ts-grid tr:hover .hours-input,
-.ts-grid tr:hover .desc-input,
-.ts-grid tr:hover .ac-wrap input,
-.ts-grid .hours-input:hover,
-.ts-grid .desc-input:hover,
-.ts-grid .ac-wrap input:hover {
-  border-color: var(--border);
-  background: var(--surface);
-}
-.ts-grid .hours-input:focus,
-.ts-grid .desc-input:focus,
-.ts-grid .ac-wrap input:focus { background: var(--surface); }
-.ts-grid input[readonly]:hover { border-color: transparent; background: transparent; }
+/* Editable grid inputs keep their visible box at rest — the earlier
+   "quiet cells" experiment (borders only on hover/focus) made the grid
+   read as empty, so it was rolled back. Read-only leave rows stay flat
+   via the leave-locked-row rules above. */
 
 /* Row hover — faint lime wash so you can track your row across 14 columns. */
 .ts-grid tbody tr:hover td { background: rgba(190, 250, 64, 0.06); }
@@ -1479,6 +1459,26 @@ button.primary:hover {
   border-color: var(--ptl-lime-dark);
   box-shadow: 0 2px 8px rgba(190, 250, 64, 0.4);
 }
+
+/* -------- common jobs reference (timesheet editor) -------- */
+
+/* Round icon-only info button in the editor toolbar. */
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+.info-btn:hover { color: var(--text); }
+.info-btn svg { display: block; }
+
+/* Reference rows are double-clickable — show it. */
+#common-jobs-dialog .cj-row { cursor: pointer; user-select: none; }
+#common-jobs-dialog .cj-row:hover td { background: rgba(190, 250, 64, 0.12); }
 
 /* -------- reduced motion -------- */
 @media (prefers-reduced-motion: reduce) {
