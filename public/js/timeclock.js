@@ -1075,13 +1075,16 @@ async function loadFullReport() {
   // break is taken by going home 15 minutes early, so when that break
   // triggered we add its minutes back to worked time (same as the
   // Time Audit; skipped on the fallback path since we can't verify a
-  // 15-min break would have triggered).
+  // 15-min break would have triggered). Hours is then rounded to the
+  // nearest quarter hour — payroll works in 15-minute blocks — and the
+  // summary total sums the rounded values so it matches the rows.
   const shiftCalc = (r) => {
     const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
     const unpaid = (r.first_in && r.last_out) ? unpaidBreakMinutesForRaw(raw) : null;
     const breakMin = unpaid != null ? unpaid : (Number(r.break_minutes) || 0);
     const earlyMin = unpaid != null ? earlyLeaveCreditMinutes(raw) : 0;
-    return { raw, breakMin, hrs: finalHoursFromRaw(raw, breakMin) + earlyMin / 60 };
+    const hrs = Math.round((finalHoursFromRaw(raw, breakMin) + earlyMin / 60) * 4) / 4;
+    return { raw, breakMin, hrs };
   };
 
   const totalHours = worked.reduce((s, r) => s + shiftCalc(r).hrs, 0);
