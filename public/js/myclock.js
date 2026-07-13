@@ -1,9 +1,10 @@
 // PTL Timesheet — My Clock page.
 // Shows the signed-in employee's own clock events (via the
 // list_my_clock_events RPC — clock_events RLS is admin-only) and lets
-// them request a time fix on any event, including auto-closed ones.
-// Requests land in the Adjustments sub-tab of the Clock page where a
-// clock viewer / admin approves or declines them (migration 146).
+// them request a time fix on flagged shifts: auto-closed ones and
+// short ones (raw span under the org standard). Requests land in the
+// Adjustments sub-tab of the Clock page where a clock viewer / admin
+// approves or declines them (migration 146).
 
 import { getSupabase } from "/js/supabase-client.js";
 import {
@@ -82,6 +83,22 @@ document.getElementById("mc-next").addEventListener("click", () => {
 
 /* ---------------------------------------------------------------- events */
 
+// Org standard shift length — the same app_settings value the Clock
+// page's flag views use. Read best-effort: staff RLS may hide the row,
+// in which case we fall back to the reviewer side's 8.5h default.
+let clockStandardHours = null;
+async function loadClockStandard() {
+  if (clockStandardHours != null) return;
+  try {
+    const { data } = await sb.from("app_settings")
+      .select("auto_close_shift_hours")
+      .eq("organisation_id", employee.organisation_id).maybeSingle();
+    clockStandardHours = Number(data?.auto_close_shift_hours) || 8.5;
+  } catch {
+    clockStandardHours = 8.5;
+  }
+}
+
 // One row per SPELL, grouped by day, with In and Out columns:
 //   * Shift rows pair the day's clock in/out events (a missing side shows
 //     "—", so a never-clocked day reads In — / Out —).
@@ -99,6 +116,7 @@ async function loadEvents() {
     const [evRes, spellRes] = await Promise.all([
       sb.rpc("list_my_clock_events", bounds),
       sb.rpc("list_my_offsite_spells", bounds),
+      loadClockStandard(),
     ]);
     if (evRes.error) throw evRes.error;
     const events = evRes.data || [];
@@ -171,9 +189,21 @@ async function loadEvents() {
       }
       for (const r of rows) {
         if (r.kind === "shift") {
-          const flagged = !!r.outEv?.auto_closed;
-          const flags = flagged
+          // A shift offers Fix when auto-closed OR short: completed with
+          // a raw in→out span under the org standard. Raw (not
+          // break-adjusted) is fine here — it only decides whether the
+          // request affordance shows, and a raw-short shift is always
+          // worked-short too.
+          const rawH = (r.inEv && r.outEv)
+            ? (new Date(r.outEv.occurred_at) - new Date(r.inEv.occurred_at)) / 3600000
+            : null;
+          const isShort = rawH != null && rawH > 0 && rawH < clockStandardHours;
+          const autoClosed = !!r.outEv?.auto_closed;
+          const flagged = autoClosed || isShort;
+          const flags = autoClosed
             ? `<span class="cvt-cell cvt-warn" style="padding:2px 8px;border-radius:999px;display:inline-block">Auto-closed</span>`
+            : isShort
+            ? `<span class="cvt-cell cvt-danger" style="padding:2px 8px;border-radius:999px;display:inline-block">Short shift</span>`
             : "";
           html.push(`<tr>${dayCell}
             <td><span class="tc-live-pill onsite">Shift</span></td>
