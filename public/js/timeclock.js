@@ -663,18 +663,9 @@ async function loadClockComparison() {
     if (dayIdx >= 0 && dayIdx < 7) {
       const dayKey = DAYS[dayIdx];
       clockedMap[uid] = clockedMap[uid] || {};
-      // Worked hours = Raw - unpaid break + early-leave credit. Paid
-      // breaks count as worked. unpaidBreakMinutesForRaw returns null
-      // when the unpaid-break config hasn't loaded yet (migration 122
-      // missing or RPC failure) — fall back to row.break_minutes and
-      // skip the 15-min credit since we can't verify a 15-min break
-      // would have triggered.
-      const rawH      = rawHoursFromTimestamps(row.first_in, row.last_out);
-      const unpaidMin = unpaidBreakMinutesForRaw(rawH);
-      const breakMin  = unpaidMin != null ? unpaidMin : row.break_minutes;
-      const earlyMin  = unpaidMin != null ? earlyLeaveCreditMinutes(rawH) : 0;
-      const dayHrs    = finalHoursFromRaw(rawH, breakMin) + earlyMin / 60;
-      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + dayHrs;
+      // Same worked-hours calc as the Full report's Hours column
+      // (shiftWorkedCalc) so the two views always agree.
+      clockedMap[uid][dayKey] = (clockedMap[uid][dayKey] || 0) + shiftWorkedCalc(row).hrs;
     }
   }
 
@@ -843,6 +834,24 @@ function rawHoursFromTimestamps(firstIn, lastOut) {
 function finalHoursFromRaw(rawHours, breakMinutes) {
   const breakHrs = (Number(breakMinutes) || 0) / 60;
   return Math.max(0, Number((rawHours - breakHrs).toFixed(2)));
+}
+
+// Single source of truth for a shift's worked hours — used by both the
+// Full report and the Clock vs Timesheet comparison so the two views
+// can never disagree. Worked = raw − unpaid break + early-leave credit,
+// rounded to the nearest quarter hour (payroll works in 15-min blocks).
+// Breaks count unpaid minutes only — paid breaks are paid time. The
+// shared RPC's break_minutes has no paid/unpaid split, so the unpaid
+// share is derived from the org's configured break thresholds; falls
+// back to total break_minutes (and skips the credit) when the config
+// isn't available or the shift is missing an in/out.
+function shiftWorkedCalc(r) {
+  const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
+  const unpaid = (r.first_in && r.last_out) ? unpaidBreakMinutesForRaw(raw) : null;
+  const breakMin = unpaid != null ? unpaid : (Number(r.break_minutes) || 0);
+  const earlyMin = unpaid != null ? earlyLeaveCreditMinutes(raw) : 0;
+  const hrs = Math.round((finalHoursFromRaw(raw, breakMin) + earlyMin / 60) * 4) / 4;
+  return { raw, breakMin, hrs };
 }
 
 // Clock-vs-Timesheet compares worked hours against logged hours, and
@@ -1065,29 +1074,11 @@ async function loadFullReport() {
     return (a.day || "") < (b.day || "") ? -1 : 1;
   });
 
-  // The Break column (and the Hours it's deducted from) counts unpaid
-  // breaks only — paid breaks are paid time, same convention as the
-  // Time Audit. The shared RPC's break_minutes has no paid/unpaid
-  // split, so derive the unpaid share from the org's configured break
-  // thresholds; fall back to total break_minutes when the config isn't
-  // available or the shift is missing an in/out (raw hours unknown).
-  // Hours also gets the early-leave credit: the last 15-min unpaid
-  // break is taken by going home 15 minutes early, so when that break
-  // triggered we add its minutes back to worked time (same as the
-  // Time Audit; skipped on the fallback path since we can't verify a
-  // 15-min break would have triggered). Hours is then rounded to the
-  // nearest quarter hour — payroll works in 15-minute blocks — and the
+  // Break and Hours come from shiftWorkedCalc — the shared worked-hours
+  // calc (unpaid-break deduction, early-leave credit, quarter-hour
+  // rounding) also used by Clock vs Timesheet, so the views agree. The
   // summary total sums the rounded values so it matches the rows.
-  const shiftCalc = (r) => {
-    const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
-    const unpaid = (r.first_in && r.last_out) ? unpaidBreakMinutesForRaw(raw) : null;
-    const breakMin = unpaid != null ? unpaid : (Number(r.break_minutes) || 0);
-    const earlyMin = unpaid != null ? earlyLeaveCreditMinutes(raw) : 0;
-    const hrs = Math.round((finalHoursFromRaw(raw, breakMin) + earlyMin / 60) * 4) / 4;
-    return { raw, breakMin, hrs };
-  };
-
-  const totalHours = worked.reduce((s, r) => s + shiftCalc(r).hrs, 0);
+  const totalHours = worked.reduce((s, r) => s + shiftWorkedCalc(r).hrs, 0);
   const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
   summaryEl.innerHTML = `<div class="notice info" style="margin:0">
     <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
@@ -1112,7 +1103,7 @@ async function loadFullReport() {
       </thead>
       <tbody>
         ${worked.map((r) => {
-          const { raw, breakMin, hrs } = shiftCalc(r);
+          const { raw, breakMin, hrs } = shiftWorkedCalc(r);
           let eff = effectiveFlag(r.flag, hrs);
           // Auto-closed takes priority over short-shift in this view.
           if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
