@@ -875,18 +875,15 @@ function unpaidBreakMinutesForRaw(rawHours) {
   return mins;
 }
 
-// PTL convention: the last 15-minute break is taken as leaving 15
-// minutes earlier instead. So when a shift is long enough that a
-// 15-min unpaid break would have triggered, we credit those 15 mins
-// back to clocked time — the worker skipped the break and clocked
-// out 15 min sooner. Only kicks in once per shift; if multiple
-// 15-min unpaid breaks are configured (rare), still only one applies.
+// PTL convention: the last 15 minutes of break are taken as leaving
+// 15 minutes earlier instead. So when a shift deducted at least 15
+// unpaid minutes, credit 15 back to clocked time — the worker skipped
+// that slice of break and clocked out sooner. Deliberately not tied
+// to a 15-min-duration break existing in config: a single combined
+// 30-min unpaid break carries the same entitlement. Once per shift.
 function earlyLeaveCreditMinutes(rawHours) {
   if (!Array.isArray(unpaidBreaks)) return 0;
-  const triggered15 = unpaidBreaks.some(
-    (b) => b.duration_minutes === 15 && rawHours >= b.trigger_hours_into_shift,
-  );
-  return triggered15 ? 15 : 0;
+  return unpaidBreakMinutesForRaw(rawHours) >= 15 ? 15 : 0;
 }
 
 async function loadFlagReport() {
