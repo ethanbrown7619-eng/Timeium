@@ -241,6 +241,23 @@ async function load() {
     document.getElementById("admin-submit-btn").textContent =
       isRejected ? "Resubmit on behalf" : "Submit on behalf";
     document.getElementById("admin-submit-btn").onclick = async () => {
+      // Department is required on every hour-bearing, non-leave row —
+      // same rule the employee's own submit enforces, and the DB
+      // trigger (migration 148) backstops. Checking here first gives
+      // the manager a readable message instead of an RPC error.
+      const missingDept = (entries || []).filter((e) => {
+        if (jobMap[e.job_id]?.is_leave) return false;
+        const hasHours = DAYS.some((d) => Number(e[`${d}_hours`]) > 0);
+        return hasHours && !e.dept_code_id;
+      }).length;
+      if (missingDept) {
+        notice(
+          `Cannot submit: ${missingDept} row(s) have hours but no department selected. ` +
+          `Use Edit to fill in the department column first.`,
+          "warn",
+        );
+        return;
+      }
       const ok = await confirmDialog({
         title: isRejected ? "Resubmit on behalf" : "Submit on behalf",
         message: isRejected
