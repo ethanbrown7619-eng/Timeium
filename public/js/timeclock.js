@@ -902,7 +902,7 @@ async function loadFlagReport() {
   tableEl.innerHTML = skeletonBlock();
   summaryEl.innerHTML = "";
 
-  await Promise.all([loadClockStandard(), loadClockScope()]);
+  await Promise.all([loadClockStandard(), loadClockScope(), loadUnpaidBreaks()]);
   const ws = fmtDate(flagWeek);
   let rows = [];
   try {
@@ -912,13 +912,14 @@ async function loadFlagReport() {
       p_org_id: currentOrgId,
     });
     if (error) throw error;
-    // Re-derive the flag client-side: rows where our minute-truncated
-    // hours actually meet the standard shouldn't carry 'red'.
+    // Re-derive the flag client-side from the shared worked-hours calc
+    // (same as the Full report's Hours column): rows whose credited,
+    // quarter-hour-rounded hours meet the standard shouldn't carry 'red'.
     rows = (data || [])
       .filter((r) => scopeAllowsUserId(r.user_id))
       .map((r) => ({
         ...r,
-        flag: effectiveFlag(r.flag, finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), r.break_minutes)),
+        flag: effectiveFlag(r.flag, shiftWorkedCalc(r).hrs),
       }))
       .filter((r) => r.flag);
   } catch (err) {
@@ -966,8 +967,7 @@ async function loadFlagReport() {
       </thead>
       <tbody>
         ${rows.map((r) => {
-          const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
-          const hrs = finalHoursFromRaw(raw, r.break_minutes);
+          const { raw, hrs } = shiftWorkedCalc(r);
           const f = flagLabel(effectiveFlag(r.flag, hrs));
           return `<tr>
             <td><span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span></td>
