@@ -1074,15 +1074,20 @@ async function loadFullReport() {
   // split, so derive the unpaid share from the org's configured break
   // thresholds; fall back to total break_minutes when the config isn't
   // available or the shift is missing an in/out (raw hours unknown).
-  const unpaidBreakMin = (r) => {
-    const unpaid = (r.first_in && r.last_out)
-      ? unpaidBreakMinutesForRaw(rawHoursFromTimestamps(r.first_in, r.last_out))
-      : null;
-    return unpaid != null ? unpaid : (Number(r.break_minutes) || 0);
+  // Hours also gets the early-leave credit: the last 15-min unpaid
+  // break is taken by going home 15 minutes early, so when that break
+  // triggered we add its minutes back to worked time (same as the
+  // Time Audit; skipped on the fallback path since we can't verify a
+  // 15-min break would have triggered).
+  const shiftCalc = (r) => {
+    const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
+    const unpaid = (r.first_in && r.last_out) ? unpaidBreakMinutesForRaw(raw) : null;
+    const breakMin = unpaid != null ? unpaid : (Number(r.break_minutes) || 0);
+    const earlyMin = unpaid != null ? earlyLeaveCreditMinutes(raw) : 0;
+    return { raw, breakMin, hrs: finalHoursFromRaw(raw, breakMin) + earlyMin / 60 };
   };
 
-  const totalHours = worked.reduce((s, r) =>
-    s + finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), unpaidBreakMin(r)), 0);
+  const totalHours = worked.reduce((s, r) => s + shiftCalc(r).hrs, 0);
   const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
   summaryEl.innerHTML = `<div class="notice info" style="margin:0">
     <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
@@ -1107,9 +1112,7 @@ async function loadFullReport() {
       </thead>
       <tbody>
         ${worked.map((r) => {
-          const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
-          const breakMin = unpaidBreakMin(r);
-          const hrs = finalHoursFromRaw(raw, breakMin);
+          const { raw, breakMin, hrs } = shiftCalc(r);
           let eff = effectiveFlag(r.flag, hrs);
           // Auto-closed takes priority over short-shift in this view.
           if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
