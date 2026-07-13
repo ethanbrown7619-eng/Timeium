@@ -131,6 +131,9 @@
           </div>
           <span id="save-state" class="save-state" aria-live="polite"></span>
           <div class="grow"></div>
+          <button class="ghost small" id="common-jobs-btn" title="Common jobs reference"
+            aria-label="Common jobs reference" aria-haspopup="dialog"
+            style="border-radius:999px;font-weight:700;padding:4px 11px">ⓘ</button>
           <div id="ts-status"></div>
           <button class="ghost" id="import-last-week">Import last week's tasks</button>
         </div>
@@ -192,6 +195,51 @@
         </div>
       </div>
     </main>
+
+    <dialog id="common-jobs-dialog">
+      <div style="padding:24px;width:min(95vw,640px)">
+        <div class="row-flex" style="margin-bottom:4px">
+          <h2 style="margin:0">Common jobs</h2>
+          <div class="grow"></div>
+          <button class="ghost" id="common-jobs-close">Close</button>
+        </div>
+        <p class="muted small" style="margin:0 0 12px">
+          General-purpose 90000-series job codes for time that doesn't belong
+          to a specific customer job.
+        </p>
+        <div style="max-height:60vh;overflow-y:auto">
+          <table class="small" data-no-sort>
+            <thead>
+              <tr>
+                <th style="white-space:nowrap">Job code</th>
+                <th style="text-align:center">Dept</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>90000</td><td></td><td>Stock Component purchases and labour</td></tr>
+              <tr><td>90001</td><td></td><td>Sales quotes, trials, testing</td></tr>
+              <tr><td>90002</td><td style="text-align:center">A</td><td>PTL - Premises cleaning and smoko room</td></tr>
+              <tr><td>90003</td><td></td><td>PTL - Production equipment and building maintenance</td></tr>
+              <tr><td>90004</td><td style="text-align:center">Y</td><td>PTL - Design unproductive</td></tr>
+              <tr><td>90005</td><td style="text-align:center">Z</td><td>PTL - Automation unproductive</td></tr>
+              <tr><td>90006</td><td style="text-align:center">A</td><td>PTL - Workshop unproductive</td></tr>
+              <tr><td>90007</td><td style="text-align:center">T</td><td>IT systems</td></tr>
+              <tr><td>90008</td><td></td><td>PTL - Health &amp; Safety</td></tr>
+              <tr><td>90009</td><td></td><td>PTL - Training</td></tr>
+              <tr><td>90010</td><td></td><td>PTL - Administration &amp; Project management for front line managers</td></tr>
+              <tr><td>90011</td><td></td><td>Research and Development</td></tr>
+              <tr><td>90012</td><td></td><td>Lean process flow improvement</td></tr>
+              <tr><td>90019</td><td></td><td>Student work experience &amp; internships.</td></tr>
+              <tr><td>90020</td><td></td><td>Production Manager jobs</td></tr>
+              <tr><td>90021</td><td></td><td>Customer support (where no specific job is applicable) - Controls Call outs</td></tr>
+              <tr><td>90022</td><td></td><td>General Meetings</td></tr>
+              <tr><td>90023</td><td style="text-align:center">J</td><td>Inwards Goods &amp; Quality Control Tasks</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </dialog>
 
     <dialog id="submit-confirm-dialog">
       <div style="padding:24px;width:min(95vw,420px)">

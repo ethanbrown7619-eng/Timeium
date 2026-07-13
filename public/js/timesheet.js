@@ -1765,6 +1765,15 @@ document.getElementById("submit-cancel-btn").addEventListener("click", () => {
   document.getElementById("submit-confirm-dialog").close();
 });
 
+// Common-jobs reference card — static lookup of the 90000-series codes,
+// content lives in the dialog markup in timesheet.html.
+document.getElementById("common-jobs-btn").addEventListener("click", () => {
+  document.getElementById("common-jobs-dialog").showModal();
+});
+document.getElementById("common-jobs-close").addEventListener("click", () => {
+  document.getElementById("common-jobs-dialog").close();
+});
+
 document.getElementById("submit-confirm-btn").addEventListener("click", async () => {
   const dialog = document.getElementById("submit-confirm-dialog");
   dialog.close();
