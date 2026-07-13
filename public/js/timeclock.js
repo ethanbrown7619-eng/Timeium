@@ -1013,7 +1013,7 @@ async function loadFullReport() {
   tableEl.innerHTML = skeletonBlock();
   summaryEl.innerHTML = "";
 
-  await Promise.all([loadClockStandard(), loadClockScope()]);
+  await Promise.all([loadClockStandard(), loadClockScope(), loadUnpaidBreaks()]);
   const ws = fmtDate(fullWeek);
   // Days where an auto-closed event happened. Used to promote 'red'
   // (Short shift) to 'yellow' (Auto-closed) in the row render — the
@@ -1068,8 +1068,21 @@ async function loadFullReport() {
     return (a.day || "") < (b.day || "") ? -1 : 1;
   });
 
+  // The Break column (and the Hours it's deducted from) counts unpaid
+  // breaks only — paid breaks are paid time, same convention as the
+  // Time Audit. The shared RPC's break_minutes has no paid/unpaid
+  // split, so derive the unpaid share from the org's configured break
+  // thresholds; fall back to total break_minutes when the config isn't
+  // available or the shift is missing an in/out (raw hours unknown).
+  const unpaidBreakMin = (r) => {
+    const unpaid = (r.first_in && r.last_out)
+      ? unpaidBreakMinutesForRaw(rawHoursFromTimestamps(r.first_in, r.last_out))
+      : null;
+    return unpaid != null ? unpaid : (Number(r.break_minutes) || 0);
+  };
+
   const totalHours = worked.reduce((s, r) =>
-    s + finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), r.break_minutes), 0);
+    s + finalHoursFromRaw(rawHoursFromTimestamps(r.first_in, r.last_out), unpaidBreakMin(r)), 0);
   const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
   summaryEl.innerHTML = `<div class="notice info" style="margin:0">
     <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
@@ -1095,7 +1108,8 @@ async function loadFullReport() {
       <tbody>
         ${worked.map((r) => {
           const raw = rawHoursFromTimestamps(r.first_in, r.last_out);
-          const hrs = finalHoursFromRaw(raw, r.break_minutes);
+          const breakMin = unpaidBreakMin(r);
+          const hrs = finalHoursFromRaw(raw, breakMin);
           let eff = effectiveFlag(r.flag, hrs);
           // Auto-closed takes priority over short-shift in this view.
           if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
@@ -1109,7 +1123,7 @@ async function loadFullReport() {
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
             <td class="num small">${(r.first_in && r.last_out) ? fmtHours(raw) : "—"}</td>
-            <td class="num small">${r.break_minutes ? r.break_minutes + "m" : "—"}</td>
+            <td class="num small">${breakMin ? breakMin + "m" : "—"}</td>
             <td class="num"><strong>${(r.first_in && r.last_out) ? fmtHours(hrs) : "—"}</strong></td>
             <td>${f ? `<span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span>` : ""}</td>
           </tr>`;
