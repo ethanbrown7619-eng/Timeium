@@ -1483,6 +1483,10 @@ button.primary:hover {
 #common-jobs-dialog .cj-row { cursor: pointer; user-select: none; }
 #common-jobs-dialog .cj-row:hover td { background: rgba(190, 250, 64, 0.12); }
 
+/* -------- My Clock: double-clickable event times -------- */
+#mc-events-body td.mc-adjustable { cursor: pointer; user-select: none; }
+#mc-events-body td.mc-adjustable:hover { background: rgba(190, 250, 64, 0.12); }
+
 /* -------- reduced motion -------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

@@ -156,18 +156,25 @@ async function loadEvents() {
     // A clock event cell: time plus a request-fix affordance (or the
     // pending marker). Fix buttons only show on FLAGGED rows — showFix
     // is passed per row, and a flagged row offers Fix on both its In and
-    // Out cells so whichever side is wrong can be requested. Spell cells
-    // are display-only — the underlying status_events aren't adjustable.
+    // Out cells so whichever side is wrong can be requested. Every
+    // recorded event cell is also double-clickable to open the same
+    // request dialog, flag or not (data attrs + delegated listener
+    // below the table render). Spell cells are display-only — the
+    // underlying status_events aren't adjustable.
     const evCell = (ev, showFix) => {
       if (!ev) return `<td class="num muted">—</td>`;
       const t = escapeHtml(fmtEventTime(ev.occurred_at));
       let action = "";
+      let adjustable = "";
       if (ev.pending_request_id) {
         action = ` <span class="small muted">(requested)</span>`;
-      } else if (showFix) {
-        action = ` <button class="ghost small mc-request-btn" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Request a time fix">Fix</button>`;
+      } else {
+        adjustable = ` class="num mc-adjustable" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Double-click to request a time fix"`;
+        if (showFix) {
+          action = ` <button class="ghost small mc-request-btn" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Request a time fix">Fix</button>`;
+        }
       }
-      return `<td class="num" data-sort-value="${escapeHtml(ev.occurred_at)}">${t}${action}</td>`;
+      return `<td${adjustable || ' class="num"'} data-sort-value="${escapeHtml(ev.occurred_at)}">${t}${action}</td>`;
     };
     const timeCell = (iso) => iso
       ? `<td class="num" data-sort-value="${escapeHtml(iso)}">${escapeHtml(fmtEventTime(iso))}</td>`
@@ -236,6 +243,20 @@ async function loadEvents() {
     body.innerHTML = `<tr><td colspan="5" class="muted small" style="text-align:center;padding:16px;color:#c00">${escapeHtml(err.message || "Could not load clock events")}</td></tr>`;
   }
 }
+
+// Double-click any recorded event cell to request a fix — works on
+// unflagged shifts too. Delegated once; cells carry the event data.
+// Cells with a pending request don't get the data attrs, so they're
+// naturally inert here.
+document.getElementById("mc-events-body").addEventListener("dblclick", (e) => {
+  const td = e.target.closest("td[data-event-id]");
+  if (!td || e.target.closest(".mc-request-btn")) return;
+  openAdjustDialog({
+    eventId: Number(td.dataset.eventId),
+    type:    td.dataset.type,
+    time:    td.dataset.time,
+  });
+});
 
 /* ---------------------------------------------------------------- request dialog */
 
