@@ -410,12 +410,14 @@ async function loadLivePresence() {
       const { cls } = liveStatusLabel(r.status, detail);
       buckets[cls] = (buckets[cls] || 0) + 1;
     }
-    // Guest count is updated by loadVisitorsOnSite (separate fetch).
-    // We render the tile here with a "—" placeholder so the position
-    // doesn't shift when the count lands; refreshLive() always fires
-    // visitor + employee fetches together so the gap is sub-second.
-    // The six employee-status tiles double as row filters; the Guests
-    // tile is a separate panel and stays non-interactive.
+    // Guest count comes from loadVisitorsOnSite (separate fetch). Both
+    // fetches fire together, and the visitor one usually resolves FIRST
+    // — so rendering a bare "—" here would wipe the count it already
+    // wrote and leave the tile stuck on the dash. Render the last known
+    // count instead; "—" only before the very first visitor result (or
+    // after a visitor fetch error). The six employee-status tiles double
+    // as row filters; the Guests tile is a separate panel and stays
+    // non-interactive.
     const statusTile = (cls, label, count) => {
       const on = liveStatusFilter.has(cls);
       return `<div class="tile ${cls} filterable${on ? " active" : ""}" data-filter="${cls}" role="button" tabindex="0" aria-pressed="${on}"><div class="num">${count}</div><div class="lbl">${label}</div></div>`;
@@ -427,7 +429,7 @@ async function loadLivePresence() {
       statusTile("away",    "Clocked out early", buckets.away    || 0) +
       statusTile("leave",   "On leave",          buckets.leave   || 0) +
       statusTile("absent",  "Not clocked in",    buckets.absent  || 0) +
-      `<div class="tile guest"><div class="num" id="tc-guest-tile-num">—</div><div class="lbl">Guests on site</div></div>`;
+      `<div class="tile guest"><div class="num" id="tc-guest-tile-num">${lastGuestCount != null ? lastGuestCount : "—"}</div><div class="lbl">Guests on site</div></div>`;
     countsEl.classList.toggle("has-filter", liveStatusFilter.size > 0);
 
     // Tiles are rebuilt every refresh, so (re)bind toggle handlers here.
@@ -479,6 +481,10 @@ function fmtSignedInAt(iso) {
   });
 }
 
+// Last successful guest count — survives the live-tiles re-render (which
+// rebuilds the tile markup) so the number doesn't flash back to "—".
+let lastGuestCount = null;
+
 async function loadVisitorsOnSite() {
   if (!currentOrgId) return;
   const body = document.getElementById("tc-visitors-body");
@@ -493,6 +499,7 @@ async function loadVisitorsOnSite() {
 
     const rows = data || [];
 
+    lastGuestCount = rows.length;
     if (tileNumEl) tileNumEl.textContent = String(rows.length);
     if (countEl) {
       if (rows.length) {
@@ -524,6 +531,7 @@ async function loadVisitorsOnSite() {
       </tr>`).join("");
   } catch (err) {
     console.error("visitors-on-site load failed:", err);
+    lastGuestCount = null;
     if (countEl) countEl.style.display = "none";
     if (tileNumEl) tileNumEl.textContent = "—";
     body.innerHTML = `
