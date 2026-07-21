@@ -43,6 +43,19 @@
 
   --radius: 999px;
   --radius-box: 10px;
+
+  /* PTL ERP "depth & light" surface recipe (DESIGN.md 2026-07-21).
+     Defined here per-repo, outside any synced tokens block. */
+  --radius-card: 14px;
+  --card-border: rgba(20,26,10,.09);
+  --card-grad: linear-gradient(180deg, #ffffff 0%, #fbfbfc 100%);
+  --glass-hilite: inset 0 1px 0 rgba(255,255,255,.85);
+  --shadow-rest: 0 1px 2px rgba(10,10,10,.05), 0 12px 32px -18px rgba(10,10,10,.18);
+  --shadow-lift: 0 2px 4px rgba(10,10,10,.06), 0 18px 44px -18px rgba(10,10,10,.26);
+  --inner-glow: inset 0 0 0 1px rgba(20,26,10,.14), inset 0 16px 30px -22px rgba(20,26,10,.12);
+  --line-2: rgba(20,26,10,.18);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
 }
 
 * { box-sizing: border-box; }
@@ -86,19 +99,23 @@ a:hover { text-decoration: underline; }
 
 /* -------- layout -------- */
 
+/* ERP shared topbar language: sticky frosted bar, inset white top
+   highlight, soft drop shadow. Height reserved pre-JS so the shell
+   never drops on mount. */
 .topbar {
   display: flex;
   align-items: center;
   gap: 24px;
   padding: 12px 24px;
   background: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(20,26,10,.08);
   position: sticky;
   top: 0;
   z-index: 10;
-  min-height: 48px;
+  min-height: 61px;
   backdrop-filter: blur(6px);
-  animation: topbarIn 0.35s cubic-bezier(0, 0, 0.2, 1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 10px 26px -20px rgba(10,10,10,.30);
+  animation: topbarIn 0.35s var(--ease-out);
 }
 @keyframes topbarIn {
   from { opacity: 0; transform: translateY(-8px); }
@@ -200,10 +217,10 @@ a:hover { text-decoration: underline; }
   transform: translateY(-1px);
 }
 .topbar nav a:active { transform: scale(0.94); }
+/* Active pill: solid lime, NO outer glow (brand ruling). */
 .topbar nav a.active {
   color: var(--ptl-black);
   background: var(--ptl-lime);
-  box-shadow: 0 2px 8px rgba(190, 250, 64, 0.4), 0 1px 2px rgba(0,0,0,0.06);
   font-weight: 600;
 }
 
@@ -224,17 +241,18 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* The ERP card recipe: subtle top-lit gradient, hairline border, rest
+   shadow + glass highlight. Content panels stay at rest; hover-lift is
+   reserved for interactive cards (tiles), not reading surfaces. */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-box);
+  background: var(--card-grad);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
   padding: 16px 20px;
   margin-bottom: 20px;
-  animation: fadeSlideIn 0.35s cubic-bezier(0, 0, 0.2, 1) backwards;
+  box-shadow: var(--shadow-rest), var(--glass-hilite);
+  animation: fadeSlideIn 0.35s var(--ease-out) backwards;
   transition: box-shadow 0.25s ease, border-color 0.25s ease;
-}
-.card:hover {
-  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
 }
 .card:nth-child(1) { animation-delay: 0s; }
 .card:nth-child(2) { animation-delay: 0.05s; }
@@ -246,15 +264,55 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.card h2 { margin: 0 0 12px; font-size: 16px; }
-.card h3 { margin: 12px 0 8px; font-size: 14px; color: var(--text-muted); }
+/* Section titles: 17/750 sentence case with the 4px lime tick. */
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 750;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card h2::before {
+  content: "";
+  width: 4px;
+  height: 15px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--ptl-lime), #7ea828);
+  flex-shrink: 0;
+}
+.card h3 {
+  margin: 12px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+/* Page titles. */
+.container h1, .auth-wrap h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.container h1 + .note, .container h1 + p.muted { margin-top: 2px; font-size: 13px; }
 
 .row-flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .grow { flex: 1; }
 
 /* -------- forms -------- */
 
-label { display: block; margin-bottom: 4px; font-size: 13px; color: var(--text-muted); }
+/* Form labels: small uppercase muted (ERP sub-heading style). */
+label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
 
 /* Wrapper for a password input + a show/hide eye toggle pinned to the right.
    Used on signin so the user can verify what they're typing. */
@@ -334,24 +392,31 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* -------- tables -------- */
 
 table { width: 100%; border-collapse: collapse; }
+/* ERP ruling: every column center-aligned, headers included. */
 th, td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
-  text-align: left;
+  text-align: center;
   vertical-align: middle;
 }
+td { font-size: 13.5px; }
 th {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-muted);
   background: var(--surface-alt);
-  font-weight: 600;
+  font-weight: 700;
 }
 tr { transition: background 0.12s; }
 tr:last-child td { border-bottom: none; }
 
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num, th.num {
+  text-align: center;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+th.num { font-family: inherit; }
 
 /* Timesheet grid specifics */
 
@@ -400,7 +465,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .auth-wrap .card { max-width: 360px; width: 100%; margin: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
-.auth-wrap h1 { margin: 0 0 16px; font-size: 20px; }
+.auth-wrap h1 { margin: 0 0 16px; }
 
 /* -------- notices -------- */
 /* Floating snackbar pinned to the viewport so the user sees toasts no
@@ -492,7 +557,6 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   color: var(--ptl-black);
   border-color: var(--ptl-lime);
   margin-bottom: 0;
-  box-shadow: 0 1px 4px rgba(190, 250, 64, 0.3);
 }
 
 /* -------- organisation columns -------- */
@@ -607,17 +671,18 @@ dialog::backdrop {
 
 /* -------- timesheet hub -------- */
 
+/* Status states use tone edges on the neutral card recipe — no tinted
+   washes, no glows (brand ruling: lime/green washes and chrome glows
+   are banned; tone-ok/tone-danger live in the border + heading ink). */
 .ts-current-card.submitted {
-  border-color: var(--ptl-lime);
-  background: linear-gradient(135deg, #f3ffd6 0%, #f9ffe8 100%);
-  box-shadow: 0 0 20px rgba(190, 250, 64, 0.25);
+  border-color: rgba(46, 125, 58, 0.45);
+  box-shadow: var(--shadow-rest), var(--glass-hilite), inset 3px 0 0 var(--success);
 }
-.ts-current-card.submitted h2 { color: #5a7a00; }
+.ts-current-card.submitted h2 { color: var(--success); }
 
 .ts-current-card.rejected {
-  border-color: var(--danger);
-  background: linear-gradient(135deg, #ffe3e3 0%, #fff1f1 100%);
-  box-shadow: 0 0 20px rgba(193, 57, 43, 0.25);
+  border-color: rgba(193, 57, 43, 0.45);
+  box-shadow: var(--shadow-rest), var(--glass-hilite), inset 3px 0 0 var(--danger);
 }
 .ts-current-card.rejected h2 { color: var(--danger); }
 
@@ -669,8 +734,9 @@ dialog::backdrop {
 .week-calendar td { padding: 18px 8px; text-align: center; font-size: 14px; }
 .week-calendar tr.week-row { cursor: pointer; border-radius: var(--radius-box); transition: background 0.15s; }
 .week-calendar tr.week-row:hover { background: var(--surface-alt); }
-.week-calendar tr.week-row.current-week { background: rgba(190, 250, 64, 0.12); font-weight: 600; }
-.week-calendar tr.week-row.current-week:hover { background: rgba(190, 250, 64, 0.22); }
+/* Current week: lime stays an accent (edge), never a row wash. */
+.week-calendar tr.week-row.current-week { font-weight: 600; box-shadow: inset 3px 0 0 var(--ptl-lime); }
+.week-calendar tr.week-row.current-week:hover { background: var(--surface-alt); }
 .week-calendar tr.week-row.week-submitted { background: rgba(46, 125, 58, 0.06); }
 .week-calendar tr.week-row.week-submitted:hover { background: rgba(46, 125, 58, 0.12); }
 .week-calendar tr.week-row.week-draft { background: rgba(201, 144, 26, 0.06); }
@@ -801,8 +867,8 @@ dialog::backdrop {
 }
 .ts-grid .hours-input:focus {
   outline: none;
-  border-color: var(--ptl-lime-dark);
-  box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3);
+  border-color: var(--ptl-black);
+  box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.1);
 }
 .ts-grid .desc-input {
   width: 100%;
@@ -813,7 +879,7 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
 }
-.ts-grid .desc-input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3); }
+.ts-grid .desc-input:focus { outline: none; border-color: var(--ptl-black); box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.1); }
 .ts-grid tfoot td { border-top: 2px solid var(--border); font-weight: 600; font-size: 12px; white-space: nowrap; }
 .ts-grid .row-total { background: var(--surface-alt); white-space: nowrap; }
 
@@ -824,13 +890,15 @@ dialog::backdrop {
    read as empty, so it was rolled back. Read-only leave rows stay flat
    via the leave-locked-row rules above. */
 
-/* Row hover — faint lime wash so you can track your row across 14 columns. */
-.ts-grid tbody tr:hover td { background: rgba(190, 250, 64, 0.06); }
+/* Row hover — neutral wash so you can track your row across 14 columns
+   (lime washes are banned by the brand rules). */
+.ts-grid tbody tr:hover td { background: rgba(10, 10, 10, 0.03); }
 
-/* Today's column — the "where do I type" affordance. */
-.ts-grid .day-today { background: rgba(190, 250, 64, 0.12); }
-.ts-grid th.day-today { border-top: 2px solid var(--ptl-lime); }
-.ts-grid tbody tr:hover td.day-today { background: rgba(190, 250, 64, 0.18); }
+/* Today's column — neutral fill, lime kept to the thin top accent
+   (today-pill family), never a cell wash. */
+.ts-grid .day-today { background: var(--surface-alt); }
+.ts-grid th.day-today { border-top: 3px solid var(--ptl-lime); }
+.ts-grid tbody tr:hover td.day-today { background: rgba(10, 10, 10, 0.06); }
 
 /* Tabular figures so hour digits + the ticking countdown don't wobble. */
 .ts-grid .day-col, .ts-grid .row-total, .ts-grid tfoot td,
@@ -896,7 +964,7 @@ dialog::backdrop {
   font-size: 13px;
   background: var(--surface);
 }
-.ac-wrap input:focus { outline: none; border-color: var(--ptl-lime-dark); box-shadow: 0 0 0 3px rgba(190, 250, 64, 0.3); }
+.ac-wrap input:focus { outline: none; border-color: var(--ptl-black); box-shadow: 0 0 0 3px rgba(10, 10, 10, 0.1); }
 .ac-list {
   display: none;
   position: absolute;
@@ -926,9 +994,10 @@ dialog::backdrop {
   gap: 8px;
 }
 .ac-item { transition: background 0.1s, color 0.1s; }
-.ac-item:hover, .ac-item.highlighted { background: var(--ptl-lime); color: var(--ptl-black); }
+/* Highlight in ink, not lime — lime is never a surface. */
+.ac-item:hover, .ac-item.highlighted { background: var(--ptl-black); color: #fff; }
 .ac-item .ac-desc { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ac-item:hover .ac-desc, .ac-item.highlighted .ac-desc { color: var(--ptl-black); opacity: 0.7; }
+.ac-item:hover .ac-desc, .ac-item.highlighted .ac-desc { color: #fff; opacity: 0.7; }
 .ac-clear {
   padding: 6px 8px;
   cursor: pointer;
@@ -1259,7 +1328,13 @@ details.card[open] > summary::before { content: "▾ "; }
   border: 1px solid var(--border);
   background: var(--surface-alt);
 }
-.tc-live-counts .tile .num { font-size: 22px; font-weight: 700; line-height: 1; }
+.tc-live-counts .tile .num {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
 .tc-live-counts .tile .lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .tc-live-counts .tile.onsite  { background: var(--success-bg); border-color: #b6dcbf; }
 .tc-live-counts .tile.offsite { background: var(--info-blue-bg-alt); border-color: #b8cfef; }
@@ -1393,7 +1468,6 @@ thead th[data-sort-dir="desc"]::after { content: " ↓"; }
 }
 .workflow-option:has(input:checked) {
   border-color: var(--ptl-lime);
-  background: rgba(190, 250, 64, 0.06);
 }
 .workflow-option input[type="radio"] {
   margin-top: 3px;
@@ -1438,7 +1512,6 @@ thead th[data-sort-dir="desc"]::after { content: " ↓"; }
 .settings-check:hover { background: var(--surface-alt); }
 .settings-check:has(input:checked) {
   border-color: var(--ptl-lime);
-  background: rgba(190, 250, 64, 0.06);
 }
 .settings-check input[type="checkbox"] {
   margin-top: 3px;
@@ -1460,7 +1533,7 @@ button.primary {
 button.primary:hover {
   background: var(--ptl-lime-dark);
   border-color: var(--ptl-lime-dark);
-  box-shadow: 0 2px 8px rgba(190, 250, 64, 0.4);
+  box-shadow: 0 2px 8px rgba(10, 10, 10, 0.12);
 }
 
 /* -------- common jobs reference (timesheet editor) -------- */
@@ -1479,21 +1552,27 @@ button.primary:hover {
 .info-btn:hover { color: var(--text); }
 .info-btn svg { display: block; }
 
-/* Reference rows are double-clickable — show it. */
+/* Reference rows are double-clickable — show it (neutral hover). */
 #common-jobs-dialog .cj-row { cursor: pointer; user-select: none; }
-#common-jobs-dialog .cj-row:hover td { background: rgba(190, 250, 64, 0.12); }
+#common-jobs-dialog .cj-row:hover td { background: var(--surface-alt); }
 
 /* -------- My Clock: double-clickable event times -------- */
 #mc-events-body td.mc-adjustable { cursor: pointer; user-select: none; }
-#mc-events-body td.mc-adjustable:hover { background: rgba(190, 250, 64, 0.12); }
+#mc-events-body td.mc-adjustable:hover { background: var(--surface-alt); }
 
 /* -------- reduced motion -------- */
+/* animation: none (not duration: 0) — a zero duration leaves
+   backwards-fill entrance elements invisible through their stagger
+   delay; none clears the delay too. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
   }
 }
+
+/* -------- focus -------- */
+:focus-visible { outline: 2px solid var(--ptl-black); outline-offset: 2px; }
 
 /* ============================================================
    Mobile (<=768px). Desktop is the primary target - these rules
