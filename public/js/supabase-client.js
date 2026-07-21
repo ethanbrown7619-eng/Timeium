@@ -45,5 +45,17 @@ export async function getSupabase() {
       detectSessionInUrl: true,
     },
   });
+  // Safety net for password-reset emails: if Supabase's redirect
+  // allow-list rejects our redirect_to, the recovery link falls back to
+  // the Site URL and the token lands on whatever page that is (signin,
+  // index, …). detectSessionInUrl still consumes it there, so without
+  // this the user just gets silently signed in and never sees the
+  // set-new-password form. Whatever page catches the recovery event,
+  // forward it to the reset page.
+  _client.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY" && !location.pathname.startsWith("/reset-password")) {
+      location.replace("/reset-password.html");
+    }
+  });
   return _client;
 }

@@ -24,6 +24,26 @@ const form = document.getElementById("reset-form");
 const noSession = document.getElementById("no-session");
 
 if (!session) {
+  // Surface the actual failure instead of a generic message. Supabase
+  // reports link problems as error params in the hash (implicit flow)
+  // or query string, e.g. error_code=otp_expired for a used/expired
+  // token — which also happens when a corporate email scanner opens
+  // the single-use link before the user does.
+  const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+  const qsParams = new URLSearchParams(location.search);
+  const errCode = hashParams.get("error_code") || qsParams.get("error_code") || "";
+  const errDesc = hashParams.get("error_description") || qsParams.get("error_description") || "";
+  const detail = document.createElement("p");
+  detail.className = "muted small";
+  if (errCode === "otp_expired") {
+    detail.textContent =
+      "This link has expired or was already opened once. Reset links are single-use — " +
+      "some email security scanners open them before you do, which uses them up. " +
+      "Request a new link and open it as soon as it arrives.";
+  } else if (errDesc) {
+    detail.textContent = `Details: ${errDesc.replace(/\+/g, " ")} (${errCode || "unknown"})`;
+  }
+  if (detail.textContent) noSession.appendChild(detail);
   noSession.classList.remove("hidden");
 } else {
   form.classList.remove("hidden");
