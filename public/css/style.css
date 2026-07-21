@@ -1763,21 +1763,20 @@ button.primary:hover {
   color: #fff;
 }
 
-/* Dismissible inline banners (clock page): ✕ appended by timeclock.js */
-.notice-dismissible { position: relative; padding-right: 36px; }
-.notice-close {
-  position: absolute;
-  top: 4px;
-  right: 6px;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 18px;
-  line-height: 1;
-  color: inherit;
-  opacity: 0.55;
-  cursor: pointer;
-  padding: 4px 7px;
-  border-radius: 6px;
+/* Panel status pill (clock page): compact summary in each panel's
+   header row, replacing the old full-width banners. Empty = hidden. */
+.panel-status {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.notice-close:hover { opacity: 1; background: rgba(10, 10, 10, 0.07); }
+.panel-status:empty { display: none; }
+.panel-status.info   { background: var(--surface-alt); color: var(--text-muted); }
+.panel-status.ok     { background: var(--success-bg); color: var(--success); }
+.panel-status.warn   { background: var(--warn-bg); color: var(--warn-text-dark); }
+.panel-status.danger { background: var(--danger-bg); color: var(--danger); }

@@ -96,42 +96,21 @@ const scopeAllowsUserId = (uid)  => !clockScope || clockScope.userIds.has(uid);
 const scopeAllowsName   = (name) => !clockScope || clockScope.names.has(name);
 const scopeAllowsDeptId = (id)   => !clockScope || clockScope.deptIds.has(id);
 
-/* ------------------------------------------------- dismissible banners */
+/* ------------------------------------------------- panel status pill */
 
-// The sub-tabs render persistent inline .notice banners (summary counts,
-// warnings, "no events" notes) that sit on the page until the next
-// reload. Decorate every one with an ✕ so it can be dismissed. A
-// MutationObserver catches banners as each view renders them, so all
-// sub-tabs — current and future — are covered without touching each
-// render site. The global #notice toast is excluded (it already has
-// tap-to-dismiss + auto-hide).
-function addNoticeClose(n) {
-  if (n.id === "notice" || n.querySelector(":scope > .notice-close")) return;
-  n.classList.add("notice-dismissible");
-  n.insertAdjacentHTML(
-    "beforeend",
-    `<button type="button" class="notice-close" aria-label="Dismiss">&times;</button>`
-  );
+// The report sub-tabs used to render full-width .notice banners for
+// their summaries ("42 shifts…", "3 flagged…", errors, no-events notes)
+// which crowded the page. Each panel header now has a compact status
+// pill on its right instead; this sets its text and tone.
+// Tones: info (neutral), ok (green), warn (amber), danger (red).
+function setPanelStatus(el, html, tone = "info") {
+  if (!el) return;
+  el.className = `panel-status ${tone}`;
+  el.innerHTML = html;
+  // Long messages (load errors) truncate with an ellipsis — keep the
+  // full text reachable on hover.
+  el.title = el.textContent;
 }
-
-function decorateNotices(root) {
-  if (root.matches?.(".notice")) addNoticeClose(root);
-  root.querySelectorAll?.(".notice").forEach(addNoticeClose);
-}
-
-new MutationObserver((muts) => {
-  for (const m of muts) {
-    for (const node of m.addedNodes) {
-      if (node.nodeType === 1) decorateNotices(node);
-    }
-  }
-}).observe(document.querySelector("main") || document.body, { childList: true, subtree: true });
-decorateNotices(document.body);
-
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest(".notice-close");
-  if (btn) btn.closest(".notice")?.remove();
-});
 
 /* ---------------------------------------------------------------- sub-tabs */
 
@@ -691,11 +670,9 @@ async function loadClockComparison() {
     if (error) throw error;
     clockRows = data || [];
   } catch (err) {
-    tableEl.innerHTML = `
-      <div class="notice warn" style="margin:0">
-        Could not load clock data. The Attendium clock-in/out system may not be installed on this Supabase project.<br>
-        <span class="small">${escapeHtml(err.message || "")}</span>
-      </div>`;
+    setPanelStatus(document.getElementById("cvt-summary"),
+      `Couldn't load clock data — ${escapeHtml(err.message || "unknown error")}`, "danger");
+    tableEl.innerHTML = "";
     return;
   }
 
@@ -747,14 +724,12 @@ function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
 
   const discrepancyCount = rows.filter((r) => r.hasDiscrepancy).length;
 
-  summaryEl.innerHTML = discrepancyCount > 0
-    ? `<div class="notice warn" style="margin:0 0 12px">
-        <strong>${discrepancyCount}</strong> of ${employees.length} employee${employees.length !== 1 ? "s" : ""}
-        have discrepancies exceeding ${tolerance}h tolerance.
-      </div>`
-    : `<div class="notice success" style="margin:0 0 12px">
-        All ${employees.length} employees match within ${tolerance}h tolerance.
-      </div>`;
+  if (discrepancyCount > 0) {
+    setPanelStatus(summaryEl,
+      `<strong>${discrepancyCount}</strong> of ${employees.length} over the ±${tolerance}h tolerance`, "warn");
+  } else {
+    setPanelStatus(summaryEl, `All ${employees.length} match (±${tolerance}h)`, "ok");
+  }
 
   function cellClass(diff) {
     if (diff <= tolerance) return "cvt-ok";
@@ -968,16 +943,14 @@ async function loadFlagReport() {
       }))
       .filter((r) => r.flag);
   } catch (err) {
-    tableEl.innerHTML = `
-      <div class="notice warn" style="margin:0">
-        Could not load flag data.<br>
-        <span class="small">${escapeHtml(err.message || "")}</span>
-      </div>`;
+    setPanelStatus(summaryEl,
+      `Couldn't load flag data — ${escapeHtml(err.message || "unknown error")}`, "danger");
+    tableEl.innerHTML = "";
     return;
   }
 
   if (!rows.length) {
-    summaryEl.innerHTML = `<div class="notice success" style="margin:0">No flagged shifts this week. Nice.</div>`;
+    setPanelStatus(summaryEl, "No flagged shifts this week", "ok");
     tableEl.innerHTML = "";
     return;
   }
@@ -987,9 +960,8 @@ async function loadFlagReport() {
   if (byFlag.red)    summaryParts.push(`<strong>${byFlag.red}</strong> short`);
   if (byFlag.yellow) summaryParts.push(`<strong>${byFlag.yellow}</strong> auto-closed`);
   if (byFlag.orange) summaryParts.push(`<strong>${byFlag.orange}</strong> late`);
-  summaryEl.innerHTML = `<div class="notice warn" style="margin:0">
-    ${rows.length} flagged shift${rows.length === 1 ? "" : "s"} (${summaryParts.join(" · ")}).
-  </div>`;
+  setPanelStatus(summaryEl,
+    `${rows.length} flagged (${summaryParts.join(" · ")})`, "warn");
 
   rows.sort((a, b) => {
     if (a.day !== b.day) return a.day < b.day ? -1 : 1;
@@ -1095,11 +1067,9 @@ async function loadFullReport() {
     if (error) throw error;
     rows = data || [];
   } catch (err) {
-    tableEl.innerHTML = `
-      <div class="notice warn" style="margin:0">
-        Could not load clock data.<br>
-        <span class="small">${escapeHtml(err.message || "")}</span>
-      </div>`;
+    setPanelStatus(summaryEl,
+      `Couldn't load clock data — ${escapeHtml(err.message || "unknown error")}`, "danger");
+    tableEl.innerHTML = "";
     return;
   }
 
@@ -1108,7 +1078,7 @@ async function loadFullReport() {
   // outside this viewer's managed-departments scope.
   const worked = rows.filter((r) => (r.first_in || r.last_out) && scopeAllowsUserId(r.user_id));
   if (!worked.length) {
-    summaryEl.innerHTML = `<div class="notice info" style="margin:0">No clock events this week.</div>`;
+    setPanelStatus(summaryEl, "No clock events this week", "info");
     tableEl.innerHTML = "";
     return;
   }
@@ -1125,11 +1095,10 @@ async function loadFullReport() {
   // summary total sums the rounded values so it matches the rows.
   const totalHours = worked.reduce((s, r) => s + shiftWorkedCalc(r).hrs, 0);
   const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
-  summaryEl.innerHTML = `<div class="notice info" style="margin:0">
-    <strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} across
-    <strong>${uniqueEmps}</strong> employee${uniqueEmps === 1 ? "" : "s"},
-    <strong>${fmtHours(totalHours)}</strong> total.
-  </div>`;
+  setPanelStatus(summaryEl,
+    `<strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} ·
+     <strong>${uniqueEmps}</strong> employee${uniqueEmps === 1 ? "" : "s"} ·
+     <strong>${fmtHours(totalHours)}h</strong> total`, "info");
 
   tableEl.innerHTML = `
     <table class="small">
@@ -1234,16 +1203,14 @@ async function loadOffsiteReport() {
     rows = (data || []).filter((r) =>
       !clockScope || clockScope.names.has(r.name) || clockScope.deptNames.has(r.department));
   } catch (err) {
-    tableEl.innerHTML = `
-      <div class="notice warn" style="margin:0">
-        Could not load off-site data.<br>
-        <span class="small">${escapeHtml(err.message || "")}</span>
-      </div>`;
+    setPanelStatus(summaryEl,
+      `Couldn't load off-site data — ${escapeHtml(err.message || "unknown error")}`, "danger");
+    tableEl.innerHTML = "";
     return;
   }
 
   if (!rows.length) {
-    summaryEl.innerHTML = `<div class="notice info" style="margin:0">No off-site events this week.</div>`;
+    setPanelStatus(summaryEl, "No off-site events this week", "info");
     tableEl.innerHTML = "";
     return;
   }
@@ -1256,11 +1223,10 @@ async function loadOffsiteReport() {
     else if ((r.reason || "") === "Clocked out early") early++;
     if (r.late_back) lateBacks++;
   }
-  summaryEl.innerHTML = `<div class="notice info" style="margin:0">
-    <strong>${rows.length}</strong> off-site event${rows.length === 1 ? "" : "s"}
-    (${breaks} break${breaks === 1 ? "" : "s"}, ${jobs} job${jobs === 1 ? "" : "s"}, ${early} early)
-    ${lateBacks ? ` · <strong>${lateBacks}</strong> returned late.` : ""}
-  </div>`;
+  setPanelStatus(summaryEl,
+    `<strong>${rows.length}</strong> event${rows.length === 1 ? "" : "s"} ·
+     ${breaks} break${breaks === 1 ? "" : "s"} · ${jobs} job${jobs === 1 ? "" : "s"} · ${early} early${lateBacks ? ` · <strong>${lateBacks}</strong> late back` : ""}`,
+    lateBacks ? "warn" : "info");
 
   rows.sort((a, b) => {
     const aDay = a.day || ""; const bDay = b.day || "";
