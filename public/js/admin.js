@@ -1282,6 +1282,15 @@ function sortLvRows(rows, previewId) {
   const dir = asc ? 1 : -1;
   return [...rows].sort((a, b) => {
     let cmp = 0;
+    // col=null (custom report before any sort is picked): skip the
+    // primary compare and fall straight to the surname + date tiebreak.
+    if (!col) {
+      cmp = getSurname(a.employee).localeCompare(getSurname(b.employee));
+      if (cmp !== 0) return cmp;
+      cmp = (a.employee || "").localeCompare(b.employee || "");
+      if (cmp !== 0) return cmp;
+      return (a.date || "").localeCompare(b.date || "");
+    }
     const av = a[col], bv = b[col];
     if (col === "employee") {
       cmp = getSurname(av).localeCompare(getSurname(bv));
@@ -1648,6 +1657,11 @@ const LVC_COLS = [
 const lvcSel = { employee: new Set(), department: new Set(), employment_type: new Set(), event: new Set(), event_detail: new Set(), date: new Set() };
 const lvcText = { employee_code: "", note: "" };
 const lvcNum = { hours: { min: null, max: null } };
+
+// The custom view starts with NO active sort — no arrow on any header
+// until one is picked from a menu. (The shared default of employee-asc
+// would render a leftover-looking ▲ on Employee.)
+lvSortStateByView.set("lv-cust-preview", { col: null, asc: true });
 // Which years/months are expanded in the date tree ("2026", "2026-07").
 const lvcDateExpand = new Set();
 
@@ -2077,6 +2091,7 @@ document.getElementById("lv-cust-clear")?.addEventListener("click", () => {
   for (const k of Object.keys(lvcSel)) lvcSel[k].clear();
   for (const k of Object.keys(lvcText)) lvcText[k] = "";
   lvcNum.hours = { min: null, max: null };
+  lvSortStateByView.set("lv-cust-preview", { col: null, asc: true });
   closeLvcMenu();
   lvcRender();
 });
