@@ -974,7 +974,8 @@ document.querySelectorAll("[data-lv-view]").forEach((btn) => {
     closeLvcMenu();
     if (lvSubView === "waged") loadWagedReport();
     if (lvSubView === "salaried") loadSalariedReport();
-    if (lvSubView === "custom" && !lvCustomLoaded) loadCustomReport();
+    // The custom view is deliberately NOT auto-loaded — it can span a
+    // whole year of data, so nothing is fetched until Load is pressed.
   });
 });
 
