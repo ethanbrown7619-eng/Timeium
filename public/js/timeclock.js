@@ -96,6 +96,43 @@ const scopeAllowsUserId = (uid)  => !clockScope || clockScope.userIds.has(uid);
 const scopeAllowsName   = (name) => !clockScope || clockScope.names.has(name);
 const scopeAllowsDeptId = (id)   => !clockScope || clockScope.deptIds.has(id);
 
+/* ------------------------------------------------- dismissible banners */
+
+// The sub-tabs render persistent inline .notice banners (summary counts,
+// warnings, "no events" notes) that sit on the page until the next
+// reload. Decorate every one with an ✕ so it can be dismissed. A
+// MutationObserver catches banners as each view renders them, so all
+// sub-tabs — current and future — are covered without touching each
+// render site. The global #notice toast is excluded (it already has
+// tap-to-dismiss + auto-hide).
+function addNoticeClose(n) {
+  if (n.id === "notice" || n.querySelector(":scope > .notice-close")) return;
+  n.classList.add("notice-dismissible");
+  n.insertAdjacentHTML(
+    "beforeend",
+    `<button type="button" class="notice-close" aria-label="Dismiss">&times;</button>`
+  );
+}
+
+function decorateNotices(root) {
+  if (root.matches?.(".notice")) addNoticeClose(root);
+  root.querySelectorAll?.(".notice").forEach(addNoticeClose);
+}
+
+new MutationObserver((muts) => {
+  for (const m of muts) {
+    for (const node of m.addedNodes) {
+      if (node.nodeType === 1) decorateNotices(node);
+    }
+  }
+}).observe(document.querySelector("main") || document.body, { childList: true, subtree: true });
+decorateNotices(document.body);
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".notice-close");
+  if (btn) btn.closest(".notice")?.remove();
+});
+
 /* ---------------------------------------------------------------- sub-tabs */
 
 let tcSubView = "live";

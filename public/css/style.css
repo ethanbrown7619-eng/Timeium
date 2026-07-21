@@ -1762,3 +1762,22 @@ button.primary:hover {
   border-color: var(--ptl-black);
   color: #fff;
 }
+
+/* Dismissible inline banners (clock page): ✕ appended by timeclock.js */
+.notice-dismissible { position: relative; padding-right: 36px; }
+.notice-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.notice-close:hover { opacity: 1; background: rgba(10, 10, 10, 0.07); }
