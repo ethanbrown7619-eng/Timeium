@@ -264,55 +264,15 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Section titles: 17/750 sentence case with the 4px lime tick. */
-.card h2 {
-  margin: 0 0 12px;
-  font-size: 17px;
-  font-weight: 750;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.card h2::before {
-  content: "";
-  width: 4px;
-  height: 15px;
-  border-radius: 2px;
-  background: linear-gradient(180deg, var(--ptl-lime), #7ea828);
-  flex-shrink: 0;
-}
-.card h3 {
-  margin: 12px 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-/* Page titles. */
-.container h1, .auth-wrap h1 {
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-.container h1 + .note, .container h1 + p.muted { margin-top: 2px; font-size: 13px; }
+.card h2 { margin: 0 0 12px; font-size: 16px; }
+.card h3 { margin: 12px 0 8px; font-size: 14px; color: var(--text-muted); }
 
 .row-flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .grow { flex: 1; }
 
 /* -------- forms -------- */
 
-/* Form labels: small uppercase muted (ERP sub-heading style). */
-label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
+label { display: block; margin-bottom: 4px; font-size: 13px; color: var(--text-muted); }
 
 /* Wrapper for a password input + a show/hide eye toggle pinned to the right.
    Used on signin so the user can verify what they're typing. */
@@ -399,24 +359,18 @@ th, td {
   text-align: center;
   vertical-align: middle;
 }
-td { font-size: 13.5px; }
 th {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-muted);
   background: var(--surface-alt);
-  font-weight: 700;
+  font-weight: 600;
 }
 tr { transition: background 0.12s; }
 tr:last-child td { border-bottom: none; }
 
-td.num, th.num {
-  text-align: center;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-th.num { font-family: inherit; }
+td.num, th.num { text-align: center; font-variant-numeric: tabular-nums; }
 
 /* Timesheet grid specifics */
 
@@ -465,7 +419,7 @@ th.num { font-family: inherit; }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .auth-wrap .card { max-width: 360px; width: 100%; margin: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
-.auth-wrap h1 { margin: 0 0 16px; }
+.auth-wrap h1 { margin: 0 0 16px; font-size: 20px; }
 
 /* -------- notices -------- */
 /* Floating snackbar pinned to the viewport so the user sees toasts no
@@ -1328,13 +1282,7 @@ details.card[open] > summary::before { content: "▾ "; }
   border: 1px solid var(--border);
   background: var(--surface-alt);
 }
-.tc-live-counts .tile .num {
-  font-size: 32px;
-  font-weight: 800;
-  line-height: 1;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
+.tc-live-counts .tile .num { font-size: 22px; font-weight: 700; line-height: 1; }
 .tc-live-counts .tile .lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .tc-live-counts .tile.onsite  { background: var(--success-bg); border-color: #b6dcbf; }
 .tc-live-counts .tile.offsite { background: var(--info-blue-bg-alt); border-color: #b8cfef; }
