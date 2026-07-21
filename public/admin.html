@@ -136,6 +136,7 @@
         <div class="tabs sub" id="lv-sub-tabs">
           <button class="tab active" data-lv-view="waged">Waged (Weekly)</button>
           <button class="tab" data-lv-view="salaried">Salaried (Monthly)</button>
+          <button class="tab" data-lv-view="custom">Custom Report</button>
         </div>
 
         <!-- Waged: weekly -->
@@ -191,12 +192,50 @@
             <span id="lv-sal-status" class="muted small"></span>
           </div>
         </div>
+
+        <!-- Custom: all leave + overtime over a date range, with
+             Excel-style column filter menus (click any header). -->
+        <div id="lv-custom" class="card" style="display:none">
+          <div class="row-flex mb-md" style="flex-wrap:wrap;gap:10px;align-items:flex-end">
+            <div>
+              <label for="lv-cust-from" class="small">From</label>
+              <input type="date" id="lv-cust-from" />
+            </div>
+            <div>
+              <label for="lv-cust-to" class="small">To</label>
+              <input type="date" id="lv-cust-to" />
+            </div>
+            <button id="lv-cust-load" class="ghost" style="margin-bottom:1px">Load</button>
+            <label class="row-flex small muted" style="gap:4px;margin:0 0 8px">
+              <input type="checkbox" id="lv-cust-include-drafts" /> Include draft timesheets
+            </label>
+            <div class="grow"></div>
+            <button id="lv-cust-clear" class="ghost small" style="margin-bottom:1px">Clear filters</button>
+          </div>
+
+          <div class="lv-tiles mb-md" id="lv-cust-tiles"></div>
+
+          <p class="muted small" style="margin:0 0 8px">
+            Click any column header to sort or filter it — filters combine
+            across columns and the totals above follow the filtered set.
+          </p>
+
+          <div id="lv-cust-preview" style="overflow-x:auto;max-height:500px;overflow-y:auto;margin-bottom:16px">
+            <p class="muted small" style="text-align:center">Pick a date range and click Load.</p>
+          </div>
+
+          <div class="row-flex">
+            <button id="lv-cust-export-btn">Export to Excel</button>
+            <button id="lv-cust-export-pdf-btn" class="ghost">Export to PDF</button>
+            <span id="lv-cust-status" class="muted small"></span>
+          </div>
+        </div>
       </section>
 
       <!-- ==================== Leave ==================== -->
       <section id="tab-leave" class="tab-panel" style="display:none">
         <h2 style="margin:0 0 4px">Leave Requests</h2>
-        <p class="muted mb-md">Final approval populates the employee's timesheet with the leave hours.</p>
+        <p class="muted mb-md">Approving populates the employee's timesheet with the leave hours. Managers give the same final approval from their Leave page.</p>
 
         <div class="tabs sub" id="al-sub-tabs">
           <button class="tab active" data-al-view="approvals">
@@ -213,8 +252,8 @@
             <label for="admin-leave-filter" style="margin:0">Show</label>
             <select id="admin-leave-filter" style="width:220px">
               <option value="all">All requests</option>
-              <option value="pending_manager">Pending manager</option>
-              <option value="pending_admin">Pending admin</option>
+              <option value="pending">Pending approval</option>
+              <option value="pending_employee">Awaiting employee acceptance</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
               <option value="cancelled">Cancelled</option>

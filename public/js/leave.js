@@ -1,9 +1,10 @@
 // PTL Timesheet — employee leave request page.
 //
-// Phase B of the leave workflow: shows the signed-in user's own leave
-// history and lets them submit new requests via the submit_leave_request
-// RPC. Status follows the two-step state machine from migration 126;
-// cancellation is restricted to pre-approval statuses.
+// Shows the signed-in user's own leave history and lets them submit new
+// requests via the submit_leave_request RPC. Manager approval is final
+// (migration 150) — approving populates the timesheet immediately.
+// Managers can also raise leave on behalf of their team; those land at
+// pending_employee and the employee accepts/declines from My Requests.
 
 import { getSupabase } from "/js/supabase-client.js";
 import {
@@ -50,13 +51,20 @@ if (canReviewTeam) {
   document.getElementById("leave-team-tab").style.display = "";
 }
 
+// On the Team tab the request button switches to on-behalf mode: the
+// manager picks one of their team and the employee has to accept.
+let activeLeaveTab = "mine";
+
 document.querySelectorAll("[data-leave-tab]").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("[data-leave-tab]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     const tab = btn.dataset.leaveTab;
+    activeLeaveTab = tab;
     document.getElementById("leave-tab-mine").style.display = tab === "mine" ? "" : "none";
     document.getElementById("leave-tab-team").style.display = tab === "team" ? "" : "none";
+    document.getElementById("open-request-btn").textContent =
+      tab === "team" ? "+ Request on behalf" : "+ Request leave";
     if (tab === "team") loadTeamRequests();
   });
 });
@@ -86,8 +94,9 @@ async function loadLeaveTypes() {
 
 function statusBadge(status) {
   switch (status) {
-    case "pending_manager": return `<span class="dept-badge dept-badge-draft">Pending manager</span>`;
-    case "pending_admin":   return `<span class="dept-badge dept-badge-submitted">Pending admin</span>`;
+    case "pending_employee": return `<span class="dept-badge dept-badge-submitted">Awaiting your acceptance</span>`;
+    case "pending_manager": return `<span class="dept-badge dept-badge-draft">Pending approval</span>`;
+    case "pending_admin":   return `<span class="dept-badge dept-badge-draft">Pending approval</span>`;
     case "approved":        return `<span class="dept-badge dept-badge-approved">Approved</span>`;
     case "rejected":        return `<span class="dept-badge dept-badge-rejected">Rejected</span>`;
     case "cancelled":       return `<span class="dept-badge dept-badge-none">Cancelled</span>`;
@@ -101,7 +110,7 @@ async function loadRequests() {
   // now also has proposed_leave_type_id, so a bare leave_types(name)
   // embed is ambiguous.
   const { data, error } = await sb.from("leave_requests")
-    .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_requested_at, created_at, leave_types!leave_requests_leave_type_id_fkey ( name )")
+    .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_requested_at, created_at, leave_types!leave_requests_leave_type_id_fkey ( name ), requested_by_user:users!leave_requests_requested_by_fkey ( name )")
     .eq("user_id", employee.id)
     .order("created_at", { ascending: false });
   if (error) {
@@ -119,8 +128,9 @@ async function loadRequests() {
     const typeName = r.leave_types?.name || "—";
     const noteParts = [];
     if (r.reason)              noteParts.push(escapeHtml(r.reason));
+    if (r.status === "pending_employee") noteParts.push(`<em class="small" style="color:var(--warning)">Requested on your behalf${r.requested_by_user?.name ? ` by ${escapeHtml(r.requested_by_user.name)}` : ""} — accept or decline via ⋯</em>`);
     if (r.manager_review_note) noteParts.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
-    if (r.review_note)         noteParts.push(`<em class="muted small">Admin: ${escapeHtml(r.review_note)}</em>`);
+    if (r.review_note)         noteParts.push(`<em class="muted small">Reviewer: ${escapeHtml(r.review_note)}</em>`);
     if (r.change_request_type) noteParts.push(`<em class="small" style="color:var(--warning)">${r.change_request_type === "cancel" ? "Cancellation" : "Amendment"} requested — awaiting admin</em>`);
     const reasonCell = noteParts.length ? noteParts.join("<br>") : `<span class="muted small">—</span>`;
 
@@ -141,10 +151,17 @@ async function loadRequests() {
   wireRowMenus(rows);
 }
 
-// Which actions a row offers. Pending requests can be cancelled
-// outright; approved requests can request a cancellation or amendment.
-// Anything with a change already pending, or terminal, has none.
+// Which actions a row offers. Manager-raised requests must be accepted
+// or declined; pending requests can be cancelled outright; approved
+// requests can request a cancellation or amendment. Anything with a
+// change already pending, or terminal, has none.
 function rowActions(r) {
+  if (r.status === "pending_employee") {
+    return [
+      { act: "accept", label: "Accept — add to my timesheet" },
+      { act: "decline", label: "Decline", danger: true },
+    ];
+  }
   if (r.status === "pending_manager" || r.status === "pending_admin") {
     return [{ act: "cancel", label: "Cancel request", danger: true }];
   }
@@ -192,7 +209,24 @@ function wireRowMenus(rows) {
 }
 
 async function onMenuAction(act, id) {
-  if (act === "cancel") {
+  if (act === "accept") {
+    const ok = await confirmDialog({
+      title: "Accept leave request",
+      message: "Accept this leave? It'll be approved and the hours added to your timesheet automatically.",
+      confirmText: "Accept",
+    });
+    if (!ok) return;
+    const { error } = await sb.rpc("accept_leave_request", { p_request_id: id });
+    if (error) return notice(error.message, "error");
+    notice("Leave accepted — added to your timesheet", "success");
+    await loadRequests();
+  } else if (act === "decline") {
+    const note = await promptDialog({ title: "Decline leave request", message: "Reason for declining (optional):" }) || null;
+    const { error } = await sb.rpc("decline_leave_request", { p_request_id: id, p_note: note });
+    if (error) return notice(error.message, "error");
+    notice("Leave request declined", "success");
+    await loadRequests();
+  } else if (act === "cancel") {
     const ok = await confirmDialog({
       title: "Cancel leave request",
       message: "Withdraw this leave request? You'd need to submit a new one to reinstate it.",
@@ -281,15 +315,35 @@ function updateRequestTotal() {
 
 // Open the request modal. With no prefill it's a fresh request; with a
 // prefill (from "Request amendment") it's pre-populated and submitting
-// proposes an amendment instead of creating a new request.
+// proposes an amendment instead of creating a new request. With
+// { behalf: true } (Team tab) the manager picks a team member and the
+// request goes to that employee for acceptance.
+let behalfMode = false;
+let managedEmployeesLoaded = false;
+
+async function loadManagedEmployees() {
+  if (managedEmployeesLoaded) return;
+  const sel = document.getElementById("req-behalf-user");
+  const { data, error } = await sb.rpc("list_managed_employees", { p_org_id: currentOrgId });
+  if (error) { notice(`Could not load your team: ${error.message}`, "error"); return; }
+  sel.innerHTML = (data || []).map((u) =>
+    `<option value="${u.id}">${escapeHtml(u.name)}</option>`
+  ).join("");
+  managedEmployeesLoaded = true;
+}
+
 function openRequestModal(prefill = null) {
   amendingId = prefill?.amendId || null;
   const isAmend = !!amendingId;
+  behalfMode = !!prefill?.behalf && !isAmend;
+
+  document.getElementById("req-behalf-wrap").style.display = behalfMode ? "" : "none";
+  if (behalfMode) loadManagedEmployees();
 
   document.getElementById("request-dialog-title").textContent =
-    isAmend ? "Request amendment" : "Request leave";
+    isAmend ? "Request amendment" : behalfMode ? "Request leave on behalf" : "Request leave";
   document.getElementById("req-submit-btn").textContent =
-    isAmend ? "Request amendment" : "Submit request";
+    isAmend ? "Request amendment" : behalfMode ? "Send to employee" : "Submit request";
 
   if (isAmend) {
     document.getElementById("req-type").value = String(prefill.typeId);
@@ -311,7 +365,8 @@ function openRequestModal(prefill = null) {
   dialog.showModal();
 }
 
-document.getElementById("open-request-btn").addEventListener("click", () => openRequestModal());
+document.getElementById("open-request-btn").addEventListener("click", () =>
+  openRequestModal(activeLeaveTab === "team" && canReviewTeam ? { behalf: true } : null));
 
 document.getElementById("req-cancel-btn").addEventListener("click", () => { amendingId = null; dialog.close(); });
 
@@ -350,6 +405,25 @@ form.addEventListener("submit", async (e) => {
       dialog.close();
       amendingId = null;
       notice("Amendment requested — an admin will review it", "success");
+    } else if (behalfMode) {
+      const targetSel = document.getElementById("req-behalf-user");
+      const targetId = Number(targetSel.value);
+      if (!targetId) throw new Error("Pick an employee to request leave for");
+      const targetName = targetSel.options[targetSel.selectedIndex]?.textContent || "the employee";
+      const { error } = await sb.rpc("submit_leave_request_on_behalf", {
+        p_user_id: targetId,
+        p_leave_type_id: typeId,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_hours_per_day: hoursPerDay,
+        p_skip_weekends: skipWeekends,
+        p_reason: reason,
+      });
+      if (error) throw error;
+      dialog.close();
+      behalfMode = false;
+      notice(`Request sent — awaiting ${targetName}'s acceptance`, "success");
+      loadTeamRequests();
     } else {
       const { error } = await sb.rpc("submit_leave_request", {
         p_leave_type_id: typeId,
@@ -385,7 +459,7 @@ function teamDateRange(r) {
 }
 
 async function loadTeamRequests() {
-  await Promise.all([loadTeamPending(), loadTeamForwarded()]);
+  await Promise.all([loadTeamPending(), loadTeamAwaiting()]);
 }
 
 // pending_manager requests for the caller's managed team. Read via the
@@ -428,10 +502,10 @@ async function loadTeamPending() {
   body.querySelectorAll(".approve-tr-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = Number(btn.closest("tr").dataset.id);
-      if (!await confirmDialog({ title: "Approve leave", message: "Approve this request and send it to an admin for final sign-off?", confirmText: "Approve" })) return;
+      if (!await confirmDialog({ title: "Approve leave", message: "Approve this request? The employee's timesheet will be populated with the leave hours automatically.", confirmText: "Approve" })) return;
       const { error: e } = await sb.rpc("manager_approve_leave_request", { p_request_id: id, p_note: null });
       if (e) return notice(e.message, "error");
-      notice("Approved — sent to admin for final sign-off", "success");
+      notice("Approved — timesheet populated", "success");
       await loadTeamRequests();
     });
   });
@@ -447,13 +521,14 @@ async function loadTeamPending() {
   });
 }
 
-// pending_admin requests this manager already forwarded — read-only.
-async function loadTeamForwarded() {
-  const body = document.getElementById("team-forwarded-body");
+// pending_employee requests raised on behalf — read-only until the
+// employee accepts or declines from their My Requests tab.
+async function loadTeamAwaiting() {
+  const body = document.getElementById("team-awaiting-body");
   if (!body) return;
   const { data, error } = await sb.rpc("list_team_leave_requests", {
     p_org_id: currentOrgId,
-    p_status: "pending_admin",
+    p_status: "pending_employee",
   });
   if (error) {
     body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
@@ -461,7 +536,7 @@ async function loadTeamForwarded() {
   }
   const rows = data || [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Nothing awaiting admin sign-off.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Nothing awaiting employee acceptance.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r) => {

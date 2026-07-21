@@ -69,8 +69,8 @@
         <div class="card">
           <h3 style="margin:0 0 4px">Pending your review</h3>
           <p class="muted small" style="margin:0 0 12px">
-            Approve to send to an admin for final sign-off, or reject to send
-            it back to the employee.
+            Approving adds the leave to the employee's timesheet straight
+            away; rejecting sends it back to the employee.
           </p>
           <div style="overflow-x:auto">
             <table style="table-layout:fixed;width:100%">
@@ -97,9 +97,10 @@
         </div>
 
         <div class="card">
-          <h3 style="margin:0 0 4px">Forwarded to admin</h3>
+          <h3 style="margin:0 0 4px">Awaiting employee acceptance</h3>
           <p class="muted small" style="margin:0 0 12px">
-            You've approved these — they're awaiting an admin's final sign-off.
+            Leave you've requested on behalf of your team — each employee
+            has to accept it from their My Requests tab before it's approved.
           </p>
           <div style="overflow-x:auto">
             <table style="table-layout:fixed;width:100%">
@@ -118,7 +119,7 @@
                   <th></th>
                 </tr>
               </thead>
-              <tbody id="team-forwarded-body">
+              <tbody id="team-awaiting-body">
                 <tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">—</td></tr>
               </tbody>
             </table>
@@ -148,6 +149,12 @@
     <dialog id="request-dialog">
       <form id="request-form" style="padding:24px;width:min(95vw,520px)">
         <h2 style="margin:0 0 16px" id="request-dialog-title">Request leave</h2>
+
+        <!-- On-behalf mode only: which team member the leave is for. -->
+        <div class="mb-sm" id="req-behalf-wrap" style="display:none">
+          <label for="req-behalf-user">Employee</label>
+          <select id="req-behalf-user" style="width:100%"></select>
+        </div>
 
         <div class="mb-sm">
           <label for="req-type">Leave type</label>

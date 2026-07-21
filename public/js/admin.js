@@ -970,8 +970,11 @@ document.querySelectorAll("[data-lv-view]").forEach((btn) => {
     lvSubView = btn.dataset.lvView;
     document.getElementById("lv-waged").style.display = lvSubView === "waged" ? "" : "none";
     document.getElementById("lv-salaried").style.display = lvSubView === "salaried" ? "" : "none";
+    document.getElementById("lv-custom").style.display = lvSubView === "custom" ? "" : "none";
+    closeLvcMenu();
     if (lvSubView === "waged") loadWagedReport();
     if (lvSubView === "salaried") loadSalariedReport();
+    if (lvSubView === "custom" && !lvCustomLoaded) loadCustomReport();
   });
 });
 
@@ -1357,12 +1360,12 @@ function renderLvRows(previewId, rows) {
   });
 }
 
-async function lvExportToExcel(rows, filename) {
-  const sorted = sortLvRows(rows);
-  const headers = ["Employee", "Employee Code", "Department", "Date", "Event", "Detail", "Description", "Note", "Hours"];
+async function lvExportToExcel(rows, filename, opts = {}) {
+  const sorted = sortLvRows(rows, opts.previewId);
+  const headers = ["Employee", "Employee Code", "Department", ...(opts.includeType ? ["Employment Type"] : []), "Date", "Event", "Detail", "Description", "Note", "Hours"];
   const wsData = [headers];
   for (const r of sorted) {
-    wsData.push([r.employee, r.employee_code, r.department, r.date, r.event, r.event_detail, r.event_description, r.note, r.hours]);
+    wsData.push([r.employee, r.employee_code, r.department, ...(opts.includeType ? [r.employment_type] : []), r.date, r.event, r.event_detail, r.event_description, r.note, r.hours]);
   }
   const XLSX = await getXLSX();
   const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -1375,8 +1378,8 @@ async function lvExportToExcel(rows, filename) {
 // can mark off each row as they enter it into payroll. Title and period
 // label come from the caller so the same function serves waged-weekly and
 // salaried-monthly views.
-async function lvExportToPdf(rows, filename, { title, periodLabel }) {
-  const sorted = sortLvRows(rows);
+async function lvExportToPdf(rows, filename, { title, periodLabel, includeType, previewId }) {
+  const sorted = sortLvRows(rows, previewId);
   const { jsPDF, autoTable } = await getPdf();
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -1400,18 +1403,24 @@ async function lvExportToPdf(rows, filename, { title, periodLabel }) {
   doc.text(summary, 40, 76);
   doc.setTextColor(0);
 
-  const head = [["Logged", "Employee", "Code", "Department", "Date", "Event", "Detail", "Note", "Hours"]];
-  const body = sorted.map((r) => [
-    "",  // empty cell to tick by hand; checkbox glyph drawn via didDrawCell
-    r.employee || "",
-    r.employee_code || "",
-    r.department || "",
-    r.date_display || r.date || "",
-    r.event || "",
-    r.event_detail || "",
-    r.note || "",
-    String(r.hours ?? ""),
-  ]);
+  // Column spec built as an array so the optional Employment Type column
+  // (custom report) slots in without shifting hand-numbered style keys.
+  const colSpec = [
+    { title: "Logged", style: { cellWidth: 40, halign: "center" }, val: () => "" },
+    { title: "Employee", style: { cellWidth: 110 }, val: (r) => r.employee || "" },
+    { title: "Code", style: { cellWidth: 50 }, val: (r) => r.employee_code || "" },
+    { title: "Department", style: { cellWidth: includeType ? 80 : 90 }, val: (r) => r.department || "" },
+    ...(includeType ? [{ title: "Type", style: { cellWidth: 55 }, val: (r) => r.employment_type ? r.employment_type[0].toUpperCase() + r.employment_type.slice(1) : "" }] : []),
+    { title: "Date", style: { cellWidth: 80 }, val: (r) => r.date_display || r.date || "" },
+    { title: "Event", style: { cellWidth: 60 }, val: (r) => r.event || "" },
+    { title: "Detail", style: { cellWidth: 50 }, val: (r) => r.event_detail || "" },
+    { title: "Note", style: { cellWidth: "auto" }, val: (r) => r.note || "" },
+    { title: "Hours", style: { cellWidth: 50, halign: "right", fontStyle: "bold" }, val: (r) => String(r.hours ?? "") },
+  ];
+  const head = [colSpec.map((c) => c.title)];
+  const body = sorted.map((r) => colSpec.map((c) => c.val(r)));
+  const columnStyles = {};
+  colSpec.forEach((c, i) => { columnStyles[i] = c.style; });
 
   autoTable(doc, {
     head,
@@ -1421,17 +1430,7 @@ async function lvExportToPdf(rows, filename, { title, periodLabel }) {
     styles: { fontSize: 9, cellPadding: 4, lineColor: [220, 220, 220], lineWidth: 0.5 },
     headStyles: { fillColor: [190, 250, 64], textColor: [10, 10, 10], fontStyle: "bold" },
     alternateRowStyles: { fillColor: [248, 248, 248] },
-    columnStyles: {
-      0: { cellWidth: 40, halign: "center" },   // Logged checkbox
-      1: { cellWidth: 110 },                    // Employee
-      2: { cellWidth: 50 },                     // Code
-      3: { cellWidth: 90 },                     // Department
-      4: { cellWidth: 80 },                     // Date
-      5: { cellWidth: 60 },                     // Event
-      6: { cellWidth: 50 },                     // Detail
-      7: { cellWidth: "auto" },                 // Note
-      8: { cellWidth: 50, halign: "right", fontStyle: "bold" },  // Hours
-    },
+    columnStyles,
     // Draw an empty square in the Logged column so admins can tick by hand
     // (printed copy) or via a PDF annotator (digital copy).
     didDrawCell: (data) => {
@@ -1612,6 +1611,503 @@ document.getElementById("lv-sal-export-pdf-btn").addEventListener("click", async
     });
     statusEl.textContent = "Done";
     notice(`Exported ${lvSalariedRows.length} entries`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
+});
+
+/* ---------- Custom report (Excel-style column filters) ---------- */
+
+// All leave + overtime rows over an arbitrary date range, filterable per
+// column like the Orders-page filters in the ERP: clicking a header opens
+// a menu with two sort options, a Clear link, and a filter whose type
+// matches the column (checkbox list, contains box, min/max, or a
+// year → month → day date tree). Filters combine across columns, apply
+// instantly, and the totals tiles + exports follow the filtered set.
+// The dataset is fetched once per range and filtered client-side — at
+// PTL's scale (~70 staff) that's a few thousand rows at most.
+
+let lvCustomRaw = [];
+let lvCustomLoaded = false;
+let lvcRangeFrom = null;
+let lvcRangeTo = null;
+
+const LVC_COLS = [
+  { key: "employee",        label: "Employee",   type: "list" },
+  { key: "employee_code",   label: "Code",       type: "text" },
+  { key: "department",      label: "Department", type: "list" },
+  { key: "employment_type", label: "Type",       type: "list" },
+  { key: "date",            label: "Date",       type: "date",   sortA: "Sort oldest first",   sortD: "Sort newest first" },
+  { key: "event",           label: "Event",      type: "list" },
+  { key: "event_detail",    label: "Detail",     type: "list" },
+  { key: "note",            label: "Note",       type: "text" },
+  { key: "hours",           label: "Hours",      type: "number", sortA: "Sort smallest first", sortD: "Sort largest first" },
+];
+
+// Selected values per column. Empty set / blank text / null bounds = no
+// filter on that column.
+const lvcSel = { employee: new Set(), department: new Set(), employment_type: new Set(), event: new Set(), event_detail: new Set(), date: new Set() };
+const lvcText = { employee_code: "", note: "" };
+const lvcNum = { hours: { min: null, max: null } };
+// Which years/months are expanded in the date tree ("2026", "2026-07").
+const lvcDateExpand = new Set();
+
+function lvcTypeLabel(v) {
+  return v ? v[0].toUpperCase() + v.slice(1) : "(blank)";
+}
+
+function lvcFilterCount(col) {
+  if (col.type === "list" || col.type === "date") return lvcSel[col.key].size;
+  if (col.type === "text") return lvcText[col.key].trim() ? 1 : 0;
+  if (col.type === "number") {
+    const { min, max } = lvcNum[col.key];
+    return (min != null ? 1 : 0) + (max != null ? 1 : 0);
+  }
+  return 0;
+}
+
+function lvcFilteredRows() {
+  return lvCustomRaw.filter((r) => {
+    for (const key of Object.keys(lvcSel)) {
+      const sel = lvcSel[key];
+      if (sel.size && !sel.has(String(r[key] ?? ""))) return false;
+    }
+    for (const key of Object.keys(lvcText)) {
+      const q = lvcText[key].trim().toLowerCase();
+      if (q && !String(r[key] || "").toLowerCase().includes(q)) return false;
+    }
+    const { min, max } = lvcNum.hours;
+    if (min != null && !(Number(r.hours) >= min)) return false;
+    if (max != null && !(Number(r.hours) <= max)) return false;
+    return true;
+  });
+}
+
+function renderLvcTiles(rows) {
+  const el = document.getElementById("lv-cust-tiles");
+  if (!el) return;
+  const sum = (a) => a.reduce((s, r) => s + Number(r.hours || 0), 0);
+  const leave = rows.filter((r) => r.event === "Leave");
+  const ot = rows.filter((r) => r.event === "Overtime");
+  const tile = (num, lbl) => `<div class="tile"><div class="num">${num}</div><div class="lbl">${lbl}</div></div>`;
+  el.innerHTML =
+    tile(rows.length, "Entries") +
+    tile(fmtHours(sum(leave)), "Leave hours") +
+    tile(fmtHours(sum(ot)), "Overtime hours") +
+    tile(fmtHours(sum(rows)), "Total hours");
+}
+
+function lvcRender() {
+  const preview = document.getElementById("lv-cust-preview");
+  if (!preview || !lvCustomLoaded) return;
+  const rows = sortLvRows(lvcFilteredRows(), "lv-cust-preview");
+
+  const ths = LVC_COLS.map((c) => {
+    const n = lvcFilterCount(c);
+    const badge = n ? ` <span class="lv-hdr-badge">· ${n}</span>` : "";
+    return `<th class="${c.key === "hours" ? "num " : ""}lvc-hdr" data-col="${c.key}" style="cursor:pointer;user-select:none;white-space:nowrap" title="Sort / filter">${c.label}${badge}${lvSortArrow(c.key, "lv-cust-preview")}</th>`;
+  }).join("");
+
+  // Filtered-to-empty still renders the header row so a menu can be
+  // reopened to clear the filter.
+  const bodyHtml = rows.length
+    ? rows.map((r) => `
+        <tr class="${r.event === "Overtime" ? "lv-row-ot" : ""}">
+          <td>${escapeHtml(r.employee)}</td>
+          <td>${escapeHtml(r.employee_code)}</td>
+          <td>${escapeHtml(r.department)}</td>
+          <td>${escapeHtml(r.employment_type ? lvcTypeLabel(r.employment_type) : "")}</td>
+          <td class="nowrap">${escapeHtml(r.date_display)}</td>
+          <td><strong>${escapeHtml(r.event)}</strong></td>
+          <td>${escapeHtml(r.event_detail)}</td>
+          <td>${escapeHtml(r.note)}</td>
+          <td class="num"><strong>${fmtHours(r.hours)}</strong></td>
+        </tr>`).join("")
+    : `<tr><td colspan="${LVC_COLS.length}" class="muted small" style="text-align:center;padding:16px">No rows match the current filters.</td></tr>`;
+
+  preview.innerHTML = `
+    <table class="small lv-sortable">
+      <thead><tr>${ths}</tr></thead>
+      <tbody>${bodyHtml}</tbody>
+    </table>`;
+
+  preview.querySelectorAll(".lvc-hdr").forEach((th) => {
+    th.addEventListener("click", () => openLvcMenu(th.dataset.col, th));
+  });
+
+  renderLvcTiles(rows);
+}
+
+/* ----- the filter menu ----- */
+
+let lvcMenu = null;
+let lvcMenuCol = null;
+
+function closeLvcMenu() {
+  if (lvcMenu) { lvcMenu.remove(); lvcMenu = null; lvcMenuCol = null; }
+}
+
+// Outside click / Escape closes the menu. Clicks inside keep it open so a
+// multi-value selection can be built up.
+document.addEventListener("pointerdown", (e) => {
+  if (lvcMenu && !lvcMenu.contains(e.target) && !e.target.closest(".lvc-hdr")) closeLvcMenu();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLvcMenu(); });
+
+function lvcDebounce(fn, ms = 250) {
+  let t = null;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+function openLvcMenu(colKey, th) {
+  if (lvcMenuCol === colKey) { closeLvcMenu(); return; }
+  closeLvcMenu();
+  const col = LVC_COLS.find((c) => c.key === colKey);
+  if (!col) return;
+
+  const menu = document.createElement("div");
+  menu.className = "lv-filter-menu";
+
+  const sortA = col.sortA || "Sort A → Z";
+  const sortD = col.sortD || "Sort Z → A";
+  const head = document.createElement("div");
+  head.innerHTML = `
+    <button type="button" class="lvm-sort" data-dir="asc">${sortA}</button>
+    <button type="button" class="lvm-sort" data-dir="desc">${sortD}</button>
+    <hr />
+    <div class="lvm-head">
+      <strong class="small">${col.label}</strong>
+      <a href="#" class="small lvm-clear">Clear</a>
+    </div>`;
+  menu.appendChild(head);
+
+  head.querySelectorAll(".lvm-sort").forEach((b) => {
+    b.addEventListener("click", () => {
+      const s = getLvSortState("lv-cust-preview");
+      s.col = colKey;
+      s.asc = b.dataset.dir === "asc";
+      closeLvcMenu();   // picking a sort closes the menu, like Excel
+      lvcRender();
+    });
+  });
+  head.querySelector(".lvm-clear").addEventListener("click", (e) => {
+    e.preventDefault();
+    if (col.type === "list" || col.type === "date") lvcSel[colKey].clear();
+    else if (col.type === "text") lvcText[colKey] = "";
+    else if (col.type === "number") lvcNum[colKey] = { min: null, max: null };
+    lvcRender();
+    // Rebuild the menu body so its controls reflect the cleared state.
+    const reopenTh = document.querySelector(`.lvc-hdr[data-col="${colKey}"]`);
+    if (reopenTh) { lvcMenuCol = null; openLvcMenu(colKey, reopenTh); }
+  });
+
+  const bodyEl = document.createElement("div");
+  menu.appendChild(bodyEl);
+  if (col.type === "list") lvcBuildListBody(bodyEl, col);
+  else if (col.type === "text") lvcBuildTextBody(bodyEl, col);
+  else if (col.type === "number") lvcBuildNumberBody(bodyEl, col);
+  else if (col.type === "date") lvcBuildDateBody(bodyEl);
+
+  document.body.appendChild(menu);
+  lvcMenu = menu;
+  lvcMenuCol = colKey;
+
+  // Fixed positioning under the clicked header, clamped to the viewport.
+  const rect = th.getBoundingClientRect();
+  const width = col.type === "date" ? 300 : 270;
+  menu.style.width = width + "px";
+  menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) + "px";
+  const top = rect.bottom + 4;
+  menu.style.top = top + "px";
+  menu.style.maxHeight = Math.max(180, window.innerHeight - top - 12) + "px";
+}
+
+// Checkbox list of the values that actually exist in the loaded data,
+// with row counts and (when long) a search box. Employees are labelled
+// "Name (CODE)" like the ERP's Officer filter.
+function lvcBuildListBody(bodyEl, col) {
+  const counts = new Map();
+  const codeByEmployee = new Map();
+  for (const r of lvCustomRaw) {
+    const v = String(r[col.key] ?? "");
+    counts.set(v, (counts.get(v) || 0) + 1);
+    if (col.key === "employee" && r.employee_code) codeByEmployee.set(v, r.employee_code);
+  }
+  const values = [...counts.keys()].sort((a, b) => a.localeCompare(b));
+  const display = (v) => {
+    if (!v) return "(blank)";
+    if (col.key === "employee" && codeByEmployee.get(v)) return `${v} (${codeByEmployee.get(v)})`;
+    if (col.key === "employment_type") return lvcTypeLabel(v);
+    return v;
+  };
+
+  const listEl = document.createElement("div");
+  listEl.className = "lvm-list";
+
+  const renderItems = (filterText) => {
+    const q = (filterText || "").toLowerCase();
+    listEl.innerHTML = values
+      .filter((v) => !q || display(v).toLowerCase().includes(q))
+      .map((v) => `
+        <label class="lvm-item">
+          <input type="checkbox" data-val="${escapeHtml(v)}" ${lvcSel[col.key].has(v) ? "checked" : ""} />
+          <span class="grow">${escapeHtml(display(v))}</span>
+          <span class="muted small">${counts.get(v)}</span>
+        </label>`).join("") || `<div class="muted small" style="padding:8px">No matches</div>`;
+    listEl.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const val = cb.dataset.val;
+        if (cb.checked) lvcSel[col.key].add(val);
+        else lvcSel[col.key].delete(val);
+        lvcRender();   // menu stays open — keep building the selection
+      });
+    });
+  };
+
+  if (values.length > 8) {
+    const search = document.createElement("input");
+    search.type = "search";
+    search.placeholder = "Search…";
+    search.className = "lvm-search";
+    search.addEventListener("input", () => renderItems(search.value));
+    bodyEl.appendChild(search);
+  }
+  bodyEl.appendChild(listEl);
+  renderItems("");
+}
+
+function lvcBuildTextBody(bodyEl, col) {
+  const input = document.createElement("input");
+  input.type = "search";
+  input.placeholder = "Contains…";
+  input.className = "lvm-search";
+  input.value = lvcText[col.key];
+  input.addEventListener("input", lvcDebounce(() => {
+    lvcText[col.key] = input.value;
+    lvcRender();   // input lives in the menu, so focus survives the table re-render
+  }));
+  bodyEl.appendChild(input);
+}
+
+function lvcBuildNumberBody(bodyEl, col) {
+  bodyEl.innerHTML = `
+    <div class="row-flex" style="gap:8px;padding:4px 8px 8px">
+      <div class="grow"><label class="small muted">Min</label>
+        <input type="number" step="0.25" class="lvm-num" data-bound="min" style="width:100%" value="${lvcNum[col.key].min ?? ""}"></div>
+      <div class="grow"><label class="small muted">Max</label>
+        <input type="number" step="0.25" class="lvm-num" data-bound="max" style="width:100%" value="${lvcNum[col.key].max ?? ""}"></div>
+    </div>`;
+  bodyEl.querySelectorAll(".lvm-num").forEach((input) => {
+    input.addEventListener("input", lvcDebounce(() => {
+      const v = input.value === "" ? null : Number(input.value);
+      lvcNum[col.key][input.dataset.bound] = Number.isFinite(v) ? v : null;
+      lvcRender();
+    }));
+  });
+}
+
+/* ----- date tree: year → month → day, covering EVERY day in the loaded
+   range (not just days that have entries), per the spec ----- */
+
+function lvcAllDates() {
+  const out = [];
+  if (!lvcRangeFrom || !lvcRangeTo) return out;
+  let d = new Date(lvcRangeFrom + "T00:00:00");
+  const end = new Date(lvcRangeTo + "T00:00:00");
+  while (d <= end) { out.push(fmtDate(d)); d = addDays(d, 1); }
+  return out;
+}
+
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function lvcBuildDateBody(bodyEl) {
+  const treeEl = document.createElement("div");
+  treeEl.className = "lvm-list lvm-tree";
+  bodyEl.appendChild(treeEl);
+
+  // years → months → days, from the full range.
+  const tree = new Map();  // "2026" → Map("2026-07" → ["2026-07-01", …])
+  for (const iso of lvcAllDates()) {
+    const y = iso.slice(0, 4), ym = iso.slice(0, 7);
+    if (!tree.has(y)) tree.set(y, new Map());
+    const months = tree.get(y);
+    if (!months.has(ym)) months.set(ym, []);
+    months.get(ym).push(iso);
+  }
+  // Years expanded by default so the months are immediately visible.
+  for (const y of tree.keys()) lvcDateExpand.add(y);
+
+  const sel = lvcSel.date;
+  const stateOf = (dates) => {
+    let on = 0;
+    for (const d of dates) if (sel.has(d)) on++;
+    return on === 0 ? "none" : on === dates.length ? "all" : "some";
+  };
+
+  const renderTree = () => {
+    const scroll = treeEl.scrollTop;
+    let html = "";
+    for (const [y, months] of tree) {
+      const yDates = [...months.values()].flat();
+      const yState = stateOf(yDates);
+      const yOpen = lvcDateExpand.has(y);
+      html += `
+        <div class="lvm-tree-row">
+          <span class="lvm-expander" data-node="${y}">${yOpen ? "▾" : "▸"}</span>
+          <label class="lvm-item grow" style="padding:2px 4px">
+            <input type="checkbox" data-dates="${y}" ${yState === "all" ? "checked" : ""} data-ind="${yState === "some"}" />
+            <span class="grow"><strong>${y}</strong></span>
+          </label>
+        </div>`;
+      if (!yOpen) continue;
+      for (const [ym, dates] of months) {
+        const mState = stateOf(dates);
+        const mOpen = lvcDateExpand.has(ym);
+        const mName = MONTH_NAMES[Number(ym.slice(5, 7)) - 1];
+        html += `
+          <div class="lvm-tree-row" style="padding-left:20px">
+            <span class="lvm-expander" data-node="${ym}">${mOpen ? "▾" : "▸"}</span>
+            <label class="lvm-item grow" style="padding:2px 4px">
+              <input type="checkbox" data-dates="${ym}" ${mState === "all" ? "checked" : ""} data-ind="${mState === "some"}" />
+              <span class="grow">${mName}</span>
+            </label>
+          </div>`;
+        if (mOpen) {
+          html += `<div class="lvm-days">` + dates.map((iso) =>
+            `<button type="button" class="lv-day-chip ${sel.has(iso) ? "on" : ""}" data-date="${iso}">${Number(iso.slice(8, 10))}</button>`
+          ).join("") + `</div>`;
+        }
+      }
+    }
+    treeEl.innerHTML = html;
+    treeEl.scrollTop = scroll;
+
+    treeEl.querySelectorAll("input[data-ind=true]").forEach((cb) => { cb.indeterminate = true; });
+
+    treeEl.querySelectorAll(".lvm-expander").forEach((ex) => {
+      ex.addEventListener("click", () => {
+        const node = ex.dataset.node;
+        if (lvcDateExpand.has(node)) lvcDateExpand.delete(node);
+        else lvcDateExpand.add(node);
+        renderTree();
+      });
+    });
+
+    treeEl.querySelectorAll("input[data-dates]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const prefix = cb.dataset.dates;
+        const dates = prefix.length === 4
+          ? [...(tree.get(prefix)?.values() || [])].flat()
+          : tree.get(prefix.slice(0, 4))?.get(prefix) || [];
+        if (cb.checked) dates.forEach((d) => sel.add(d));
+        else dates.forEach((d) => sel.delete(d));
+        renderTree();   // refresh tri-states
+        lvcRender();
+      });
+    });
+
+    treeEl.querySelectorAll(".lv-day-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const iso = chip.dataset.date;
+        if (sel.has(iso)) sel.delete(iso);
+        else sel.add(iso);
+        renderTree();
+        lvcRender();
+      });
+    });
+  };
+
+  renderTree();
+}
+
+/* ----- data load + wiring ----- */
+
+async function loadCustomReport() {
+  const fromEl = document.getElementById("lv-cust-from");
+  const toEl = document.getElementById("lv-cust-to");
+  const preview = document.getElementById("lv-cust-preview");
+  const from = fromEl.value, to = toEl.value;
+  if (!from || !to) return notice("Pick both From and To dates", "warn");
+  if (to < from) return notice("The To date is before the From date", "warn");
+
+  closeLvcMenu();
+  preview.innerHTML = skeletonBlock();
+  try {
+    // Every Monday whose week overlaps the range. Fetched in small chunks
+    // of weeks so no single timesheets/entries query nears Supabase's
+    // 1000-row cap (which truncates silently).
+    const mondays = [];
+    let m = getMonday(new Date(from + "T00:00:00"));
+    const endD = new Date(to + "T00:00:00");
+    while (m <= endD) { mondays.push(fmtDate(m)); m = addDays(m, 7); }
+
+    const drafts = document.getElementById("lv-cust-include-drafts").checked;
+    const all = [];
+    const WEEK_CHUNK = 6;
+    for (let i = 0; i < mondays.length; i += WEEK_CHUNK) {
+      all.push(...await buildLeaveRowsForWeeks(mondays.slice(i, i + WEEK_CHUNK), null, drafts));
+    }
+    // Weeks overhang the range at both ends — clip to the exact days.
+    lvCustomRaw = all.filter((r) => r.date >= from && r.date <= to);
+    lvcRangeFrom = from;
+    lvcRangeTo = to;
+    // Drop date selections that fell outside the new range.
+    for (const d of [...lvcSel.date]) if (d < from || d > to) lvcSel.date.delete(d);
+    lvCustomLoaded = true;
+    lvcRender();
+  } catch (err) {
+    preview.innerHTML = `<p class="muted small" style="text-align:center;color:#c00">${escapeHtml(err.message || "Load failed")}</p>`;
+  }
+}
+
+// Defaults: start of the current year through today.
+{
+  const today = new Date();
+  const fromEl = document.getElementById("lv-cust-from");
+  const toEl = document.getElementById("lv-cust-to");
+  if (fromEl && toEl) {
+    fromEl.value = `${today.getFullYear()}-01-01`;
+    toEl.value = fmtDate(today);
+  }
+}
+
+document.getElementById("lv-cust-load")?.addEventListener("click", loadCustomReport);
+document.getElementById("lv-cust-include-drafts")?.addEventListener("change", () => { if (lvCustomLoaded) loadCustomReport(); });
+
+document.getElementById("lv-cust-clear")?.addEventListener("click", () => {
+  for (const k of Object.keys(lvcSel)) lvcSel[k].clear();
+  for (const k of Object.keys(lvcText)) lvcText[k] = "";
+  lvcNum.hours = { min: null, max: null };
+  closeLvcMenu();
+  lvcRender();
+});
+
+document.getElementById("lv-cust-export-btn")?.addEventListener("click", async () => {
+  const statusEl = document.getElementById("lv-cust-status");
+  statusEl.textContent = "Generating…";
+  try {
+    if (!lvCustomLoaded) await loadCustomReport();
+    const rows = lvcFilteredRows();
+    await lvExportToExcel(rows, `leave-overtime-custom-${lvcRangeFrom}-to-${lvcRangeTo}.xlsx`, { includeType: true, previewId: "lv-cust-preview" });
+    statusEl.textContent = "Done";
+    notice(`Exported ${rows.length} entries`, "success");
+    setTimeout(() => statusEl.textContent = "", 3000);
+  } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
+});
+
+document.getElementById("lv-cust-export-pdf-btn")?.addEventListener("click", async () => {
+  const statusEl = document.getElementById("lv-cust-status");
+  statusEl.textContent = "Generating…";
+  try {
+    if (!lvCustomLoaded) await loadCustomReport();
+    const rows = lvcFilteredRows();
+    await lvExportToPdf(rows, `leave-overtime-custom-${lvcRangeFrom}-to-${lvcRangeTo}.pdf`, {
+      title: "PTL — Leave / Overtime Report (Custom)",
+      periodLabel: `${lvcRangeFrom} → ${lvcRangeTo}`,
+      includeType: true,
+      previewId: "lv-cust-preview",
+    });
+    statusEl.textContent = "Done";
+    notice(`Exported ${rows.length} entries`, "success");
     setTimeout(() => statusEl.textContent = "", 3000);
   } catch (err) { notice(err.message || "Export failed", "error"); statusEl.textContent = ""; }
 });
@@ -1907,14 +2403,15 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
 
 /* ---------------------------------------------------------------- leave queue */
 
-// Admin leave queue — full org visibility plus final approve/reject.
-// Final approval (approve_leave_request) populates the employee's
-// timesheet with the leave hours; admins can also approve a request
-// still at pending_manager as an override (migration 129).
+// Admin leave queue — full org visibility plus approve/reject.
+// Approval is single-step (migration 150): approving here — or a manager
+// approving from their Leave page — populates the employee's timesheet
+// immediately. pending_admin is a legacy status kept for old rows.
 function adminLeaveStatusBadge(status) {
   switch (status) {
-    case "pending_manager": return `<span class="dept-badge dept-badge-draft">Pending manager</span>`;
-    case "pending_admin":   return `<span class="dept-badge dept-badge-submitted">Pending admin</span>`;
+    case "pending_employee": return `<span class="dept-badge dept-badge-submitted">Awaiting employee</span>`;
+    case "pending_manager": return `<span class="dept-badge dept-badge-draft">Pending</span>`;
+    case "pending_admin":   return `<span class="dept-badge dept-badge-draft">Pending</span>`;
     case "approved":        return `<span class="dept-badge dept-badge-approved">Approved</span>`;
     case "rejected":        return `<span class="dept-badge dept-badge-rejected">Rejected</span>`;
     case "cancelled":       return `<span class="dept-badge dept-badge-none">Cancelled</span>`;
@@ -1922,7 +2419,7 @@ function adminLeaveStatusBadge(status) {
   }
 }
 
-// Sub-tab: "approvals" (pending_admin action queue) | "all" (history).
+// Sub-tab: "approvals" (pending action queue) | "changes" | "all" (history).
 let alSubView = "approvals";
 
 document.querySelectorAll("[data-al-view]").forEach((btn) => {
@@ -1950,14 +2447,16 @@ async function loadAdminLeave() {
     .eq("organisation_id", currentOrgId);
 
   if (alSubView === "approvals") {
-    // Action queue — only what's waiting on the admin.
-    query = query.eq("status", "pending_admin");
+    // Action queue — anything still awaiting an approval decision.
+    // pending_admin only exists on legacy rows but is kept for safety.
+    query = query.in("status", ["pending_manager", "pending_admin"]);
   } else if (alSubView === "changes") {
     // Approved leave with an employee cancel/amend request.
     query = query.eq("status", "approved").not("change_request_type", "is", null);
   } else {
     const filter = filterEl?.value || "all";
-    if (filter !== "all") query = query.eq("status", filter);
+    if (filter === "pending") query = query.in("status", ["pending_manager", "pending_admin"]);
+    else if (filter !== "all") query = query.eq("status", filter);
   }
 
   const { data, error } = await query.order("created_at", { ascending: false });
@@ -2111,7 +2610,7 @@ async function loadAdminLeave() {
 async function refreshAdminLeaveBadge() {
   const [pendingRes, changeRes] = await Promise.all([
     sb.from("leave_requests").select("id", { count: "exact", head: true })
-      .eq("organisation_id", currentOrgId).eq("status", "pending_admin"),
+      .eq("organisation_id", currentOrgId).in("status", ["pending_manager", "pending_admin"]),
     sb.from("leave_requests").select("id", { count: "exact", head: true })
       .eq("organisation_id", currentOrgId).eq("status", "approved")
       .not("change_request_type", "is", null),
