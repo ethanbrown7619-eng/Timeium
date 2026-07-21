@@ -131,7 +131,7 @@ async function loadRequests() {
     if (r.status === "pending_employee") noteParts.push(`<em class="small" style="color:var(--warning)">Requested on your behalf${r.requested_by_user?.name ? ` by ${escapeHtml(r.requested_by_user.name)}` : ""} — accept or decline via ⋯</em>`);
     if (r.manager_review_note) noteParts.push(`<em class="muted small">Manager: ${escapeHtml(r.manager_review_note)}</em>`);
     if (r.review_note)         noteParts.push(`<em class="muted small">Reviewer: ${escapeHtml(r.review_note)}</em>`);
-    if (r.change_request_type) noteParts.push(`<em class="small" style="color:var(--warning)">${r.change_request_type === "cancel" ? "Cancellation" : "Amendment"} requested — awaiting admin</em>`);
+    if (r.change_request_type) noteParts.push(`<em class="small" style="color:var(--warning)">${r.change_request_type === "cancel" ? "Cancellation" : "Amendment"} requested — awaiting your manager</em>`);
     const reasonCell = noteParts.length ? noteParts.join("<br>") : `<span class="muted small">—</span>`;
 
     const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
@@ -240,13 +240,13 @@ async function onMenuAction(act, id) {
   } else if (act === "req-cancel") {
     const ok = await confirmDialog({
       title: "Request cancellation",
-      message: "This leave is already approved and on your timesheet. Ask an admin to cancel it?",
+      message: "This leave is already approved and on your timesheet. Ask your manager to cancel it?",
       confirmText: "Request cancellation",
     });
     if (!ok) return;
     const { error } = await sb.rpc("request_leave_change", { p_request_id: id, p_type: "cancel", p_note: null });
     if (error) return notice(error.message, "error");
-    notice("Cancellation requested — an admin will action it", "success");
+    notice("Cancellation requested — your manager will action it", "success");
     await loadRequests();
   } else if (act === "req-amend") {
     // Open the request modal pre-filled with the current leave so the
@@ -404,7 +404,7 @@ form.addEventListener("submit", async (e) => {
       if (error) throw error;
       dialog.close();
       amendingId = null;
-      notice("Amendment requested — an admin will review it", "success");
+      notice("Amendment requested — your manager will review it", "success");
     } else if (behalfMode) {
       const targetSel = document.getElementById("req-behalf-user");
       const targetId = Number(targetSel.value);
@@ -447,11 +447,21 @@ form.addEventListener("submit", async (e) => {
 
 // ---------------------------------------------------------------- team review
 
-function setTeamCountBadge(n) {
-  const badge = document.getElementById("leave-team-count");
+// The Team tab badge counts everything waiting on the manager: pending
+// approvals plus change requests. Each loader updates its slice and
+// re-renders the combined badge.
+const teamCounts = { pending: 0, changes: 0 };
+
+function setBadgeEl(id, n) {
+  const badge = document.getElementById(id);
   if (!badge) return;
   if (n > 0) { badge.textContent = String(n); badge.style.display = ""; }
   else { badge.style.display = "none"; }
+}
+
+function setTeamCountBadge() {
+  setBadgeEl("leave-team-count", teamCounts.pending + teamCounts.changes);
+  setBadgeEl("leave-changes-count", teamCounts.changes);
 }
 
 function teamDateRange(r) {
@@ -459,7 +469,7 @@ function teamDateRange(r) {
 }
 
 async function loadTeamRequests() {
-  await Promise.all([loadTeamPending(), loadTeamAwaiting()]);
+  await Promise.all([loadTeamPending(), loadTeamChanges(), loadTeamAwaiting()]);
 }
 
 // pending_manager requests for the caller's managed team. Read via the
@@ -477,7 +487,8 @@ async function loadTeamPending() {
     return;
   }
   const rows = data || [];
-  setTeamCountBadge(rows.length);
+  teamCounts.pending = rows.length;
+  setTeamCountBadge();
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
     return;
@@ -521,6 +532,83 @@ async function loadTeamPending() {
   });
 }
 
+// Cancellation/amendment requests on approved leave for the manager's
+// team (migration 152). Apply swaps in the proposed values, Revoke pulls
+// the leave off the timesheet, Dismiss keeps the leave as-is.
+async function loadTeamChanges() {
+  const body = document.getElementById("team-changes-body");
+  if (!body) return;
+  const { data, error } = await sb.rpc("list_team_leave_change_requests", { p_org_id: currentOrgId });
+  if (error) {
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    return;
+  }
+  const rows = data || [];
+  teamCounts.changes = rows.length;
+  setTeamCountBadge();
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No cancellation or amendment requests.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows.map((r) => {
+    const isAmend = r.change_request_type === "amend" && r.proposed_start_date;
+    const label = r.change_request_type === "cancel" ? "Cancellation" : "Amendment";
+    let detail = r.change_request_note ? `: ${escapeHtml(r.change_request_note)}` : "";
+    if (isAmend) {
+      const pRange = r.proposed_start_date === r.proposed_end_date
+        ? r.proposed_start_date : `${r.proposed_start_date} → ${r.proposed_end_date}`;
+      const pTotal = leaveTotalHours(r.proposed_start_date, r.proposed_end_date, r.proposed_hours_per_day, r.proposed_skip_weekends);
+      const pType = r.proposed_leave_type_name && r.proposed_leave_type_name !== r.leave_type_name
+        ? `${escapeHtml(r.proposed_leave_type_name)}, ` : "";
+      detail = ` → change to ${pType}${escapeHtml(pRange)}, ${fmtHours(r.proposed_hours_per_day)}h/day (${fmtHours(pTotal)}h total)`;
+    }
+    return `
+    <tr data-id="${r.id}">
+      <td>${escapeHtml(r.employee_name || "")}</td>
+      <td>${escapeHtml(r.leave_type_name || "")}</td>
+      <td class="small">${teamDateRange(r)}</td>
+      <td class="num">${fmtHours(r.hours_per_day)}</td>
+      <td class="small"><em style="color:var(--warning)">${label} requested</em>${detail}</td>
+      <td style="white-space:nowrap">
+        ${isAmend ? `<button class="small apply-tc-btn">Apply</button>` : ""}
+        <button class="${isAmend ? "ghost " : ""}small revoke-tc-btn">Revoke</button>
+        <button class="ghost small dismiss-tc-btn">Dismiss</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  body.querySelectorAll(".apply-tc-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Apply amendment", message: "Apply the employee's proposed changes? The old leave hours are removed from their timesheet and the new ones populated.", confirmText: "Apply" })) return;
+      const { error: e } = await sb.rpc("apply_leave_amendment", { p_request_id: id });
+      if (e) return notice(e.message, "error");
+      notice("Amendment applied", "success");
+      await loadTeamRequests();
+    });
+  });
+  body.querySelectorAll(".revoke-tc-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Revoke leave", message: "Cancel this approved leave and remove the hours from the employee's timesheet?", confirmText: "Revoke", danger: true })) return;
+      const { error: e } = await sb.rpc("revoke_leave_request", { p_request_id: id, p_note: null });
+      if (e) return notice(e.message, "error");
+      notice("Leave revoked and removed from timesheet", "success");
+      await loadTeamRequests();
+    });
+  });
+  body.querySelectorAll(".dismiss-tc-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.closest("tr").dataset.id);
+      if (!await confirmDialog({ title: "Dismiss change request", message: "Clear the change request and keep the leave as approved?", confirmText: "Dismiss" })) return;
+      const { error: e } = await sb.rpc("dismiss_leave_change_request", { p_request_id: id });
+      if (e) return notice(e.message, "error");
+      notice("Change request dismissed", "success");
+      await loadTeamRequests();
+    });
+  });
+}
+
 // pending_employee requests raised on behalf — read-only until the
 // employee accepts or declines from their My Requests tab.
 async function loadTeamAwaiting() {
@@ -559,6 +647,6 @@ async function loadTeamAwaiting() {
 // Independent fetches — the requests table embeds its type names, so it
 // doesn't need the leaveTypes list (that's for the request dialog).
 await Promise.all([loadLeaveTypes(), loadRequests()]);
-// Pre-load the team pending count so the badge shows on first paint even
-// while the My Requests tab is active.
-if (canReviewTeam) loadTeamPending();
+// Pre-load the team pending + change-request counts so the badge shows
+// on first paint even while the My Requests tab is active.
+if (canReviewTeam) { loadTeamPending(); loadTeamChanges(); }
