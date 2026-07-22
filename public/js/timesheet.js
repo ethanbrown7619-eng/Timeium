@@ -1467,6 +1467,11 @@ function wireRow(row, idx) {
         inp.blur();
       }
     }, { passive: true });
+    // Hours must land on quarter-hour steps (…, 0.25, 0.5, 0.75, …).
+    // Snapping happens at commit time (debounced save / blur), not on
+    // every keystroke — rounding mid-type would fight someone entering
+    // "0.75" as they pass through "0.7".
+    const snapQuarter = (v) => Math.round(v * 4) / 4;
     let timer;
     inp.addEventListener("input", () => {
       const day = inp.dataset.day;
@@ -1481,7 +1486,37 @@ function wireRow(row, idx) {
       row.querySelector(".row-total strong").textContent = fmtHours(rowTotal);
       updateTotals();
       clearTimeout(timer);
-      timer = setTimeout(() => saveEntry(entries[idx], [`${day}_hours`]), 400);
+      timer = setTimeout(() => {
+        // Snap to the nearest quarter hour before persisting, and sync
+        // the cell display unless the user is still typing in it.
+        const snapped = snapQuarter(Number(entries[idx][`${day}_hours`]) || 0);
+        if (snapped !== entries[idx][`${day}_hours`]) {
+          entries[idx][`${day}_hours`] = snapped;
+          if (document.activeElement !== inp) inp.value = snapped || "";
+          const rt = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
+          row.querySelector(".row-total strong").textContent = fmtHours(rt);
+          updateTotals();
+        }
+        saveEntry(entries[idx], [`${day}_hours`]);
+      }, 400);
+    });
+    // Blur commits immediately: snap, rewrite the cell so the user sees
+    // what was actually recorded, and save without waiting for the timer.
+    inp.addEventListener("change", () => {
+      const day = inp.dataset.day;
+      const raw = parseFloat(inp.value);
+      const clamped = Number.isFinite(raw) ? Math.max(0, Math.min(24, raw)) : 0;
+      const snapped = snapQuarter(clamped);
+      if (snapped !== clamped) {
+        notice(`Rounded to the nearest quarter hour (${snapped || 0})`, "info");
+      }
+      entries[idx][`${day}_hours`] = snapped;
+      inp.value = snapped || "";
+      const rowTotal = DAYS.reduce((sum, d) => sum + Number(entries[idx][`${d}_hours`] || 0), 0);
+      row.querySelector(".row-total strong").textContent = fmtHours(rowTotal);
+      updateTotals();
+      clearTimeout(timer);
+      saveEntry(entries[idx], [`${day}_hours`]);
     });
   });
 
