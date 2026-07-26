@@ -32,6 +32,19 @@
         <p style="margin:0 0 8px"><strong id="me-name">—</strong></p>
       </div>
 
+      <div class="card" style="max-width:480px" id="qr-card">
+        <h3 style="margin:0 0 4px">My clock-in QR code</h3>
+        <p class="muted small" style="margin:0 0 12px">
+          Scan this at the kiosk (tap <strong>QR mode</strong> in its
+          top-right corner) to clock in or out — it works the same as
+          tapping your ID card. Treat it like your card: don't share it.
+        </p>
+        <div id="qr-wrap" style="display:none;text-align:center;padding:8px 0">
+          <canvas id="qr-canvas" style="max-width:240px;width:100%"></canvas>
+        </div>
+        <button id="qr-show-btn" class="ghost">Show my QR code</button>
+      </div>
+
       <div class="card" style="max-width:480px">
         <h3 style="margin:0 0 12px">Change password</h3>
         <form id="pw-form">

@@ -27,6 +27,43 @@ renderTopbar({
 document.getElementById("me-email").textContent = session.user.email || "";
 document.getElementById("me-name").textContent = me?.name || session.user.email || "";
 
+// ---------------------------------------------------------------- QR code
+// Renders the user's qr_token — the value the kiosk's QR mode matches
+// against — as a scannable code. Generated on demand (button click) so
+// the page load stays free of the third-party qrcode library, and the
+// code isn't sitting on screen unless asked for.
+const qrCard = document.getElementById("qr-card");
+const qrBtn = document.getElementById("qr-show-btn");
+if (!me && qrCard) {
+  // No employee record (e.g. bare admin account) — nothing to scan.
+  qrCard.style.display = "none";
+}
+qrBtn?.addEventListener("click", async () => {
+  qrBtn.disabled = true;
+  qrBtn.textContent = "Loading…";
+  try {
+    const { data, error } = await sb
+      .from("users")
+      .select("qr_token")
+      .eq("auth_user_id", session.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.qr_token) throw new Error("Your employee record has no QR token — ask an admin.");
+    const QRCode = (await import("https://esm.sh/qrcode@1.5.4")).default;
+    await QRCode.toCanvas(document.getElementById("qr-canvas"), data.qr_token, {
+      width: 240,
+      margin: 2,
+      color: { dark: "#0a0a0a", light: "#ffffff" },
+    });
+    document.getElementById("qr-wrap").style.display = "";
+    qrBtn.style.display = "none";
+  } catch (err) {
+    notice(err.message || "Could not load your QR code", "error");
+    qrBtn.disabled = false;
+    qrBtn.textContent = "Show my QR code";
+  }
+});
+
 document.getElementById("pw-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const currentPw = document.getElementById("current-pw").value;
