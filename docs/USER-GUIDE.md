@@ -4,7 +4,7 @@ How each type of user interacts with the timesheet application, with flow
 charts for every major process.
 
 The app lives at **https://ptl-timesheet.businessautomation.workers.dev** and
-works alongside the **Attendium kiosk** (the wall-mounted clock-in/out tablet)
+works alongside the **PTL Clock kiosk** (the wall-mounted clock-in/out tablet)
 — both share the same database, so clock events, timesheets, and leave all
 stay in sync.
 
@@ -71,7 +71,7 @@ flowchart LR
 
 ## 3. Clocking in and out (kiosk + My Clock)
 
-Everyone clocks in/out at the **Attendium kiosk** by tapping their ID card —
+Everyone clocks in/out at the **PTL Clock kiosk** by tapping their ID card —
 or scanning their **QR code**, which every user can view from **Settings →
 My clock-in QR code** (tap *QR mode* on the kiosk first). Treat the QR like
 your ID card.

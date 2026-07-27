@@ -8,11 +8,11 @@ ones that will save you from breaking production.
 
 ## 1. The one-paragraph architecture
 
-Timeium is a **static multi-page app** — plain HTML pages plus vanilla-JS ES
+PTL Timesheet is a **static multi-page app** — plain HTML pages plus vanilla-JS ES
 modules, no framework, no build step, no bundler — served by a **Cloudflare
 Worker** (`temporium`, live at `ptl-timesheet.businessautomation.workers.dev`).
 All data lives in a **Supabase** project (Postgres + Auth + PostgREST) that
-is **shared with a second application**: the Attendium clock-in/out kiosk,
+is **shared with a second application**: the PTL Clock kiosk,
 which lives in a separate repo on a separate GitHub + Cloudflare account.
 The browser talks to Supabase directly (anon key + user JWT); privileged
 operations go through `SECURITY DEFINER` SQL functions (RPCs) rather than a
@@ -31,7 +31,7 @@ flowchart LR
         A[Auth]
         DB[(Postgres<br/>RLS + RPCs)]
     end
-    subgraph Kiosk [Attendium — separate repo/account]
+    subgraph Kiosk [PTL Clock — separate repo/account]
         K[Wall tablet<br/>record_scan / record_offsite_choice]
     end
     P -->|static fetch| W
@@ -146,22 +146,22 @@ Things that will bite you if you don't know them:
 
 ## 5. The shared database — read this twice
 
-The Supabase project is shared with the **Attendium kiosk repo** (different
+The Supabase project is shared with the **PTL Clock kiosk repo** (different
 GitHub account; you cannot see its code). This has real consequences:
 
 **Migrations are hand-applied.** Pushing code does *not* touch the DB.
 Every `supabase/migrations/NNN_*.sql` file must be pasted into the Supabase
 SQL editor by a human. Write every migration idempotent ("safe to re-run").
 
-**Numbering is partitioned.** This repo uses **031–199**. Attendium owns
+**Numbering is partitioned.** This repo uses **031–199**. PTL Clock owns
 **200+**. Never number into the 200s.
 
-**Function ownership is split** (agreed with the Attendium side):
+**Function ownership is split** (agreed with the PTL Clock side):
 
 | Owner | Functions |
 |---|---|
-| **Attendium** | The kiosk write path: `record_scan`, `record_offsite_choice`, `admin_add_clock_event`, auto-close functions |
-| **Timeium** | The read/report functions: `_offsite_report`, `_timesheet_rows`, `org_live_status` — noting Attendium's admin dashboard also consumes them |
+| **PTL Clock** | The kiosk write path: `record_scan`, `record_offsite_choice`, `admin_add_clock_event`, auto-close functions |
+| **PTL Timesheet** | The read/report functions: `_offsite_report`, `_timesheet_rows`, `org_live_status` — noting PTL Clock's admin dashboard also consumes them |
 
 Never `CREATE OR REPLACE` a function the other side owns. If a kiosk-side
 change is needed, coordinate — they author it in their migration history.
@@ -196,7 +196,7 @@ files — probe for the objects each migration creates (`pg_proc` /
 
 ## 6. The two-repo copy workflow
 
-The Attendium repo also serves a *copy* of this timesheet frontend on its
+The PTL Clock repo also serves a *copy* of this timesheet frontend on its
 own Cloudflare account. There is no automation: after a change here, the
 touched `public/` files are **manually copied** into the B repo by the
 owner. When you finish a change, list the exact files to copy. DB
