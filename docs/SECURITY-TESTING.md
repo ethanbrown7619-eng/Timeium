@@ -180,11 +180,18 @@ is:
 - **Clock-viewer department scoping is a display scope, not RLS**
   (migration 144 says so explicitly) — trusted internal managers only;
   promote to an RLS boundary if that trust assumption changes.
-- **Lockout can be used as a nuisance DoS** — five wrong passwords lock
-  an email for 15 minutes. Keying by (email, IP) needs request-IP
-  plumbing at the edge and is deferred (noted in 139).
-- **Confirm the 142 auth hook is enabled** in the dashboard — without
-  it, the lockout is not enforced.
+- **The 142 auth hook cannot be enabled on the current Supabase plan** —
+  the *Password Verification Attempt* hook is Team/Enterprise-only, so
+  the account lockout remains advisory (client-side check only; direct
+  token-endpoint calls bypass it). What stands between an attacker and
+  password guessing today is Supabase's built-in per-IP rate limiting on
+  the auth endpoints plus the 8-character password minimum. **Chosen
+  compensating controls** (available on the current plan, plumbing
+  already in the app): enable Cloudflare Turnstile CAPTCHA enforcement
+  in Supabase Attack Protection — which makes every password attempt,
+  including direct API calls, require a server-verified CAPTCHA token —
+  and tighten the per-IP sign-in rate limits. Until those are switched
+  on, treat brute-force resistance as rate-limiting only.
 - **Supply chain:** supabase-js is vendored (good), but export/QR
   libraries are lazy-loaded from esm.sh at pinned versions; vendoring
   them too would remove the remaining third-party runtime dependency.
