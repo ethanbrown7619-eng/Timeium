@@ -73,7 +73,8 @@ document.querySelectorAll("[data-leave-tab]").forEach((btn) => {
 
 let leaveTypes = [];
 let leaveRows = [];      // most recent My Requests rows (for amend prefill)
-let amendingId = null;   // request id being amended, or null in create mode
+let amendingId = null;       // request id being amended, or null in create mode
+let editingPendingId = null; // pending_employee request being edited by manager/admin
 
 async function loadLeaveTypes() {
   const { data, error } = await sb.from("leave_types")
@@ -334,18 +335,24 @@ async function loadManagedEmployees() {
 
 function openRequestModal(prefill = null) {
   amendingId = prefill?.amendId || null;
+  editingPendingId = prefill?.editPendingId || null;
   const isAmend = !!amendingId;
-  behalfMode = !!prefill?.behalf && !isAmend;
+  const isEditPending = !!editingPendingId;
+  behalfMode = !!prefill?.behalf && !isAmend && !isEditPending;
 
   document.getElementById("req-behalf-wrap").style.display = behalfMode ? "" : "none";
   if (behalfMode) loadManagedEmployees();
 
   document.getElementById("request-dialog-title").textContent =
-    isAmend ? "Request amendment" : behalfMode ? "Request leave on behalf" : "Request leave";
+    isEditPending ? `Edit request for ${prefill.editPendingName}`
+    : isAmend ? "Request amendment"
+    : behalfMode ? "Request leave on behalf" : "Request leave";
   document.getElementById("req-submit-btn").textContent =
-    isAmend ? "Request amendment" : behalfMode ? "Send to employee" : "Submit request";
+    isEditPending ? "Save changes"
+    : isAmend ? "Request amendment"
+    : behalfMode ? "Send to employee" : "Submit request";
 
-  if (isAmend) {
+  if (isAmend || isEditPending) {
     document.getElementById("req-type").value = String(prefill.typeId);
     document.getElementById("req-start").value = prefill.start;
     document.getElementById("req-end").value = prefill.returnDate;
@@ -368,7 +375,7 @@ function openRequestModal(prefill = null) {
 document.getElementById("open-request-btn").addEventListener("click", () =>
   openRequestModal(activeLeaveTab === "team" && canReviewTeam ? { behalf: true } : null));
 
-document.getElementById("req-cancel-btn").addEventListener("click", () => { amendingId = null; dialog.close(); });
+document.getElementById("req-cancel-btn").addEventListener("click", () => { amendingId = null; editingPendingId = null; dialog.close(); });
 
 form.addEventListener("submit", async (e) => {
   // Default form submit on the dialog calls dialog.close() because
@@ -391,7 +398,22 @@ form.addEventListener("submit", async (e) => {
   const submitBtn = document.getElementById("req-submit-btn");
   submitBtn.disabled = true;
   try {
-    if (amendingId) {
+    if (editingPendingId) {
+      const { error } = await sb.rpc("update_pending_leave_request", {
+        p_request_id: editingPendingId,
+        p_leave_type_id: typeId,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_hours_per_day: hoursPerDay,
+        p_skip_weekends: skipWeekends,
+        p_reason: reason,
+      });
+      if (error) throw error;
+      dialog.close();
+      editingPendingId = null;
+      notice("Request updated — the employee sees the new details", "success");
+      loadTeamRequests();
+    } else if (amendingId) {
       const { error } = await sb.rpc("request_leave_amendment", {
         p_request_id: amendingId,
         p_leave_type_id: typeId,
@@ -609,8 +631,9 @@ async function loadTeamChanges() {
   });
 }
 
-// pending_employee requests raised on behalf — read-only until the
-// employee accepts or declines from their My Requests tab.
+// pending_employee requests raised on behalf — the employee accepts or
+// declines from their My Requests tab; until then the requester (or an
+// admin) can Edit the details to fix a mistake.
 async function loadTeamAwaiting() {
   const body = document.getElementById("team-awaiting-body");
   if (!body) return;
@@ -627,19 +650,40 @@ async function loadTeamAwaiting() {
     body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Nothing awaiting employee acceptance.</td></tr>`;
     return;
   }
+  const byId = new Map(rows.map((r) => [r.id, r]));
   body.innerHTML = rows.map((r) => {
     const total = leaveTotalHours(r.start_date, r.end_date, r.hours_per_day, r.skip_weekends);
     return `
-    <tr>
+    <tr data-id="${r.id}">
       <td>${escapeHtml(r.employee_name || "")}</td>
       <td>${escapeHtml(r.leave_type_name || "")}</td>
       <td class="small">${teamDateRange(r)}</td>
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
-      <td></td>
+      <td style="white-space:nowrap"><button class="ghost small edit-ta-btn">Edit</button></td>
     </tr>`;
   }).join("");
+
+  // Edit a request the employee hasn't accepted yet — fixes a mistaken
+  // date/type/hours without declining and re-raising. Opens the request
+  // dialog prefilled; saving calls update_pending_leave_request.
+  body.querySelectorAll(".edit-ta-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const r = byId.get(Number(btn.closest("tr").dataset.id));
+      if (!r) return;
+      openRequestModal({
+        editPendingId: r.id,
+        editPendingName: r.employee_name || "the employee",
+        typeId: r.leave_type_id,
+        start: r.start_date,
+        returnDate: addDaysIso(r.end_date, 1),
+        hours: r.hours_per_day,
+        skipWeekends: r.skip_weekends,
+        reason: r.reason || "",
+      });
+    });
+  });
 }
 
 // ---------------------------------------------------------------- init
