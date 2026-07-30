@@ -1780,3 +1780,110 @@ button.primary:hover {
 .panel-status.ok     { background: var(--success-bg); color: var(--success); }
 .panel-status.warn   { background: var(--warn-bg); color: var(--warn-text-dark); }
 .panel-status.danger { background: var(--danger-bg); color: var(--danger); }
+
+/* -------- Leave calendar (Calendar sub-tab on My Timesheets) --------
+   Month grid ported from PTL-map's calendar page (the Map module owns the
+   ERP calendar) and re-tokened for this app. lc- prefix keeps it clear of
+   the hub's .week-calendar .cal-* classes. */
+.lc-scroll { overflow-x: auto; }
+.lc-month {
+  font-size: 13.5px;
+  font-weight: 700;
+  min-width: 150px;
+  text-align: center;
+}
+.lc-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  min-width: 840px; /* wide grid scrolls inside the card on small screens */
+  transition: opacity 0.15s ease;
+}
+.lc-grid.lc-loading { opacity: 0.55; pointer-events: none; }
+.lc-dow {
+  padding: 7px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+}
+.lc-cell {
+  min-width: 0;
+  min-height: 96px;
+  padding: 6px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+}
+.lc-cell:nth-child(7n) { border-right: 0; }
+.lc-grid > .lc-cell:nth-last-child(-n + 7) { border-bottom: 0; }
+.lc-cell.weekend { background: rgba(0, 0, 0, 0.03); }
+.lc-cell.out { background: var(--surface-alt); }
+.lc-cell.out .lc-daynum { opacity: 0.45; }
+.lc-cell.clickable { cursor: pointer; transition: background 0.12s ease; }
+.lc-cell.clickable:hover { background: var(--surface-alt); }
+.lc-cell.clickable:focus-visible { outline: 2px solid var(--ptl-black); outline-offset: -2px; }
+.lc-daynum {
+  align-self: flex-end;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-radius: 999px;
+}
+.lc-cell.today .lc-daynum {
+  background: var(--ptl-lime);
+  color: var(--ptl-black);
+  font-weight: 700;
+}
+.lc-ev {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 3px 7px;
+  border: 1px solid rgba(20, 26, 10, 0.07);
+  border-radius: 8px;
+  background: rgba(26, 86, 199, 0.14);
+  color: #1a56c7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-ev.lc-more {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.lc-dialog {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0;
+  box-shadow: 0 18px 50px rgba(10, 10, 10, 0.25);
+}
+.lc-dialog::backdrop { background: rgba(10, 10, 10, 0.35); }
+.lc-dialog-list { display: grid; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.lc-dialog-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface-alt);
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+}

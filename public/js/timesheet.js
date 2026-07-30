@@ -248,7 +248,9 @@ function showHub() {
   vtSwap(() => {
     document.getElementById("hub-view").style.display = "";
     document.getElementById("editor-view").style.display = "none";
+    document.getElementById("leavecal-view").style.display = "none";
     document.querySelector(".container").classList.remove("ts-container");
+    setSubTab("sheets");
   });
   loadCurrentWeekCard();
   // Leave-request widgets are dormant — code kept for future re-enable.
@@ -256,6 +258,52 @@ function showHub() {
   // loadMyLeaveRequests();
   renderCalendar();
 }
+
+/* ---------------------------------------------------------------- sub-tabs */
+// "My Timesheets" | "Calendar" — the calendar is the org-wide approved-leave
+// month grid (leave-calendar.js, fed by the org_leave_calendar RPC). The
+// strip stays out of the weekly editor (a drill-in) and admin mode.
+
+const subTabs = document.getElementById("ts-sub-tabs");
+
+function setSubTab(view) {
+  subTabs.style.display = ADMIN_MODE ? "none" : "";
+  subTabs.querySelectorAll(".tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tsView === view));
+}
+
+let leaveCalMounted = false;
+
+function showLeaveCalendar() {
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  vtSwap(() => {
+    document.getElementById("hub-view").style.display = "none";
+    document.getElementById("editor-view").style.display = "none";
+    document.getElementById("overhead-view").style.display = "none";
+    document.getElementById("leavecal-view").style.display = "";
+    document.querySelector(".container").classList.remove("ts-container");
+    setSubTab("calendar");
+  });
+  if (leaveCalMounted) return; // months cache for the page's life
+  leaveCalMounted = true;
+  import("/js/leave-calendar.js")
+    .then(({ mountLeaveCalendar }) => {
+      mountLeaveCalendar(document.getElementById("leavecal-host"), sb, currentOrgId).load();
+    })
+    .catch((err) => {
+      leaveCalMounted = false;
+      console.warn("leave calendar failed to load:", err);
+      notice("Couldn't load the leave calendar", "error");
+    });
+}
+
+subTabs.addEventListener("click", (e) => {
+  const btn = e.target.closest(".tab");
+  if (!btn || btn.classList.contains("active")) return;
+  if (btn.dataset.tsView === "calendar") showLeaveCalendar();
+  else if (isOverhead) showOverheadView();
+  else showHub();
+});
 
 let leaveTypes = [];
 let leaveJobs = [];
@@ -497,7 +545,9 @@ function showEditor(ws) {
   weekStart = ws;
   vtSwap(() => {
     document.getElementById("hub-view").style.display = "none";
+    document.getElementById("leavecal-view").style.display = "none";
     document.getElementById("editor-view").style.display = "";
+    subTabs.style.display = "none";
     document.querySelector(".container").classList.add("ts-container");
     paintEditorLoading();
   });
@@ -1946,7 +1996,9 @@ async function showOverheadView() {
   if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   document.getElementById("hub-view").style.display = "none";
   document.getElementById("editor-view").style.display = "none";
+  document.getElementById("leavecal-view").style.display = "none";
   document.getElementById("overhead-view").style.display = "";
+  setSubTab("sheets");
 
   // Leave-request widgets are dormant — code kept for future re-enable.
   // await loadOverheadLeaveBalances();
