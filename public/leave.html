@@ -228,7 +228,9 @@
         </div>
 
         <div class="row-flex mt-md" style="gap:8px;justify-content:flex-end">
-          <button type="button" id="req-cancel-btn" class="ghost">Cancel</button>
+          <!-- Edit-pending mode only: withdraws the on-behalf request. -->
+          <button type="button" id="req-withdraw-btn" class="danger" style="display:none;margin-right:auto">Cancel request</button>
+          <button type="button" id="req-cancel-btn" class="ghost">Close</button>
           <button type="submit" id="req-submit-btn" class="primary">Submit request</button>
         </div>
       </form>

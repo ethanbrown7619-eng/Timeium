@@ -75,6 +75,7 @@ let leaveTypes = [];
 let leaveRows = [];      // most recent My Requests rows (for amend prefill)
 let amendingId = null;       // request id being amended, or null in create mode
 let editingPendingId = null; // pending_employee request being edited by manager/admin
+let editingPendingName = ""; // employee name for that request (dialog copy)
 
 async function loadLeaveTypes() {
   const { data, error } = await sb.from("leave_types")
@@ -336,11 +337,15 @@ async function loadManagedEmployees() {
 function openRequestModal(prefill = null) {
   amendingId = prefill?.amendId || null;
   editingPendingId = prefill?.editPendingId || null;
+  editingPendingName = prefill?.editPendingName || "the employee";
   const isAmend = !!amendingId;
   const isEditPending = !!editingPendingId;
   behalfMode = !!prefill?.behalf && !isAmend && !isEditPending;
 
   document.getElementById("req-behalf-wrap").style.display = behalfMode ? "" : "none";
+  // The withdraw button only makes sense while editing an on-behalf
+  // request the employee hasn't accepted yet.
+  document.getElementById("req-withdraw-btn").style.display = isEditPending ? "" : "none";
   if (behalfMode) loadManagedEmployees();
 
   document.getElementById("request-dialog-title").textContent =
@@ -376,6 +381,23 @@ document.getElementById("open-request-btn").addEventListener("click", () =>
   openRequestModal(activeLeaveTab === "team" && canReviewTeam ? { behalf: true } : null));
 
 document.getElementById("req-cancel-btn").addEventListener("click", () => { amendingId = null; editingPendingId = null; dialog.close(); });
+
+// Withdraw the on-behalf request being edited (edit-pending mode only).
+document.getElementById("req-withdraw-btn").addEventListener("click", async () => {
+  if (!editingPendingId) return;
+  const ok = await confirmDialog({
+    title: "Cancel request",
+    message: `Withdraw this leave request for ${editingPendingName}? They won't need to respond to it.`,
+    confirmText: "Cancel request", danger: true,
+  });
+  if (!ok) return;
+  const { error } = await sb.rpc("cancel_pending_leave_request", { p_request_id: editingPendingId, p_note: null });
+  if (error) return notice(error.message, "error");
+  editingPendingId = null;
+  dialog.close();
+  notice("Request withdrawn", "success");
+  loadTeamRequests();
+});
 
 form.addEventListener("submit", async (e) => {
   // Default form submit on the dialog calls dialog.close() because
@@ -661,10 +683,7 @@ async function loadTeamAwaiting() {
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
-      <td style="white-space:nowrap">
-        <button class="ghost small edit-ta-btn">Edit</button>
-        <button class="ghost small cancel-ta-btn" style="color:var(--danger)">Cancel</button>
-      </td>
+      <td style="white-space:nowrap"><button class="ghost small edit-ta-btn">Edit</button></td>
     </tr>`;
   }).join("");
 
@@ -688,22 +707,6 @@ async function loadTeamAwaiting() {
     });
   });
 
-  // Withdraw an on-behalf request outright before the employee accepts.
-  body.querySelectorAll(".cancel-ta-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const r = byId.get(Number(btn.closest("tr").dataset.id));
-      if (!r) return;
-      if (!await confirmDialog({
-        title: "Cancel request",
-        message: `Withdraw this leave request for ${r.employee_name || "the employee"}? They won't need to respond to it.`,
-        confirmText: "Cancel request", danger: true,
-      })) return;
-      const { error: e } = await sb.rpc("cancel_pending_leave_request", { p_request_id: r.id, p_note: null });
-      if (e) return notice(e.message, "error");
-      notice("Request withdrawn", "success");
-      await loadTeamRequests();
-    });
-  });
 }
 
 // ---------------------------------------------------------------- init
