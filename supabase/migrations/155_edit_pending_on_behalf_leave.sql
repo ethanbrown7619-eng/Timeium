@@ -9,6 +9,8 @@
 --
 --   - update_pending_leave_request: new RPC, admin-or-manager gated,
 --     only touches pending_employee rows.
+--   - cancel_pending_leave_request: new RPC, same gate — withdraws an
+--     on-behalf request before the employee accepts it.
 --   - list_team_leave_requests: recreated to also return leave_type_id
 --     (and requested_by) so the edit dialog can prefill; extra columns
 --     appended, existing callers unaffected.
@@ -70,6 +72,42 @@ begin
 end$$;
 
 grant execute on function public.update_pending_leave_request(bigint, bigint, date, date, numeric, boolean, text) to authenticated;
+
+--------------------------------------------------------------------------------
+-- cancel_pending_leave_request — withdraw an on-behalf request the
+-- employee hasn't accepted yet.
+--------------------------------------------------------------------------------
+
+create or replace function public.cancel_pending_leave_request(
+    p_request_id bigint,
+    p_note text default null
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+    v_req public.leave_requests;
+begin
+    select lr.* into v_req from public.leave_requests lr where lr.id = p_request_id;
+    if v_req.id is null then
+        raise exception 'Leave request not found';
+    end if;
+    if v_req.status <> 'pending_employee' then
+        raise exception 'Only requests still awaiting employee acceptance can be cancelled here (current: %)', v_req.status;
+    end if;
+    if not (public.is_admin_of(v_req.organisation_id)
+            or public.user_manages_target_user(v_req.user_id)) then
+        raise exception 'Not authorised to cancel this request';
+    end if;
+
+    update public.leave_requests
+       set status = 'cancelled',
+           review_note = coalesce(p_note, 'Withdrawn by requester'),
+           updated_at = now()
+     where id = p_request_id;
+end$$;
+
+grant execute on function public.cancel_pending_leave_request(bigint, text) to authenticated;
 
 --------------------------------------------------------------------------------
 -- list_team_leave_requests — + leave_type_id, requested_by (appended)

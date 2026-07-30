@@ -661,7 +661,10 @@ async function loadTeamAwaiting() {
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
-      <td style="white-space:nowrap"><button class="ghost small edit-ta-btn">Edit</button></td>
+      <td style="white-space:nowrap">
+        <button class="ghost small edit-ta-btn">Edit</button>
+        <button class="ghost small cancel-ta-btn" style="color:var(--danger)">Cancel</button>
+      </td>
     </tr>`;
   }).join("");
 
@@ -682,6 +685,23 @@ async function loadTeamAwaiting() {
         skipWeekends: r.skip_weekends,
         reason: r.reason || "",
       });
+    });
+  });
+
+  // Withdraw an on-behalf request outright before the employee accepts.
+  body.querySelectorAll(".cancel-ta-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const r = byId.get(Number(btn.closest("tr").dataset.id));
+      if (!r) return;
+      if (!await confirmDialog({
+        title: "Cancel request",
+        message: `Withdraw this leave request for ${r.employee_name || "the employee"}? They won't need to respond to it.`,
+        confirmText: "Cancel request", danger: true,
+      })) return;
+      const { error: e } = await sb.rpc("cancel_pending_leave_request", { p_request_id: r.id, p_note: null });
+      if (e) return notice(e.message, "error");
+      notice("Request withdrawn", "success");
+      await loadTeamRequests();
     });
   });
 }
