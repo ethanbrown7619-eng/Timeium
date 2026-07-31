@@ -137,6 +137,7 @@ async function loadRequests() {
   const { data, error } = await sb.from("leave_requests")
     .select("id, leave_type_id, start_date, end_date, hours_per_day, skip_weekends, reason, status, manager_review_note, review_note, change_request_type, change_requested_at, created_at, leave_types!leave_requests_leave_type_id_fkey ( name ), requested_by_user:users!leave_requests_requested_by_fkey ( name )")
     .eq("user_id", employee.id)
+    .is("dismissed_at", null)   // rows the employee dismissed stay hidden
     .order("created_at", { ascending: false });
   if (error) {
     body.innerHTML = `<tr><td colspan="9" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
@@ -196,6 +197,11 @@ function rowActions(r) {
       { act: "req-amend", label: "Request amendment" },
     ];
   }
+  // Finished requests can be dismissed from the list (display-only —
+  // admins still see the full history).
+  if (r.status === "rejected" || r.status === "cancelled") {
+    return [{ act: "dismiss", label: "Dismiss from my list" }];
+  }
   return [];
 }
 
@@ -234,7 +240,18 @@ function wireRowMenus(rows) {
 }
 
 async function onMenuAction(act, id) {
-  if (act === "accept") {
+  if (act === "dismiss") {
+    const ok = await confirmDialog({
+      title: "Dismiss request",
+      message: "Hide this request from your list? It stays in the records and admins can still see it.",
+      confirmText: "Dismiss",
+    });
+    if (!ok) return;
+    const { error } = await sb.rpc("dismiss_my_leave_request", { p_request_id: id });
+    if (error) return notice(error.message, "error");
+    notice("Request dismissed", "success");
+    await loadRequests();
+  } else if (act === "accept") {
     const ok = await confirmDialog({
       title: "Accept leave request",
       message: "Accept this leave? It'll be approved and the hours added to your timesheet automatically.",
