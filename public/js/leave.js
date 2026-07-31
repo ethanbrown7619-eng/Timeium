@@ -241,12 +241,6 @@ function wireRowMenus(rows) {
 
 async function onMenuAction(act, id) {
   if (act === "dismiss") {
-    const ok = await confirmDialog({
-      title: "Dismiss request",
-      message: "Hide this request from your list? It stays in the records and admins can still see it.",
-      confirmText: "Dismiss",
-    });
-    if (!ok) return;
     const { error } = await sb.rpc("dismiss_my_leave_request", { p_request_id: id });
     if (error) return notice(error.message, "error");
     notice("Request dismissed", "success");
