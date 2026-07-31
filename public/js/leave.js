@@ -63,11 +63,34 @@ document.querySelectorAll("[data-leave-tab]").forEach((btn) => {
     activeLeaveTab = tab;
     document.getElementById("leave-tab-mine").style.display = tab === "mine" ? "" : "none";
     document.getElementById("leave-tab-team").style.display = tab === "team" ? "" : "none";
+    document.getElementById("leave-tab-calendar").style.display = tab === "calendar" ? "" : "none";
     document.getElementById("open-request-btn").textContent =
       tab === "team" ? "+ Request on behalf" : "+ Request leave";
     if (tab === "team") loadTeamRequests();
+    if (tab === "calendar") mountCalendarOnce();
   });
 });
+
+// ---------------------------------------------------------------- calendar
+// Org-wide approved leave as a month grid, privacy-limited to
+// "Name — Leave" (the org_leave_calendar RPC). Lazy-mounted on first open;
+// leave-calendar.js caches months for the page's life after that.
+
+let leaveCalMounted = false;
+
+function mountCalendarOnce() {
+  if (leaveCalMounted) return;
+  leaveCalMounted = true;
+  import("/js/leave-calendar.js")
+    .then(({ mountLeaveCalendar }) => {
+      mountLeaveCalendar(document.getElementById("leavecal-host"), sb, currentOrgId).load();
+    })
+    .catch((err) => {
+      leaveCalMounted = false;
+      console.warn("leave calendar failed to load:", err);
+      notice("Couldn't load the leave calendar", "error");
+    });
+}
 
 // ---------------------------------------------------------------- data
 

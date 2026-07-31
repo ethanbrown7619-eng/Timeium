@@ -1781,7 +1781,7 @@ button.primary:hover {
 .panel-status.warn   { background: var(--warn-bg); color: var(--warn-text-dark); }
 .panel-status.danger { background: var(--danger-bg); color: var(--danger); }
 
-/* -------- Leave calendar (Calendar sub-tab on My Timesheets) --------
+/* -------- Leave calendar (Calendar tab on the Leave page) --------
    Month grid ported from PTL-map's calendar page (the Map module owns the
    ERP calendar) and re-tokened for this app. lc- prefix keeps it clear of
    the hub's .week-calendar .cal-* classes. */

@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="preconnect" href="https://kyfydyownbgwhquorchn.supabase.co" crossorigin />
     <link rel="modulepreload" href="/js/leave.js" />
+    <link rel="modulepreload" href="/js/leave-calendar.js" />
     <link rel="modulepreload" href="/js/shared.js" />
     <link rel="modulepreload" href="/js/supabase-client.js" />
     <link rel="modulepreload" href="/js/vendor/supabase-js.js" />
@@ -29,6 +30,7 @@
           <button class="tab" data-leave-tab="team" id="leave-team-tab" style="display:none">
             Team Requests<span id="leave-team-count" class="leave-count-badge" style="display:none"></span>
           </button>
+          <button class="tab" data-leave-tab="calendar">Calendar</button>
         </div>
         <div class="grow"></div>
         <button id="open-request-btn" class="primary" style="margin-bottom:8px">+ Request leave</button>
@@ -154,6 +156,17 @@
                 <tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">—</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Calendar tab — org-wide approved leave, names only           -->
+      <!-- ============================================================ -->
+      <section id="leave-tab-calendar" class="tab-panel" style="display:none">
+        <div class="card">
+          <div id="leavecal-host">
+            <p class="muted">Loading leave calendar…</p>
           </div>
         </div>
       </section>

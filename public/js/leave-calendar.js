@@ -1,4 +1,4 @@
-// Leave calendar — the Calendar sub-tab on My Timesheets. A month grid of
+// Leave calendar — the Calendar tab on the Leave page. A month grid of
 // approved leave rendered as privacy-limited "Name — Leave" events from the
 // org_leave_calendar RPC (migration 156): any org member may look, so the
 // payload is only WHO is away and WHICH days — never the leave type, reason,
@@ -58,7 +58,7 @@ function fmtDayTitle(iso) {
 
 /**
  * Mount the leave calendar into `host`. Returns { load } — call load() the
- * first time the sub-tab is shown (months cache for the page's life, so
+ * first time the tab is shown (months cache for the page's life, so
  * re-showing the tab needs no reload).
  */
 export function mountLeaveCalendar(host, sb, orgId) {

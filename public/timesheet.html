@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="/css/style.css" />
     <link rel="preconnect" href="https://kyfydyownbgwhquorchn.supabase.co" crossorigin />
     <link rel="modulepreload" href="/js/timesheet.js" />
-    <link rel="modulepreload" href="/js/leave-calendar.js" />
     <link rel="modulepreload" href="/js/shared.js" />
     <link rel="modulepreload" href="/js/supabase-client.js" />
     <link rel="modulepreload" href="/js/vendor/supabase-js.js" />
@@ -21,22 +20,6 @@
 
     <main class="container">
       <div id="notice" class="notice hidden"></div>
-
-      <!-- Sub-tabs: the timesheet area vs the org-wide leave calendar. Hidden
-           while the weekly editor is open (it's a drill-in) and in admin mode. -->
-      <div class="tabs sub mb-md" id="ts-sub-tabs">
-        <button class="tab active" data-ts-view="sheets">My Timesheets</button>
-        <button class="tab" data-ts-view="calendar">Calendar</button>
-      </div>
-
-      <!-- ==================== Leave calendar view ==================== -->
-      <div id="leavecal-view" style="display:none">
-        <div class="card">
-          <div id="leavecal-host">
-            <p class="muted">Loading leave calendar…</p>
-          </div>
-        </div>
-      </div>
 
       <!-- ==================== Overhead (leave-only) view ==================== -->
       <div id="overhead-view" style="display:none">
