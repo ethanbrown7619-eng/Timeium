@@ -1077,9 +1077,23 @@ details.card[open] > summary::before { content: "▾ "; }
 
 /* -------- timesheet vs clock comparison -------- */
 
-.cvt-grid { width: 100%; border-collapse: collapse; white-space: nowrap; }
-.cvt-grid th, .cvt-grid td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
-.cvt-grid thead th { background: var(--surface-alt); text-align: center; }
+/* The Clock page goes full-width: the Clock-vs-Timesheet grid carries
+   16 numeric columns and doesn't fit the default 1280px container. */
+.tc-wide { max-width: none; }
+
+/* CvT scroll area: its own bounded box so the horizontal scrollbar is
+   always within reach (not below 40 rows of table), with both header
+   rows and the name/dept columns sticky. */
+.tc-scroll { overflow: auto; max-height: calc(100vh - 250px); min-height: 320px; }
+
+.cvt-grid { width: 100%; border-collapse: separate; border-spacing: 0; white-space: nowrap; }
+.cvt-grid th, .cvt-grid td { padding: 3px 5px; border-bottom: 1px solid var(--border); }
+.cvt-grid thead th { background: var(--surface-alt); text-align: center; position: sticky; top: 0; z-index: 2; }
+/* Fixed first-row height makes the second sticky row's offset exact. */
+.cvt-grid thead tr:first-child th { height: 38px; }
+.cvt-grid thead tr:nth-child(2) th { top: 38px; }
+.cvt-grid thead th.cvt-sticky,
+.cvt-grid thead th.cvt-sticky-dept { z-index: 3; background: var(--surface-alt); }
 .cvt-day-header { border-left: 2px solid var(--border); font-size: 11px; }
 .cvt-sub { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
 .cvt-sub:nth-child(odd) { border-left: 2px solid var(--border); }
