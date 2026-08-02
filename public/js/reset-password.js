@@ -3,23 +3,26 @@ import { notice, routeAfterAuth, validatePassword } from "/js/shared.js";
 
 const sb = await getSupabase();
 
-// Supabase parses the recovery token from the URL hash automatically
-// and fires a PASSWORD_RECOVERY event. Resolve when that event arrives,
-// or fall back to a 1500ms timeout so we never hang.
-let isRecovery = false;
-await new Promise((resolve) => {
-  const t = setTimeout(resolve, 1500);
-  const { data: sub } = sb.auth.onAuthStateChange((event) => {
-    if (event === "PASSWORD_RECOVERY") {
-      isRecovery = true;
-      clearTimeout(t);
-      sub?.subscription?.unsubscribe?.();
-      resolve();
-    }
+// Two ways to arrive here with a valid session:
+//  1. Code flow: forgot-password.html already called verifyOtp, so a
+//     session exists immediately — no need to wait.
+//  2. Link flow: Supabase parses the recovery token from the URL hash
+//     and fires a PASSWORD_RECOVERY event. Wait for it, with a 1500ms
+//     fallback so we never hang.
+let { data: { session } } = await sb.auth.getSession();
+if (!session) {
+  await new Promise((resolve) => {
+    const t = setTimeout(resolve, 1500);
+    const { data: sub } = sb.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        clearTimeout(t);
+        sub?.subscription?.unsubscribe?.();
+        resolve();
+      }
+    });
   });
-});
-
-const { data: { session } } = await sb.auth.getSession();
+  ({ data: { session } } = await sb.auth.getSession());
+}
 const form = document.getElementById("reset-form");
 const noSession = document.getElementById("no-session");
 

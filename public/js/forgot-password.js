@@ -5,7 +5,11 @@ import { mountTurnstile } from "/js/turnstile.js";
 const sb = await getSupabase();
 const turnstile = await mountTurnstile(document.getElementById("turnstile-container"));
 
-document.getElementById("forgot-form").addEventListener("submit", async (e) => {
+const forgotForm = document.getElementById("forgot-form");
+const codeForm = document.getElementById("code-form");
+let sentEmail = "";
+
+forgotForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = document.getElementById("email").value.trim();
   const btn = document.getElementById("submit-btn");
@@ -23,14 +27,43 @@ document.getElementById("forgot-form").addEventListener("submit", async (e) => {
     notice(error.message || "Failed to send reset email", "error");
     turnstile.reset();
     btn.disabled = false;
-    btn.textContent = "Send reset link";
+    btn.textContent = "Email me a code";
     return;
   }
 
-  // Always show success (don't leak whether email exists)
-  document.getElementById("forgot-form").style.display = "none";
-  notice(
-    "If an account exists for that email, a password reset link has been sent. Check your inbox.",
-    "success"
-  );
+  // Always proceed to the code step (don't leak whether email exists)
+  sentEmail = email;
+  forgotForm.style.display = "none";
+  document.getElementById("intro-text").textContent =
+    "If an account exists for that email, we've sent a 6-digit code. Enter it below.";
+  codeForm.classList.remove("hidden");
+  document.getElementById("code").focus();
+});
+
+codeForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const code = document.getElementById("code").value.trim();
+  const btn = document.getElementById("verify-btn");
+
+  if (!/^\d{6}$/.test(code)) return notice("Enter the 6-digit code from the email", "error");
+
+  btn.disabled = true;
+  btn.textContent = "Verifying…";
+
+  const { error } = await sb.auth.verifyOtp({ email: sentEmail, token: code, type: "recovery" });
+
+  if (error) {
+    notice(
+      "That code is incorrect or has expired. Make sure you're using the code from the " +
+        "newest email, or request a new one.",
+      "error"
+    );
+    btn.disabled = false;
+    btn.textContent = "Verify code";
+    return;
+  }
+
+  // verifyOtp established a session; reset-password.html will show the
+  // set-password form when it finds one.
+  location.assign("/reset-password.html");
 });
