@@ -1079,12 +1079,13 @@ details.card[open] > summary::before { content: "▾ "; }
 
 /* Only the Clock-vs-Timesheet card breaks out of the 1280px container —
    its grid carries 16 numeric columns and needs a little more room. It
-   centres itself at up to 1560px; every other panel keeps normal width. */
+   centres itself at up to 1560px; every other panel keeps normal width.
+   Centred via margins, NOT left/transform: the .card fadeSlideIn
+   entrance animation animates transform and would override a
+   translateX(-50%) for its duration, flashing the card off-centre. */
 #tc-clockvts {
-  width: min(1560px, calc(100vw - 40px));
-  position: relative;
-  left: 50%;
-  transform: translateX(-50%);
+  width: min(1560px, calc(100vw - 48px));
+  margin-left: calc((100% - min(1560px, calc(100vw - 48px))) / 2);
 }
 
 /* CvT table wrapper — plain horizontal scroll, same as the other tabs. */
