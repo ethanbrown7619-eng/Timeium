@@ -1077,9 +1077,15 @@ details.card[open] > summary::before { content: "▾ "; }
 
 /* -------- timesheet vs clock comparison -------- */
 
-/* The Clock page goes full-width: the Clock-vs-Timesheet grid carries
-   16 numeric columns and doesn't fit the default 1280px container. */
-.tc-wide { max-width: none; }
+/* Only the Clock-vs-Timesheet card breaks out of the 1280px container —
+   its grid carries 16 numeric columns and needs a little more room. It
+   centres itself at up to 1560px; every other panel keeps normal width. */
+#tc-clockvts {
+  width: min(1560px, calc(100vw - 40px));
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+}
 
 /* CvT scroll area: its own bounded box so the horizontal scrollbar is
    always within reach (not below 40 rows of table), with both header
