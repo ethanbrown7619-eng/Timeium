@@ -731,7 +731,7 @@ document.getElementById("hol-add-btn").addEventListener("click", async () => {
 
 // SMTP / debug_redirect fields are NOT selected here — they moved to
 // public.org_secrets (audit C1) and are read via get_org_secrets_admin.
-const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, notify_manager_approval, manager_approval_day, manager_approval_time";
+const SETTINGS_FIELDS = "approval_workflow, force_view_before_approval, autofill_public_holidays, public_holiday_hours, public_holiday_job_id, deadline_week, deadline_day, deadline_time, notify_overdue, notify_reminder, reminder_day, reminder_time, reminder_day_2, reminder_time_2, overdue_day, overdue_time, notify_overdue_recipient, clock_tolerance_hours, notify_discrepancy, discrepancy_day, discrepancy_time, employment_type_settings, notify_manager_approval, manager_approval_day, manager_approval_time, notify_leave";
 
 async function loadSettings() {
   if (!currentOrgId) return;
@@ -816,6 +816,7 @@ async function loadSettings() {
 
     // Manager-approval digest
     document.getElementById("notify-manager-approval").checked = !!data.notify_manager_approval;
+    document.getElementById("notify-leave").checked = !!data.notify_leave;
     document.getElementById("manager-approval-day").value = data.manager_approval_day || "monday";
     document.getElementById("manager-approval-time").value = (data.manager_approval_time || "09:00").slice(0, 5);
     document.getElementById("manager-approval-schedule").style.display = data.notify_manager_approval ? "" : "none";
@@ -1002,6 +1003,64 @@ document.getElementById("save-manager-approval-btn")?.addEventListener("click", 
     flashStatus("manager-approval-status");
   } catch (err) {
     notice(err.message || "Save failed", "error");
+  }
+});
+
+/* -------------------------------------------------------- Leave request emails */
+
+// Saved via its own RPC (set_leave_notifications, migration 158) rather
+// than save_org_settings — see the migration for why.
+document.getElementById("save-leave-notify-btn")?.addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  try {
+    const { error } = await sb.rpc("set_leave_notifications", {
+      p_org_id: currentOrgId,
+      p_enabled: document.getElementById("notify-leave").checked,
+    });
+    if (error) throw error;
+    notice("Leave email settings saved", "success");
+    flashStatus("leave-notify-status");
+  } catch (err) {
+    notice(err.message || "Save failed", "error");
+  }
+});
+
+// Drain the leave notification queue immediately instead of waiting for
+// the next 15-minute cron tick. Handy while testing with the debug
+// redirect: submit a request, press this, check the inbox.
+document.getElementById("leave-queue-now-btn")?.addEventListener("click", async () => {
+  if (!ctx.isAdminOrHigher) return notice("Admins only", "warn");
+  if (!currentOrgId) return;
+  const btn = document.getElementById("leave-queue-now-btn");
+  const statusEl = document.getElementById("leave-notify-status");
+  btn.disabled = true;
+  statusEl.textContent = "Sending…";
+  try {
+    const { data, error } = await sb.functions.invoke("send-timesheet-notifications", {
+      body: { force_org_id: currentOrgId, force_kind: "leave" },
+    });
+    if (error) throw error;
+    const leave = data?.[currentOrgId]?.leave;
+    if (leave?.error) {
+      notice(leave.error, "error");
+      statusEl.textContent = "";
+    } else if (leave) {
+      const bits = [`${leave.sent ?? 0} sent`];
+      if (leave.skipped) bits.push(`${leave.skipped} skipped`);
+      if (leave.failed)  bits.push(`${leave.failed} failed`);
+      notice(`Leave emails: ${bits.join(", ")}`, leave.failed ? "warn" : "success");
+      statusEl.textContent = bits.join(", ");
+    } else {
+      notice("Nothing queued", "success");
+      statusEl.textContent = "Queue empty";
+    }
+  } catch (err) {
+    notice(err.message || "Send failed", "error");
+    statusEl.textContent = "";
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { statusEl.textContent = ""; }, 6000);
   }
 });
 

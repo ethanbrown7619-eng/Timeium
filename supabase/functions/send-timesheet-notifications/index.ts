@@ -41,8 +41,10 @@
 //        -H "Content-Type: application/json" \
 //        -d '{"force_org_id": 1, "force_kind": "reminder"}'
 //
-// force_kind ∈ ('reminder','reminder_2','overdue','discrepancy','manager_approval')
+// force_kind ∈ ('reminder','reminder_2','overdue','discrepancy','manager_approval','leave')
 // bypasses the day/time check and dedup for that org+kind. Useful for smoke tests.
+// 'leave' drains the leave_notification_queue immediately (see migration 158)
+// instead of waiting for the next cron tick.
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -1023,7 +1025,19 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
          slotMatches(tz, org.manager_approval_day, org.manager_approval_time, now) &&
          !alreadySentToday(tz, org.manager_approval_last_sent_at, now));
 
-    if (!fireR1 && !fireR2 && !fireO && !fireD && !fireMA) {
+    // Leave queue has no time slot — drain whenever unsent rows exist.
+    // The count probe keeps quiet ticks (empty queue) from opening SMTP.
+    let fireL = false;
+    if (org.notify_leave || force.kind === "leave") {
+        const { count } = await supabase.from("leave_notification_queue")
+            .select("id", { count: "exact", head: true })
+            .eq("organisation_id", org.id)
+            .is("sent_at", null)
+            .lt("attempts", 3);
+        fireL = (count ?? 0) > 0;
+    }
+
+    if (!fireR1 && !fireR2 && !fireO && !fireD && !fireMA && !fireL) {
         return { skipped: today };
     }
 
@@ -1092,7 +1106,291 @@ async function processOrg(org: any, force: { kind?: string } = {}): Promise<any>
         }
     }
 
+    if (fireL) {
+        try {
+            result.leave = await drainLeaveQueue(org, tz, orgName);
+        } catch (err) {
+            console.error(`leave queue drain failed (org ${org.id})`, err);
+            result.leave = { error: String(err) };
+        }
+    }
+
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Leave request notifications (migration 158)
+// ---------------------------------------------------------------------------
+// Event-driven, one email per event: a DB trigger on leave_requests appends
+// rows to leave_notification_queue; every cron tick drains the queue for
+// orgs with notify_leave on. Unlike the weekly digests above there is no
+// day/time slot — latency is at most one cron interval (15 min), or
+// immediate via force_kind:'leave' (the Configure page's "Send queued now").
+//
+// FUTURE-DATES RULE: only requests starting today or later (org-local)
+// are emailed. Backdated/historical leave entries mark their queue row
+// "skipped: past start date" and send nothing.
+
+interface LeaveQueueRow {
+    id: number;
+    kind: string;
+    leave_request_id: number;
+    attempts: number;
+}
+
+function leaveDaysCount(startIso: string, endIso: string, skipWeekends: boolean): number {
+    let n = 0;
+    for (let d = startIso; d <= endIso && n < 400; d = addDaysIso(d, 1)) {
+        const dow = new Date(d + "T00:00:00Z").getUTCDay();
+        if (skipWeekends && (dow === 0 || dow === 6)) continue;
+        n++;
+    }
+    return n;
+}
+
+function leaveEmailHtml(opts: {
+    orgName: string;
+    intro: string;                 // already-escaped HTML sentence(s)
+    employeeName: string;
+    typeName: string;
+    startDate: string;
+    endDate: string;
+    hoursPerDay: number;
+    totalHours: number;
+    days: number;
+    reason: string | null;
+    note: string | null;           // review/change note, when relevant
+    accent: string;                // button colour
+    ctaLabel: string;
+}): string {
+    const row = (label: string, value: string) =>
+        `<tr><td style="padding:4px 12px 4px 0;color:#64748b;white-space:nowrap">${label}</td>` +
+        `<td style="padding:4px 0"><b>${value}</b></td></tr>`;
+    return `
+        <div style="font-family:sans-serif;color:#0f172a">
+            <p>Hi,</p>
+            <p>${opts.intro}</p>
+            <table style="border-collapse:collapse;font-size:14px;margin:8px 0 16px">
+                ${row("Employee",   escapeHtml(opts.employeeName))}
+                ${row("Leave type", escapeHtml(opts.typeName))}
+                ${row("Dates",      escapeHtml(formatDate(opts.startDate)) +
+                                    (opts.endDate !== opts.startDate
+                                        ? " &ndash; " + escapeHtml(formatDate(opts.endDate)) : ""))}
+                ${row("Hours",      `${opts.totalHours} h total (${opts.days} day${opts.days === 1 ? "" : "s"} × ${opts.hoursPerDay} h)`)}
+                ${opts.reason ? row("Reason", escapeHtml(opts.reason)) : ""}
+                ${opts.note   ? row("Note",   escapeHtml(opts.note))   : ""}
+            </table>
+            <p><a href="${APP_BASE_URL}/leave.html"
+                  style="display:inline-block;padding:10px 16px;background:${opts.accent};color:#fff;text-decoration:none;border-radius:6px">
+                ${opts.ctaLabel}
+            </a></p>
+            <p style="color:#64748b;font-size:13px;margin-top:24px">
+                Sent automatically by PTL Timesheet. Disable leave request
+                emails in Configure &rarr; Settings.
+            </p>
+        </div>
+    `;
+}
+
+// Department manager's email for an employee, or [] when the employee has
+// no department / the department has no manager (caller falls back to the
+// org admin list).
+async function deptManagerEmails(orgId: number, departmentId: number | null): Promise<string[]> {
+    if (!departmentId) return [];
+    const { data: dept } = await supabase.from("departments")
+        .select("manager_id").eq("id", departmentId).maybeSingle();
+    if (!dept?.manager_id) return [];
+    const { data: mgr } = await supabase.from("users")
+        .select("email, active").eq("id", dept.manager_id).maybeSingle();
+    return mgr?.active && mgr?.email ? [mgr.email as string] : [];
+}
+
+// Subject + intro + recipient audience per event kind. `employee` is the
+// person the leave is FOR; `requesterName` is who raised an on-behalf
+// request (null for self-submitted).
+function composeLeaveEmail(
+    kind: string,
+    orgName: string,
+    employeeName: string,
+    requesterName: string | null,
+    changeType: string | null,
+): { audience: "managers" | "employee" | "requester"; subject: string; intro: string; accent: string; ctaLabel: string } | null {
+    const emp = escapeHtml(employeeName);
+    switch (kind) {
+        case "submitted": return {
+            audience: "managers",
+            subject:  `PTL Timesheet — Leave request from ${employeeName}`,
+            intro:    `<b>${emp}</b> has submitted a leave request at ` +
+                      `<b>${escapeHtml(orgName)}</b> that's waiting for your review.`,
+            accent:   "#0f172a", ctaLabel: "Review the request",
+        };
+        case "on_behalf": return {
+            audience: "employee",
+            subject:  `PTL Timesheet — Leave requested on your behalf`,
+            intro:    `<b>${escapeHtml(requesterName || "Your manager")}</b> has requested ` +
+                      `leave on your behalf. Please accept or decline it from your My Requests tab.`,
+            accent:   "#0f172a", ctaLabel: "Accept or decline",
+        };
+        case "accepted": return {
+            audience: "requester",
+            subject:  `PTL Timesheet — ${employeeName} accepted the leave you requested`,
+            intro:    `<b>${emp}</b> accepted the leave you requested on their behalf. ` +
+                      `It's now approved and on their timesheet.`,
+            accent:   "#16a34a", ctaLabel: "View team requests",
+        };
+        case "declined": return {
+            audience: "requester",
+            subject:  `PTL Timesheet — ${employeeName} declined the leave you requested`,
+            intro:    `<b>${emp}</b> declined the leave you requested on their behalf. ` +
+                      `Nothing was added to their timesheet.`,
+            accent:   "#dc2626", ctaLabel: "View team requests",
+        };
+        case "approved": return {
+            audience: "employee",
+            subject:  `PTL Timesheet — Your leave request was approved`,
+            intro:    `Your leave request at <b>${escapeHtml(orgName)}</b> has been ` +
+                      `<b style="color:#16a34a">approved</b> and added to your timesheet.`,
+            accent:   "#16a34a", ctaLabel: "View my requests",
+        };
+        case "rejected": return {
+            audience: "employee",
+            subject:  `PTL Timesheet — Your leave request was rejected`,
+            intro:    `Your leave request at <b>${escapeHtml(orgName)}</b> has been ` +
+                      `<b style="color:#dc2626">rejected</b>.`,
+            accent:   "#dc2626", ctaLabel: "View my requests",
+        };
+        case "cancelled": return {
+            audience: "managers",
+            subject:  `PTL Timesheet — ${employeeName} cancelled their leave request`,
+            intro:    `<b>${emp}</b> cancelled their pending leave request — ` +
+                      `no action needed, it's out of your queue.`,
+            accent:   "#64748b", ctaLabel: "View team requests",
+        };
+        case "revoked": return {
+            audience: "employee",
+            subject:  `PTL Timesheet — Your approved leave was cancelled`,
+            intro:    `Your approved leave at <b>${escapeHtml(orgName)}</b> has been ` +
+                      `cancelled and removed from your timesheet.`,
+            accent:   "#dc2626", ctaLabel: "View my requests",
+        };
+        case "change_requested": return {
+            audience: "managers",
+            subject:  `PTL Timesheet — ${employeeName} requested a leave ${changeType === "amend" ? "amendment" : "cancellation"}`,
+            intro:    `<b>${emp}</b> has asked to ` +
+                      (changeType === "amend"
+                          ? `<b>amend</b> leave that's already approved.`
+                          : `<b>cancel</b> leave that's already approved.`) +
+                      ` Review it under Team Requests &rarr; Change requests.`,
+            accent:   "#d97706", ctaLabel: "Review change request",
+        };
+        default: return null;
+    }
+}
+
+async function drainLeaveQueue(org: any, tz: string, orgName: string): Promise<any> {
+    const today = localDate(tz, new Date());
+
+    const { data: rows } = await supabase.from("leave_notification_queue")
+        .select("id, kind, leave_request_id, attempts")
+        .eq("organisation_id", org.id)
+        .is("sent_at", null)
+        .lt("attempts", 3)
+        .order("id")
+        .limit(40);
+    if (!rows?.length) return { sent: 0 };
+
+    let sent = 0, skipped = 0, failed = 0;
+    const mark = (id: number, fields: Record<string, any>) =>
+        supabase.from("leave_notification_queue").update(fields).eq("id", id);
+
+    for (const row of rows as LeaveQueueRow[]) {
+        try {
+            const { data: lr } = await supabase.from("leave_requests")
+                .select("id, user_id, requested_by, leave_type_id, start_date, end_date, " +
+                        "hours_per_day, skip_weekends, reason, status, review_note, " +
+                        "change_request_type, change_request_note")
+                .eq("id", row.leave_request_id).maybeSingle();
+            if (!lr) {
+                await mark(row.id, { sent_at: new Date().toISOString(), result: "skipped: request deleted" });
+                skipped++; continue;
+            }
+
+            // Future-dates rule — never email about backdated leave.
+            if ((lr.start_date as string) < today) {
+                await mark(row.id, { sent_at: new Date().toISOString(), result: "skipped: past start date" });
+                skipped++; continue;
+            }
+
+            const { data: emp } = await supabase.from("users")
+                .select("id, name, email, department_id")
+                .eq("id", lr.user_id).maybeSingle();
+            let requester: { name: string | null; email: string | null } | null = null;
+            if (lr.requested_by) {
+                const { data: req } = await supabase.from("users")
+                    .select("name, email").eq("id", lr.requested_by).maybeSingle();
+                requester = req ?? null;
+            }
+            const { data: lt } = await supabase.from("leave_types")
+                .select("name").eq("id", lr.leave_type_id).maybeSingle();
+
+            const employeeName = emp?.name || `Employee ${lr.user_id}`;
+            const composed = composeLeaveEmail(
+                row.kind, orgName, employeeName, requester?.name ?? null,
+                lr.change_request_type as string | null);
+            if (!composed) {
+                await mark(row.id, { sent_at: new Date().toISOString(), result: `skipped: unknown kind ${row.kind}` });
+                skipped++; continue;
+            }
+
+            let recipients: string[] = [];
+            if (composed.audience === "employee") {
+                recipients = emp?.email ? [emp.email as string] : [];
+            } else if (composed.audience === "requester") {
+                recipients = requester?.email ? [requester.email] : [];
+                if (!recipients.length) recipients = await deptManagerEmails(org.id, emp?.department_id ?? null);
+            } else {
+                recipients = await deptManagerEmails(org.id, emp?.department_id ?? null);
+                if (!recipients.length) recipients = await getAdminEmails(org.id);
+            }
+            if (!recipients.length) {
+                await mark(row.id, { sent_at: new Date().toISOString(), result: "skipped: no recipient with an email" });
+                skipped++; continue;
+            }
+
+            const days  = leaveDaysCount(lr.start_date as string, lr.end_date as string, !!lr.skip_weekends);
+            const total = Math.round(days * Number(lr.hours_per_day) * 100) / 100;
+            const note  = row.kind === "change_requested"
+                ? (lr.change_request_note as string | null)
+                : (["rejected", "revoked"].includes(row.kind) ? (lr.review_note as string | null) : null);
+            const html = leaveEmailHtml({
+                orgName, intro: composed.intro, employeeName,
+                typeName: lt?.name || "Leave",
+                startDate: lr.start_date as string, endDate: lr.end_date as string,
+                hoursPerDay: Number(lr.hours_per_day), totalHours: total, days,
+                reason: lr.reason as string | null, note,
+                accent: composed.accent, ctaLabel: composed.ctaLabel,
+            });
+
+            for (const to of recipients) await sendEmail(to, composed.subject, html);
+            await mark(row.id, {
+                sent_at: new Date().toISOString(),
+                result:  `sent to ${recipients.join(", ")}`,
+            });
+            sent++;
+        } catch (err) {
+            console.error(`leave notification ${row.id} failed`, err);
+            failed++;
+            // Retry on the next tick, up to 3 attempts, then give up with
+            // the error preserved on the row.
+            const attempts = (row.attempts ?? 0) + 1;
+            await mark(row.id, {
+                attempts,
+                result: `error (attempt ${attempts}): ${String((err as Error).message ?? err).slice(0, 500)}`,
+                ...(attempts >= 3 ? { sent_at: new Date().toISOString() } : {}),
+            });
+        }
+    }
+    return { sent, skipped, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -1221,6 +1519,22 @@ Deno.serve(async (req) => {
                 html    = discrepancyHtml(orgName, lastMon, lastSun, tol, sampleDiffs);
                 break;
             }
+            case "leave": {
+                subject = `[TEST] PTL Timesheet — Leave request from Sample employee A`;
+                html = leaveEmailHtml({
+                    orgName,
+                    intro: `<b>Sample employee A</b> has submitted a leave request at ` +
+                           `<b>${escapeHtml(orgName)}</b> that's waiting for your review.`,
+                    employeeName: "Sample employee A",
+                    typeName: "Annual leave",
+                    startDate: addDaysIso(thisMon, 7),
+                    endDate:   addDaysIso(thisMon, 11),
+                    hoursPerDay: 8, totalHours: 40, days: 5,
+                    reason: "Family holiday (sample data)", note: null,
+                    accent: "#0f172a", ctaLabel: "Review the request",
+                });
+                break;
+            }
             case "manager_approval": {
                 const sampleDepts: ManagerDeptRollup[] = [
                     {
@@ -1311,6 +1625,7 @@ Deno.serve(async (req) => {
         overdue_last_sent_at,
         notify_discrepancy, discrepancy_day, discrepancy_time, discrepancy_last_sent_at,
         notify_manager_approval, manager_approval_day, manager_approval_time, manager_approval_last_sent_at,
+        notify_leave,
         clock_tolerance_hours,
         deadline_week, deadline_day, deadline_time,
         smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from,

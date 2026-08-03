@@ -944,6 +944,36 @@
           </div>
         </div>
 
+        <!-- Leave request emails (per-request, event-driven) -->
+        <div class="card" style="max-width:640px">
+          <h2 style="margin-top:0">Leave Request Emails</h2>
+          <p class="muted">
+            Sends one email per leave request as it moves through the
+            workflow — new requests go to the employee's department manager,
+            decisions and on-behalf requests go to the employee, and
+            acceptances / change requests come back to the manager. Only
+            leave starting <b>today or later</b> is emailed; backdated
+            entries never notify. Delivery runs on the same 15-minute cycle
+            as the other notifications.
+          </p>
+
+          <div class="settings-checks">
+            <label class="settings-check">
+              <input type="checkbox" id="notify-leave" />
+              <div>
+                <strong>Leave request emails</strong>
+                <span class="muted small">One email per request event — no digests. To trial safely, set the debug redirect below first so every email lands in one inbox.</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="mt-md row-flex" style="gap:8px;align-items:center">
+            <button id="save-leave-notify-btn">Save</button>
+            <button id="leave-queue-now-btn" class="ghost" type="button">Send queued now</button>
+            <span id="leave-notify-status" class="muted small"></span>
+          </div>
+        </div>
+
         <!-- SMTP / outbound email relay -->
         <div class="card" style="max-width:640px">
           <h2 style="margin-top:0">Email Sending (SMTP)</h2>
@@ -985,8 +1015,8 @@
             <input id="smtp-debug-redirect" type="email" placeholder="leave blank for normal delivery" style="width:100%" />
             <p class="muted small mt-sm">
               When set, <b>every</b> email this app would send (reminders, overdue,
-              discrepancy, manager-approval, previews) goes to this address instead
-              of the real recipient. The original recipient is preserved in the
+              discrepancy, manager-approval, leave requests, previews) goes to this
+              address instead of the real recipient. The original recipient is preserved in the
               subject prefix. Use to safely verify schedules without spamming
               staff; clear to go live.
             </p>
@@ -1018,6 +1048,7 @@
                 <option value="overdue_admin">Overdue — admin digest (last week)</option>
                 <option value="discrepancy">Clock vs timesheet discrepancy (last week)</option>
                 <option value="manager_approval">Manager approval digest (last week)</option>
+                <option value="leave">Leave request (per-request email)</option>
               </select>
             </div>
             <div class="settings-field" style="flex:2">
