@@ -1,10 +1,98 @@
 # PTL Timesheet — Developer Guide
 
-What you need to know before working on this codebase. Read the whole
-thing once; the **Shared database** and **Migrations** sections are the
-ones that will save you from breaking production.
+## Document control
+
+| | |
+|---|---|
+| **Version** | 2.0 |
+| **Last updated** | 2026-08-04 |
+| **Owner** | Ethan Brown (GitHub [`ethanbrown7619-eng`](https://github.com/ethanbrown7619-eng)) |
+| **Status** | Living document — bump the version and date with any material change |
+| **Applies to** | [`ethanbrown7619-eng/Timeium`](https://github.com/ethanbrown7619-eng/Timeium), deploy branch `claude/continue-ptl-timesheet-blVcV` |
+
+**Change log**
+
+| Version | Date | Change |
+|---|---|---|
+| 2.0 | 2026-08-04 | Restructured into tutorial / explanation / reference / how-to parts. Added: getting started, RPC reference (split out to [RPC-REFERENCE.md](RPC-REFERENCE.md)), rollback & bad-migration playbooks, backups, troubleshooting index, contribution workflow, security & privacy section, glossary, key links. |
+| 1.0 | 2026-06 | Initial guide (architecture, shared-DB rules, deployment, patterns). |
+
+**Key links**
+
+| What | Where |
+|---|---|
+| This repo | <https://github.com/ethanbrown7619-eng/Timeium> |
+| Live app | <https://ptl-timesheet.businessautomation.workers.dev> |
+| Supabase dashboard (shared project) | <https://supabase.com/dashboard/project/kyfydyownbgwhquorchn> |
+| Cloudflare dashboard (worker `temporium`) | <https://dash.cloudflare.com/> → account `d9f2…f8b6` → Workers & Pages |
+| PTL Clock kiosk repo | Separate GitHub + Cloudflare account — coordinate via the owner above |
+| Companion docs | [RPC-REFERENCE.md](RPC-REFERENCE.md) · [USER-GUIDE.md](USER-GUIDE.md) · [SECURITY-TESTING.md](SECURITY-TESTING.md) |
+
+**How this guide is organised** (loosely [Diátaxis](https://diataxis.fr/)): Part I is the
+getting-started tutorial; Part II explains the architecture; Part III is reference
+material (the RPC catalogue lives in its own file so it can be updated independently);
+Part IV is how-to and operations; Part V is process; Part VI is security & privacy.
+Read Parts I–II once; the **[Shared database](#5-the-shared-database--read-this-twice)**
+and **[Migrations](#migration-numbering--the-registry)** material is what will save you
+from breaking production.
 
 ---
+
+# Part I — Getting started
+
+## 0. Prerequisites & access
+
+You need, in this order:
+
+1. **Git** and a GitHub account with access to
+   [`ethanbrown7619-eng/Timeium`](https://github.com/ethanbrown7619-eng/Timeium)
+   (ask the owner for collaborator access).
+2. **Node.js ≥ 18** and npm (the only dev dependency is `wrangler`; there is no
+   build step and no other toolchain).
+3. **Cloudflare access** — only needed to deploy or read worker logs. `wrangler
+   login` opens a browser auth flow; the owner grants you to account
+   `d9f2db0d7367062acbb75cf6afc7f8b6`.
+4. **A Supabase app account** — the app talks to the live shared Supabase project
+   directly, so to sign in locally you need a real `public.users` row (and an
+   `admins` row if you need admin/dev tools). The owner creates this for you.
+   Supabase *dashboard* access (SQL editor — required for applying migrations) is
+   granted separately by the owner.
+
+No secrets are required for local development: the Supabase URL and anon key are
+public values committed in `wrangler.toml [vars]`, and the worker serves them to
+the frontend as `/config.json`.
+
+## 0.1 Run it locally
+
+```sh
+git clone https://github.com/ethanbrown7619-eng/Timeium.git
+cd Timeium
+npm install
+npm run dev        # wrangler dev — serves public/ + worker on localhost
+```
+
+Open the printed localhost URL and sign in with your app account.
+
+Things to know before you start:
+
+- **Do not clone into a OneDrive-synced folder** (on PTL machines the Desktop is
+  redirected into OneDrive, which corrupts `.git`). Use a plain local path.
+- **There is no staging database.** `wrangler dev` and the deployed app hit the
+  *same live Supabase project*, which is also shared with the PTL Clock kiosk and
+  the ERP modules. Anything you write locally is production data. The dev-tools
+  "Reset all hours" button deletes real data.
+- **There is no build step.** Edit a file under `public/`, refresh the browser.
+  Whatever you write runs as-is in evergreen browsers (ES modules and top-level
+  `await` are fine).
+- Quick syntax check without a browser: `node --check` on a copy of the module
+  renamed to `.mjs`.
+- Applying database changes is a separate, manual step — see
+  [the shared database](#5-the-shared-database--read-this-twice). Pushing code
+  never touches the DB.
+
+---
+
+# Part II — Architecture
 
 ## 1. The one-paragraph architecture
 
@@ -48,11 +136,12 @@ public/                 the entire app
   js/supabase-client.js client bootstrap (reads /config.json)
   js/vendor/            vendored supabase-js single-file build
   css/style.css         the single stylesheet (design tokens in :root)
-supabase/migrations/    numbered SQL files — hand-run, see §5
+supabase/migrations/    numbered SQL files — hand-run, see the shared-DB section
 worker.js               the Cloudflare Worker
 wrangler.toml           deploy config (assets binding, vars)
-schema-replica.sql      snapshot of shared DB objects — see §5 caveats
-docs/                   this guide + the user guide
+schema-replica.sql      snapshot of shared DB objects — goes stale; see caveats
+docs/                   this guide, the RPC reference, the user guide,
+                        security-testing notes
 ```
 
 Page ↔ module map (each HTML page loads exactly one module):
@@ -88,7 +177,10 @@ never on page load.
 - **Authorization is enforced in the database**, not the UI: RLS policies
   for straightforward row access, `SECURITY DEFINER` RPCs for anything
   crossing user boundaries (approvals, reports, on-behalf actions). Treat
-  every UI gate as cosmetic; the RPC must check for real.
+  every UI gate as cosmetic; the RPC must check for real. The full catalogue
+  of RPCs — signatures, who may call them, what each enforces — is
+  **[RPC-REFERENCE.md](RPC-REFERENCE.md)**; keep it updated when you add or
+  change a function.
 - Client-side validation is always mirrored server-side when it matters
   (e.g. department-required-on-submit is a DB trigger, migration 148).
 
@@ -144,17 +236,61 @@ Things that will bite you if you don't know them:
   pull their approved leave straight from `leave_requests` (and only
   theirs, to avoid double-counting timesheet staff).
 
+---
+
+# Part III — Reference
+
+## The RPC / API reference
+
+**[RPC-REFERENCE.md](RPC-REFERENCE.md)** catalogues every database function the
+frontend calls and every `SECURITY DEFINER` function this repo owns: signature,
+which migration holds the latest definition, who may call it, and what the body
+actually enforces. Because authorization lives in the database, that file is the
+authoritative security surface of the app — **update it in the same commit as any
+migration that adds or changes a function.**
+
+## Migration numbering — the registry
+
+There is no external registry; **the `supabase/migrations/` folder is the
+registry**, and numbers are taken first-come at push time.
+
+| Range | Owner | Notes |
+|---|---|---|
+| ≤ 199 | **This repo** | Current files run 022–157; next number = highest present + 1. Files below 031 predate the partition agreement but are ours. |
+| 200+ | **PTL Clock kiosk repo** | Never number into the 200s. Kiosk-side changes are authored in *their* migration history — coordinate via the owner. |
+
+Rules that keep this honest: one migration per change; every migration idempotent
+("safe to re-run"); a header comment saying *why*; never renumber a pushed file.
+Because migrations are hand-applied ([see below](#5-the-shared-database--read-this-twice)),
+the folder can be ahead of the live DB — to find out what's applied, probe for the
+objects each migration creates.
+
+## Environment variables & secrets
+
+| Name | Sensitivity | Where it lives | Purpose |
+|---|---|---|---|
+| `SUPABASE_URL` | Public | `wrangler.toml [vars]` | Shared project URL, served via `/config.json` |
+| `SUPABASE_ANON_KEY` | Public (RLS is the gate) | `wrangler.toml [vars]` | Browser Supabase client |
+| `TURNSTILE_SITE_KEY` | Public | `wrangler.toml [vars]` | CAPTCHA widget on auth forms |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Secret — bypasses RLS entirely** | `wrangler secret put` | Worker-side Xero routes |
+| `XERO_CLIENT_ID` / `XERO_CLIENT_SECRET` | **Secret** | `wrangler secret put` | Xero OAuth |
+| Turnstile *secret* key | **Secret** | Supabase Auth settings (dashboard) | Server-side CAPTCHA verification |
+
+---
+
+# Part IV — Working on the system
+
 ## 5. The shared database — read this twice
 
 The Supabase project is shared with the **PTL Clock kiosk repo** (different
 GitHub account; you cannot see its code). This has real consequences:
 
 **Migrations are hand-applied.** Pushing code does *not* touch the DB.
-Every `supabase/migrations/NNN_*.sql` file must be pasted into the Supabase
-SQL editor by a human. Write every migration idempotent ("safe to re-run").
+Every `supabase/migrations/NNN_*.sql` file must be pasted into the
+[Supabase SQL editor](https://supabase.com/dashboard/project/kyfydyownbgwhquorchn)
+by a human. Write every migration idempotent ("safe to re-run").
 
-**Numbering is partitioned.** This repo uses **031–199**. PTL Clock owns
-**200+**. Never number into the 200s.
+**Numbering is partitioned** — see [the registry](#migration-numbering--the-registry).
 
 **Function ownership is split** (agreed with the PTL Clock side):
 
@@ -177,7 +313,8 @@ to `_timesheet_rows`, reverting unpaid-personal-time deduction).
 
 **Rule: before touching any shared function, snapshot it from the live DB**
 — never from `schema-replica.sql` (a point-in-time reference that goes
-stale) and never from memory:
+stale; its snapshot date is in its own header and in git history) and never
+from memory:
 
 ```sql
 select pg_get_functiondef(p.oid) from pg_proc p
@@ -205,20 +342,88 @@ migrations run **once** (shared database covers both). The B repo's
 
 ## 7. Deployment & environment
 
-- `wrangler deploy` publishes worker + assets; pushes to the default branch
-  deploy via Cloudflare's git integration.
+- `wrangler deploy` publishes worker + assets; pushes to the deploy branch
+  (`claude/continue-ptl-timesheet-blVcV`) deploy via Cloudflare's git
+  integration — **every push is a deploy**.
 - `wrangler.toml`: assets served worker-free (`run_worker_first` is
   intentionally OFF — turning it on once 503'd the site); the `ASSETS`
   binding is required for `worker.js`'s fallthrough; `[vars]` exposes the
   public Supabase URL + anon key, which the Worker serves as
-  `/config.json`; secrets (`SUPABASE_SERVICE_ROLE_KEY`, Xero creds) via
-  `wrangler secret put`.
+  `/config.json`; secrets via `wrangler secret put` (see
+  [the table above](#environment-variables--secrets)).
 - Supabase Auth **URL Configuration** must list the real app origin as Site
   URL and `https://<origin>/*` in Redirect URLs — otherwise password-reset
   emails bounce to the wrong place (this shipped broken as
   `localhost:3000` once).
 - Turnstile (CAPTCHA) protects auth forms; the public site key lives in
   `wrangler.toml`, the secret in Supabase Auth settings.
+
+## 7a. Rolling back
+
+**Frontend / worker** (safe, fast):
+
+1. `git revert <bad commit>` and push to the deploy branch — Cloudflare
+   redeploys the previous state. This is the preferred route because the repo
+   history stays truthful.
+2. In a hurry: `npx wrangler rollback` reverts the worker to the previous
+   deployment, or check out the last good commit and `npx wrangler deploy`.
+   Verify with `npx wrangler deployments list`. Follow up with the git revert
+   so the next push doesn't re-deploy the bad code.
+
+**Database** — there is no automatic rollback. Migrations are hand-applied, so
+recovery is **forward-fix**: write a new idempotent migration that corrects the
+state, apply it, and commit it. Never edit an already-applied migration to
+pretend it didn't happen. For the specific failure modes, use the playbook below.
+
+## 7b. Bad-migration playbook (incident response)
+
+You applied a migration to the shared DB and something broke — possibly the
+kiosk or an ERP sibling app, not just this one.
+
+1. **Stop applying anything else.** One bad state is recoverable; a guessed
+   second change on top may not be.
+2. **Identify what actually changed.** Snapshot the affected functions from the
+   live DB (`pg_get_functiondef`, query in
+   [the shared-DB section](#5-the-shared-database--read-this-twice)) and diff
+   against `schema-replica.sql` / the migration you ran.
+3. **"could not choose best candidate function"** → you minted an overload
+   twin. List them and drop the one with the stale signature:
+
+   ```sql
+   select p.oid::regprocedure
+     from pg_proc p
+    where p.pronamespace = 'public'::regnamespace
+      and p.proname = '<function>';
+   -- then: drop function public.<function>(<stale arg list>);
+   ```
+
+4. **Silently clobbered a shared function** (signature matched, body stale) →
+   restore from the authoritative source: the owning repo's latest migration,
+   or ask the kiosk owner for their current definition. Do not restore from
+   `schema-replica.sql` unless its date proves it post-dates the other side's
+   last change.
+5. **Verify both apps** — this app *and* the kiosk (and, for `public.*`
+   objects, the ERP modules) — before calling it fixed.
+6. **Close out:** write the corrected idempotent migration, commit it, refresh
+   `schema-replica.sql`, and note what happened in the migration's header
+   comment so the next person understands the scar tissue.
+
+## 7c. Backups & data recovery
+
+- Supabase takes automated backups of the project — see
+  [Dashboard → Database → Backups](https://supabase.com/dashboard/project/kyfydyownbgwhquorchn/database/backups)
+  for what's available on the current plan (daily backups; point-in-time
+  recovery only if enabled).
+- **A restore rolls back every application sharing the project** — the kiosk
+  and the ERP modules included — to the backup's timestamp. It is the last
+  resort, coordinated by the owner; prefer surgical repair (playbook above)
+  for anything short of data destruction.
+- Before running anything destructive (bulk deletes, `Reset all hours`,
+  risky migrations), export the affected rows first — a `select … \copy` from
+  the SQL editor or a CSV export is cheap insurance.
+- Remember the retention obligations in
+  [Security & privacy](#part-vi--security--privacy) before deleting employee
+  records at all.
 
 ## 8. Frontend patterns & gotchas
 
@@ -263,7 +468,109 @@ migrations run **once** (shared database covers both). The B repo's
   `plpgsql` bodies aren't fully validated at `CREATE`; ambiguity and
   column errors surface on **first execution**.
 
-## 10. Where to start reading
+## 9a. Troubleshooting index
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| RPC calls fail with *"could not choose best candidate function"* | Overload twin minted from a stale signature | [Bad-migration playbook](#7b-bad-migration-playbook-incident-response) step 3 |
+| A feature in the *other* app silently reverted | Shared function clobbered with a stale body | Playbook step 4 |
+| New RPC "missing" right after applying a migration | PostgREST schema cache hasn't reloaded | Wait a moment; retry. Persisting → check the migration actually ran and `GRANT EXECUTE` exists |
+| Whole site 503s | `run_worker_first` turned on / `ASSETS` binding missing | Keep `run_worker_first` OFF; keep the `[assets] binding = "ASSETS"` line |
+| Password-reset email links to the wrong host | Supabase Auth URL Configuration stale | Set Site URL + `https://<origin>/*` redirect |
+| Report/table quietly missing rows | PostgREST 1000-row cap | Chunk the query; `flagTruncationRisk()` |
+| Embedded select errors about multiple relationships | Ambiguous FK embed | Pin the constraint name (`users!leave_requests_user_id_fkey`) |
+| Week dashboard shows stale data after an edit | Memoized `fetchWeekDashboardData` | `invalidateWeekDashboard(orgId)` after mutating |
+| Migration ran but behaviour unchanged | It was never applied (hand-apply is manual) | Probe `pg_proc` / `information_schema` for the objects it creates |
+
+---
+
+# Part V — Contribution workflow
+
+- **Branching.** The canonical branch is `claude/continue-ptl-timesheet-blVcV`
+  and Cloudflare auto-deploys every push to it. Small, verified changes may go
+  straight to it (accepting that push = deploy). Anything you can't fully verify
+  locally goes on a feature branch first and merges when ready. Don't rename the
+  deploy branch — the Cloudflare git integration is bound to it.
+- **Commits.** Imperative subject line; body explains *why*, not what. A change
+  that includes a migration references its number in the subject or body.
+  User-visible frontend changes end by listing the exact `public/` files to copy
+  to the B repo ([two-repo workflow](#6-the-two-repo-copy-workflow)).
+- **Review.** There is no CI and no test suite, so review discipline substitutes
+  for both: verify against the live app with a dev-role account before pushing;
+  anything touching the shared DB, money/hours calculations
+  (`shiftWorkedCalc()`), or auth gets a second pair of eyes (human or a fresh
+  adversarial AI review) before the migration is applied.
+- **Migrations.** Take the next free number ([registry](#migration-numbering--the-registry)),
+  make it idempotent, header-comment the why, and never edit an applied file —
+  forward-fix instead. Applying to the live DB is its own deliberate act,
+  separate from pushing.
+- **Documentation.** A change that alters behaviour described here updates this
+  guide (and [RPC-REFERENCE.md](RPC-REFERENCE.md) for function changes) in the
+  same commit, and bumps the version in [Document control](#document-control).
+
+---
+
+# Part VI — Security & privacy
+
+**Public vs secret.** The split is deliberate: the Supabase URL, anon key, and
+Turnstile site key are public by design (RLS and the DB-side RPC checks are the
+real gate — see the [env table](#environment-variables--secrets)). Everything
+else is secret. The **service-role key bypasses RLS entirely**: it exists only
+as a Cloudflare worker secret for the Xero routes, must never appear in
+`public/`, `wrangler.toml`, or a commit, and access to it is effectively access
+to every row in the shared database. Who holds it: whoever has access to the
+Cloudflare account and the Supabase dashboard (currently the owner). Rotate it
+from the Supabase dashboard if it ever leaks, then update the worker secret.
+
+**This is employee PII.** The database holds identified employee records: hours
+worked, clock in/out times, on-site/off-site status, and leave — including sick
+leave, which is health-adjacent information. Under the NZ **Privacy Act 2020**
+that carries real obligations: collect only what's needed, secure it, and be
+able to answer an employee's access/correction request (the data model makes
+this feasible — everything keys off `users.id`). Under the **Holidays Act 2003**
+and **Employment Relations Act 2000**, holiday/leave and wages & time records
+must be kept for **at least 6 years** — so features must not hard-delete
+timesheet, leave, or clock history for departed employees; deactivate accounts
+instead of purging them, and treat the dev "Reset all hours" tool as strictly a
+test-data tool.
+
+**Practical hygiene.**
+
+- Don't paste real employee data into external tools or services when a test
+  employee (Dev Tools → Generate Test Timesheets) will do.
+- Offboarding a developer = removing GitHub collaborator access, Cloudflare
+  account access, Supabase dashboard access, and deactivating their app account.
+- New privileged surface (a new `SECURITY DEFINER` RPC, a new worker route using
+  the service-role key) gets an entry in [RPC-REFERENCE.md](RPC-REFERENCE.md)
+  and a mention in the commit for reviewability.
+- Historical security testing notes live in
+  [SECURITY-TESTING.md](SECURITY-TESTING.md).
+
+---
+
+# Glossary
+
+| Term | Meaning |
+|---|---|
+| **PTL** | The company this system serves. One organisation row; everything runs under it. |
+| **Timeium / `temporium`** | This repo / its Cloudflare Worker name. The app is "PTL Timesheet" to users. |
+| **PTL Clock / kiosk / Attendium** | The wall-tablet clock-in/out app. Separate repo + Cloudflare account, **same database**. Writes `clock_events` / `status_events`. |
+| **B repo** | The kiosk-side copy of this frontend, served from the kiosk's Cloudflare account ([two-repo workflow](#6-the-two-repo-copy-workflow)). |
+| **Infusion** | PTL's accounting system. Admin exports timesheet data to it; unrelated to this app's internals. |
+| **Xero** | Payroll/accounting SaaS; the worker's `/xero/*` routes handle its OAuth + API for leave export. |
+| **Turnstile** | Cloudflare's CAPTCHA, on the auth forms. |
+| **Supabase** | Hosted Postgres + Auth + PostgREST. The shared project is `kyfydyownbgwhquorchn`. |
+| **PostgREST** | The REST layer Supabase puts over Postgres — what supabase-js talks to. Source of the 1000-row cap. |
+| **RLS** | Row-Level Security — per-row Postgres policies; the baseline authorization layer. |
+| **RPC** | A Postgres function called via PostgREST (`sb.rpc('name')`). |
+| **`SECURITY DEFINER`** | A Postgres function running with its owner's rights, not the caller's — used for privileged operations, which is why each one must check authorization itself. |
+| **Anon key / service-role key** | Supabase API keys: the anon key is public and RLS-bound; the service-role key bypasses RLS and is strictly secret. |
+| **Overhead staff** | Employees in overhead departments who don't file timesheets; reports read their leave directly. |
+| **wrangler** | Cloudflare's CLI — dev server, deploys, secrets, logs. |
+
+---
+
+# 10. Where to start reading
 
 1. `public/js/shared.js` — every cross-page helper: context, topbar, dates
    (`getMonday`, `fmtDate`, `DAYS`), `leaveTotalHours`, dialogs, toasts.
@@ -272,5 +579,6 @@ migrations run **once** (shared database covers both). The B repo's
 3. `public/js/timeclock.js` — `shiftWorkedCalc()` and the report tabs.
 4. `supabase/migrations/` in order — the DB's real history, including the
    comments documenting why each change exists.
-5. `docs/USER-GUIDE.md` — the flows you're about to modify, as users see
-   them.
+5. [`docs/RPC-REFERENCE.md`](RPC-REFERENCE.md) — the authorization surface.
+6. [`docs/USER-GUIDE.md`](USER-GUIDE.md) — the flows you're about to modify, as
+   users see them.
