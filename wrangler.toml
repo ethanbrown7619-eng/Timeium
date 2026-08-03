@@ -42,7 +42,7 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 # Cloudflare Turnstile public site key. Safe to commit — it's the
 # public-facing identifier; the matching secret key lives in Supabase
 # Auth's CAPTCHA settings. Leave blank to disable the widget.
-TURNSTILE_SITE_KEY = ""
+TURNSTILE_SITE_KEY = "0x4AAAAAAEFhSpbPy4xVI7Da"
 
 # Secrets (set via `wrangler secret put NAME`, never committed):
 #
