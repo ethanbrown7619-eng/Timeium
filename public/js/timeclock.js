@@ -363,10 +363,13 @@ async function loadLivePresence() {
     await loadActiveEmployeeRoster();
     await loadClockScope();
 
-    // org_live_status is an RPC in Attendium, not a view. Takes p_org_id
-    // explicitly and doesn't gate server-side — anyone with a valid
-    // session can call it (our clock-viewer / admin UI permission is
-    // app-side via the topbar nav).
+    // org_live_status is an RPC in Attendium, not a view, and takes p_org_id
+    // explicitly. Since migration 159 it IS gated server-side: the wrapper
+    // requires is_admin_of / user_is_dept_manager_in_org /
+    // user_can_view_clock_comparison, all pinned to p_org_id. Before 159 it
+    // had no check at all and any signed-in user could read any org's clock
+    // data (security audit 2026-08, finding A2). The client-side guard at
+    // the top of this file is UX; the RPC is the boundary.
     const { data, error } = await sb.rpc("org_live_status", { p_org_id: currentOrgId });
     if (error) throw error;
 
