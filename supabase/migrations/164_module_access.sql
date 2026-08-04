@@ -90,11 +90,23 @@ insert into public.erp_modules (key, name, href, description, sort_order, always
     ('bom-import',     'BOM Import',      'https://ptl-bom-import.ethanbrown7619.workers.dev',   'Engineering BOMs',             30, false),
     ('procure',        'Procure',         'https://ptl-procure1.ethanbrown7619.workers.dev',     'Purchasing & POs',             40, false),
     ('purchaseorders', 'Purchase Orders', 'https://ptl-purchaseorders.ethanbrown7619.workers.dev','Infusion PO tracking',        50, false),
-    ('stock',          'Stock',           'https://ptl-stock-keeper.ethanbrown7619.workers.dev', 'Shop-floor stock',             60, false),
+    -- Stock deliberately deep-links to /admin, its dashboard, rather than the
+    -- shop-floor root. /admin.html 307-redirects; /admin is the real path.
+    ('stock',          'Stock',           'https://ptl-stock-keeper.ethanbrown7619.workers.dev/admin', 'Shop-floor stock',       60, false),
     ('partslogistics', 'PartsLogistics',  'https://ptl-partslogistics.ethanbrown7619.workers.dev','Goods inwards & QA',          70, false),
     ('spares',         'Spares',          'https://ptl-spares.ethanbrown7619.workers.dev',       'Spares & consumables',         80, false),
     ('map',            'Factory Map',     'https://ptl-map.ethanbrown7619.workers.dev',          'Floor plan & shelves',         90, false)
 on conflict (key) do nothing;
+
+-- One-time correction for databases where this migration was applied before
+-- Stock was pointed at its admin dashboard. Deliberately matched on the exact
+-- previous value, so an operator who has since set their own URL is not
+-- overwritten — the registry, not this file, is the source of truth.
+update public.erp_modules
+   set href       = 'https://ptl-stock-keeper.ethanbrown7619.workers.dev/admin',
+       updated_at = now()
+ where key  = 'stock'
+   and href = 'https://ptl-stock-keeper.ethanbrown7619.workers.dev';
 
 alter table public.erp_modules enable row level security;
 
