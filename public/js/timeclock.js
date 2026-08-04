@@ -77,12 +77,12 @@ async function loadClockScope() {
     const deptNames = new Set((depts || []).map((d) => d.name).filter(Boolean));
     let userIds = new Set(), names = new Set();
     if (deptIds.size) {
-      const { data: us } = await sb.from("users")
-        .select("id, name")
-        .eq("organisation_id", currentOrgId)
-        .in("department_id", [...deptIds]);
-      userIds = new Set((us || []).map((u) => u.id));
-      names   = new Set((us || []).map((u) => u.name).filter(Boolean));
+      // Via clock_roster for the same reason as loadActiveEmployeeRoster:
+      // a direct users select is now row-scoped for department leads.
+      const { data: us } = await sb.rpc("clock_roster", { p_org_id: currentOrgId });
+      const mine = (us || []).filter((u) => deptIds.has(u.department_id));
+      userIds = new Set(mine.map((u) => u.id));
+      names   = new Set(mine.map((u) => u.name).filter(Boolean));
     }
     clockScope = { deptIds, deptNames, userIds, names };
   } catch (err) {
@@ -237,18 +237,21 @@ function liveRowCls(r) {
 // Fetched once per page load — these values don't change live.
 async function loadActiveEmployeeRoster() {
   if (liveEmpInfoByName || !currentOrgId) return;
+  // Roster comes from the clock_roster RPC, not a direct users select:
+  // migration 160 narrows what a department lead can read from users to
+  // their own reports, which would have left this list half-populated
+  // while org_live_status kept returning the whole org. The RPC returns
+  // the org-wide roster (no rate columns) to the same three roles the
+  // page admits. See 160_narrow_manager_read_scope.sql.
   const [usersRes, deptsRes] = await Promise.all([
-    sb.from("users")
-      .select("id, name, department_id, employment_type")
-      .eq("organisation_id", currentOrgId)
-      .eq("active", true),
+    sb.rpc("clock_roster", { p_org_id: currentOrgId }),
     sb.from("departments")
       .select("id, name")
       .eq("organisation_id", currentOrgId),
   ]);
   const deptName = new Map((deptsRes.data || []).map((d) => [d.id, d.name]));
   liveEmpInfoByName = new Map();
-  for (const u of usersRes.data || []) {
+  for (const u of (usersRes.data || []).filter((r) => r.active)) {
     if (!u.name) continue;
     liveEmpInfoByName.set(u.name, {
       name: u.name,

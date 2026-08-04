@@ -1,5 +1,5 @@
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, renderTopbar, escapeHtml, getUserContext, validatePassword, MIN_PASSWORD_LENGTH } from "/js/shared.js";
+import { notice, renderTopbar, escapeHtml, getUserContext, validatePassword, MIN_PASSWORD_LENGTH, clearUserContextCache } from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -100,6 +100,9 @@ document.getElementById("pw-form").addEventListener("submit", async (e) => {
 
   // SECURITY DEFINER RPC — direct UPDATE is blocked by RLS.
   await sb.rpc("clear_must_change_password");
+  // Drop the cached context so the app-wide forced-change guard in
+  // getUserContext() sees the cleared flag immediately.
+  clearUserContextCache(session);
 
   document.getElementById("current-pw").value = "";
   document.getElementById("new-pw").value = "";

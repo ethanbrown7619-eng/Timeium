@@ -82,11 +82,23 @@ on `users`.
 ### 1. Database
 
 In the Supabase SQL editor, apply each migration under `supabase/migrations/`
-in order. They are all idempotent (re-running is safe). Latest in this branch:
+in order. They are all idempotent (re-running is safe). Latest in this branch
+— the August 2026 security audit remediations (see
+[docs/SECURITY-AUDIT-2026-08.md](docs/SECURITY-AUDIT-2026-08.md)):
 
-- `053_manager_read_users.sql` — RLS policies allowing managers (admin role
-  *and* department-lead `users.is_manager` flag) to read users in their
-  organisation, so the manager dashboard sees their team.
+- `159_gate_clock_report_rpcs.sql` — adds the missing authorisation check to
+  `org_live_status` and `_offsite_report` (audit A2). Both were callable by
+  any signed-in user for **any** organisation. Read the cross-repo
+  coordination note in its header before the next PTL Clock migration.
+- `160_narrow_manager_read_scope.sql` — department leads now read only their
+  own reports, not every user (incl. pay rates) and timesheet in the org (A4).
+- `161_scope_organisations_read.sql` — replaces the `using (true)` SELECT
+  policy on `organisations` with membership scoping (A6).
+- `162_restore_login_audit_trail.sql` — restores the failed-login audit trail,
+  which had had no writer at all, and separates it from the lockout so the
+  anon endpoint can no longer be used to lock a victim out (A3, A5).
+- `163_provision_login_link_guard.sql` — refuses to link an auth identity that
+  another employee record already owns (A9).
 
 ### 2. Edge function (Infusion sync, optional)
 
@@ -160,9 +172,18 @@ npm install
 npx wrangler deploy
 ```
 
-The worker also enforces a Content-Security-Policy and the usual
-hardening headers (HSTS, X-Frame-Options, X-Content-Type-Options,
-Referrer-Policy, Permissions-Policy).
+Security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options,
+Referrer-Policy, Permissions-Policy) are set in **`public/_headers`**,
+because `run_worker_first` is off and Cloudflare's asset layer serves
+pages and scripts without invoking the Worker at all. `worker.js` carries
+an identical copy for the SPA-fallback path only — change both, or
+neither.
+
+> This was found broken by the August 2026 security audit (finding A1):
+> the headers existed only in `worker.js`, so no real page had ever been
+> served with any of them. After deploying, verify with
+> `curl -I https://<your-domain>/signin.html` — a missing
+> `content-security-policy` there means the regression is back.
 
 ### 4. Sign in
 
@@ -202,8 +223,11 @@ scale or large mechanical refactor):
 - Event-delegation refactor of all row-button rendering (audit 3.4).
 - Shared cache module for reference data (audit 3.7).
 - In-place state updates instead of full reload after CRUD (audit 2.10).
-- Move inline `<script type="module">` blocks to external files (audit 3.6;
-  required to tighten CSP further by removing `'unsafe-inline'`).
+- ~~Move inline `<script type="module">` blocks to external files (audit 3.6;
+  required to tighten CSP further by removing `'unsafe-inline'`).~~ **Done** —
+  every page now loads a single external `/js/*.js` module, so `script-src`
+  refuses `'unsafe-inline'`. (`style-src` still allows it for the inline
+  `style="…"` attributes throughout the templates.)
 - Test-data-generation server-side RPC (audit 1.6) — depends on DB work.
 - Combining-RPC functions for hot paths (audit 5.2) — depends on DB work.
 - RLS audit per audit 1.1 — must be done in the Supabase dashboard.

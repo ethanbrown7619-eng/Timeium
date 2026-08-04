@@ -1,5 +1,5 @@
 import { getSupabase } from "/js/supabase-client.js";
-import { notice, routeAfterAuth, validatePassword } from "/js/shared.js";
+import { notice, routeAfterAuth, validatePassword, clearUserContextCache } from "/js/shared.js";
 
 const sb = await getSupabase();
 
@@ -77,6 +77,10 @@ form.addEventListener("submit", async (e) => {
   // direct UPDATE is blocked by RLS (no self-UPDATE policy on users).
   try {
     await sb.rpc("clear_must_change_password");
+    // Cached context still says the change is pending; clear it so the
+    // app-wide guard in getUserContext() doesn't bounce the user back.
+    const { data: { session } } = await sb.auth.getSession();
+    clearUserContextCache(session);
   } catch (err) {
     console.warn("must_change_password clear failed:", err);
   }

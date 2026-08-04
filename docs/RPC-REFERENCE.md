@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Version** | 1.0 |
-| **Last updated** | 2026-08-04 (generated from migrations up to 157) |
+| **Last updated** | 2026-08-05 (generated from migrations up to 163) |
 | **Owner** | Ethan Brown (GitHub [`ethanbrown7619-eng`](https://github.com/ethanbrown7619-eng)) |
 | **Update rule** | **Change this file in the same commit as any migration that adds, replaces, or drops a function.** Because authorization is enforced in the database, this file is the app's authoritative security surface. |
 
@@ -82,7 +82,7 @@ Shorthand used below: **"Admin"** means `public.is_admin_of(org)` → a row in
 | Function (signature) | Defined in | SECURITY | Who may call / auth check inside | Purpose | Called from |
 |---|---|---|---|---|---|
 | `create_employee(p_org_id=null, p_name, p_email, p_department_id, p_cost_rate, p_sell_rate, p_employment_type='waged', p_employee_code, p_overtime_threshold_hours, p_receives_overtime=false) → users` | 106 | DEFINER | `resolve_org_id` (raises unless caller is an admin; devs may override org) | Create an employee row with fresh `qr_token` | staff.js |
-| `provision_employee_login(p_user_id) → text` | **140** (supersedes 055/054/037/036) | DEFINER | `is_admin_of(employee's org)` | Create/link an `auth.users` account; returns random temp password (null if linked existing) | staff.js |
+| `provision_employee_login(p_user_id) → text` | **163** (supersedes 140/055/054/037/036) | DEFINER | `is_admin_of(employee's org)` | Create/link an `auth.users` account; returns random temp password (null if linked existing). **163 refuses to link an identity another `users` row already owns** (audit A9), backed by the `users_auth_user_id_uniq` index | staff.js |
 | `reset_employee_password(p_user_id) → text` | **140** (supersedes 100) | DEFINER | `is_admin_of(org)`; account must exist | Set a new random temp password + `must_change_password` | staff.js |
 | `gen_temp_password() → text` | 140 | DEFINER | none (pure generator) | 12-char random password helper | internal |
 | `reset_org_hours(p_org_id) → int` | 100 | DEFINER | `is_admin_of(p_org_id)` | Delete ALL timesheets + entries for the org (dev tool) | admin.js |
@@ -111,6 +111,7 @@ Shorthand used below: **"Admin"** means `public.is_admin_of(org)` → a row in
 | `xero_set_employee_mapping(p_user_id, p_xero_employee_id text) → void` | 113 | DEFINER | `is_admin_of(user's org)` | Map employee → Xero employee id | configure.js |
 | `xero_set_job_leave_type_mapping(p_job_id, p_xero_leave_type_id text) → void` | 114 | DEFINER | `is_admin_of`; job must be `is_leave` | Map leave job → Xero leave type | configure.js |
 | `xero_set_leave_type_mapping(p_leave_type_id, p_xero_leave_type_id text) → void` | 113 | DEFINER | `is_admin_of` | Older leave-type→Xero mapping | not called from JS (superseded by 114) |
+| `set_leave_notifications(p_org_id, p_enabled bool) → void` | 158 | DEFINER | `is_admin_of(p_org_id)` | Toggle `organisations.notify_leave` (dedicated setter — deliberately NOT folded into `save_org_settings`, whose live definition has drifted) | configure.js |
 
 ## Auth / misc
 
@@ -118,14 +119,15 @@ Shorthand used below: **"Admin"** means `public.is_admin_of(org)` → a row in
 |---|---|---|---|---|---|
 | `claim_employee_by_email() → jsonb` | 024 | DEFINER | Uses `auth.uid()`; links only an unclaimed `users` row whose email equals the auth email | First-login linking of auth account → employee row | shared.js, welcome.js |
 | `clear_must_change_password() → void` | 111 | DEFINER | Own row only (`auth_user_id = auth.uid()`) | Clear the forced-change flag after password change | change-password.js, reset-password.js, settings.js |
-| `check_login_locked(p_email) → bool` | 104 | DEFINER | none — public pre-login check (count-only, no data leak) | ≥5 failures in 15 min ⇒ locked | signin.js |
-| `record_login_attempt(p_email, p_failure_reason=null, p_user_agent=null) → void` | **139** (supersedes 104; drops old `p_succeeded` arg) | DEFINER | none — insert-only (failures only) | Log a failed login | not called from JS (auth hook now records) |
-| `record_login_success() → void` | 139 | DEFINER | Uses `auth.uid()`'s own email | Log a successful login | not called from JS |
-| `password_verification_hook(event jsonb) → jsonb` | 142 | DEFINER | Called by Supabase Auth (hook), not clients | Server-side record of verification outcomes + hard lockout (`decision: reject`) | Supabase Auth hook |
+| `check_login_locked(p_email) → bool` | **162** (supersedes 104) | DEFINER | none — public pre-login check (count-only, no data leak) | ≥5 failures in 15 min ⇒ locked. **Counts only `source='auth_hook'` rows**, so the anon endpoint cannot lock anyone out (audit A5). Returns false while the 142 hook is disabled | signin.js |
+| `record_login_attempt(p_email, p_failure_reason=null, p_user_agent=null) → void` | **162** (supersedes 139/104) | DEFINER | none — insert-only (failures only) | Log a failed login as `source='client'` (forensics only, never drives the lockout). Capped at 20 rows per email per 15 min; over the cap it silently no-ops | signin.js |
+| `record_login_success() → void` | **162** (supersedes 139) | DEFINER | Uses `auth.uid()`'s own email | Log a successful login as `source='session'` | signin.js |
+| `password_verification_hook(event jsonb) → jsonb` | **162** (supersedes 142) | DEFINER | Called by Supabase Auth (hook), not clients | Server-side record of verification outcomes as `source='auth_hook'` + hard lockout (`decision: reject`). **Not enabled** — Team/Enterprise plan only | Supabase Auth hook |
+| `prune_login_attempts() → integer` | **162** | DEFINER | revoked from all client roles | Delete `login_attempts` older than 180 days | pg_cron `prune-login-attempts`, 03:17 daily |
 | `user_manages_target_user(p_user_id) → bool` | 102 | DEFINER | pure predicate on `auth.uid()` | "Does caller manage this employee's department?" — used by UI and inside many RPCs | timesheet.js, timesheet-view.js, internal, RLS |
 | `is_manager_of(org_id) → bool` | 022 | DEFINER | predicate on `public.admins` (admin/manager/developer) | Role helper for RLS + RPC gates | internal / RLS |
 | `current_user_employee() → bigint` | 022 | DEFINER | predicate | Caller's `users.id` | internal / RLS |
-| `user_is_dept_manager_in_org(p_org_id) → bool` | 053 | DEFINER | predicate on `users.is_manager` | RLS helper: managers may read org users | RLS |
+| `user_is_dept_manager_in_org(p_org_id) → bool` | 053 | DEFINER | predicate on `users.is_manager` | Department-lead role check, pinned to the org. **No longer used by any RLS policy** (160 re-keyed those on `user_manages_target_user`); it is now the department-lead branch of the gate in `org_live_status`, `_offsite_report` (159) and `clock_roster` (160). Do not drop | internal (RPC gates) |
 | `user_can_view_clock_comparison(p_org_id) → bool` | 108 | DEFINER | predicate on `users.can_view_clock_comparison` | RLS/RPC helper for clock viewers | RLS, internal |
 
 Helpers **not defined in this repo** but relied on everywhere: `is_admin()`,
@@ -149,14 +151,21 @@ Owned by the separate PTL Clock kiosk repo; signatures as they appear in
 
 ## Shared / boundary functions (owned here, consumed by the kiosk)
 
-Latest definitions live in THIS repo's migrations; the kiosk repo calls them. All three
-are SECURITY DEFINER with **no in-body auth check** — access control is the EXECUTE
-grants carried forward from their original kiosk-era definitions plus the DEFINER
-wrappers that call them:
+Latest definitions live in THIS repo's migrations; the kiosk repo calls them.
 
-- `org_live_status(p_org_id) → table(user_id, name, department, status, break_id, break_name, since)` — latest in **149**; who's clocked in now + on/off-site status. Called from timeclock.js (Live tab) and the kiosk.
-- `_timesheet_rows(p_org_id, p_start, p_end_excl, p_tz) → table(..., hours, flag)` — latest in **149**; the whole clock-report engine (tolerance rounding, breaks, red/yellow/orange flags). Intended internal; reached via `weekly_timesheet`/`timesheet_for_range`.
-- `_offsite_report(p_org_id, p_start, p_end_excl, p_tz) → table(...)` — latest in **151** (supersedes 149); off-site events report with late-back detection; 151 suppresses false "clock out early" rows (near standard end, or after a full shift). Called directly from timeclock.js.
+> **Changed by migration 159 (security audit A2).** Two of these three previously
+> had **no in-body auth check** while being granted to `authenticated` and taking
+> a caller-supplied `p_org_id` — any signed-in user could read any organisation's
+> clock data. They are now **gated wrappers** over renamed `*_impl` functions.
+> Edit the `_impl`; never `create or replace` the public name from the kiosk repo
+> or the gate is silently lost. See 159's header for the repair procedure.
+
+- `org_live_status(p_org_id) → table(user_id, name, department, status, break_id, break_name, since)` — **gated wrapper, 159**. Gate: `is_admin_of` OR `user_is_dept_manager_in_org` OR `user_can_view_clock_comparison`, all pinned to `p_org_id`; null org returns zero rows. Delegates to `_org_live_status_impl`. Called from timeclock.js (Live tab) and the kiosk admin page.
+- `_org_live_status_impl(p_org_id)` — the original body (latest **149**), renamed by 159. **No auth check by design**; revoked from `public`/`anon`/`authenticated` so only the wrapper reaches it.
+- `_timesheet_rows(p_org_id, p_start, p_end_excl, p_tz) → table(..., hours, flag)` — latest in **149**; the whole clock-report engine (tolerance rounding, breaks, red/yellow/orange flags). No in-body auth check, but already revoked from `public`; reached via `weekly_timesheet`/`timesheet_for_range`.
+- `_offsite_report(p_org_id, p_start, p_end_excl, p_tz) → table(...)` — **gated wrapper, 159**, same gate as above. Deliberately adds no date-range limit: the kiosk admin page drives it from free-form date pickers. Called directly from timeclock.js and the kiosk.
+- `_offsite_report_impl(p_org_id, p_start, p_end_excl, p_tz)` — the original body (latest **151**, supersedes 149; suppresses false "clock out early" rows), renamed by 159. Revoked from all client roles.
+- `clock_roster(p_org_id) → table(id, name, department_id, employment_type, active)` — **160**; DEFINER, same three-role gate. Org-wide display roster **with no rate columns**, added so the Timeclock page keeps working after 160 narrowed department-lead reads on `users`. Called from timeclock.js (live roster + managed-scope filter).
 
 ## Triggers
 
@@ -167,6 +176,7 @@ wrappers that call them:
 | `trg_timesheets_updated_at` / `trg_timesheet_entries_updated_at` | `timesheets` / `timesheet_entries` | same | 031 |
 | `trg_department_codes_updated_at` | `department_codes` | same | 032 |
 | `trg_timesheet_require_department` | `timesheets` (BEFORE UPDATE OF status) | `check_timesheet_dept_on_submit()` — blocks transition to `submitted` while any hour-bearing non-leave entry lacks `dept_code_id` (backstop for the employee self-submit path, which is plain RLS UPDATE, not an RPC) | 148 |
+| `trg_queue_leave_notification` | `leave_requests` (AFTER INSERT OR UPDATE) | `_queue_leave_notification()` (DEFINER) — when `organisations.notify_leave` is on, derives an event kind (submitted / on_behalf / accepted / declined / approved / rejected / cancelled / revoked / change_requested) from the status transition and appends to `leave_notification_queue`. The queue table is RLS-on with **no policies** (service-role only — invisible to clients); the send-timesheet-notifications edge function drains it, enforcing the future-dates rule at send time | 158 |
 
 ## Internal helpers (never called from JS, not SECURITY DEFINER)
 

@@ -822,6 +822,30 @@ function userContextKey(session) {
   return `ptl-ctx:${session?.user?.id || "anon"}`;
 }
 
+// Forced password change (security audit 2026-08, finding A8). This used
+// to be checked only in signin.js, so a user issued a temp password could
+// skip it by navigating straight to any other page. Enforcing it here
+// covers every page that resolves a user context — which is all of them.
+//
+// Not a server-side control: the temp password is random and delivered
+// out of band (migration 140), so there is no attacker-known credential
+// to exploit. This stops a user from declining to set their own password,
+// which is what the flag is actually for.
+const PASSWORD_CHANGE_PATH = "/change-password.html";
+const MUST_CHANGE_ALLOWED_PATHS = new Set([
+  PASSWORD_CHANGE_PATH,
+  "/signin.html",
+  "/forgot-password.html",
+  "/reset-password.html",
+]);
+
+function enforceMustChangePassword(data) {
+  if (!data?.mustChangePassword) return data;
+  if (MUST_CHANGE_ALLOWED_PATHS.has(location.pathname)) return data;
+  location.replace(PASSWORD_CHANGE_PATH);
+  throw new Error("password change required");
+}
+
 export async function getUserContext(sb, session, { force = false } = {}) {
   if (!session) return null;
   const cacheKey = userContextKey(session);
@@ -836,22 +860,23 @@ export async function getUserContext(sb, session, { force = false } = {}) {
           // the next navigation sees any permission changes.
           fetchFreshUserContext(sb, session, cacheKey).catch((err) =>
             console.warn("context revalidate failed:", err?.message || err));
-          return data;
+          return enforceMustChangePassword(data);
         }
       }
     } catch (err) {
+      if (err?.message === "password change required") throw err;
       console.warn("getUserContext cache read failed:", err);
     }
   }
 
-  return fetchFreshUserContext(sb, session, cacheKey);
+  return enforceMustChangePassword(await fetchFreshUserContext(sb, session, cacheKey));
 }
 
 async function fetchFreshUserContext(sb, session, cacheKey) {
   const [devRes, adminRes, meRes] = await Promise.allSettled([
     sb.rpc("is_developer"),
     sb.from("admins").select("organisation_id, role").eq("user_id", session.user.id).maybeSingle(),
-    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison, clock_view_scope, cost_rate, sell_rate, rate_source_department_id, employment_type").eq("auth_user_id", session.user.id).maybeSingle(),
+    sb.from("users").select("id, organisation_id, name, is_manager, department_id, can_view_clock_comparison, clock_view_scope, cost_rate, sell_rate, rate_source_department_id, employment_type, must_change_password").eq("auth_user_id", session.user.id).maybeSingle(),
   ]);
 
   if (devRes.status === "rejected") console.warn("is_developer failed:", devRes.reason);
@@ -900,6 +925,9 @@ async function fetchFreshUserContext(sb, session, cacheKey) {
     clockViewScope: employee?.clock_view_scope === "managed" ? "managed" : "all",
     // False only when the user's staff type has every leave entitlement off.
     receivesLeave,
+    // Admin-issued temp password not yet replaced. Enforced in
+    // getUserContext() so it applies on every page, not just sign-in.
+    mustChangePassword: !!employee?.must_change_password,
   };
 
   try {

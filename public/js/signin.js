@@ -31,8 +31,12 @@ document.getElementById("signin-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   btn.textContent = "Signing in…";
 
-  // Soft lockout: 5 failed attempts in 15 min blocks further tries.
-  // Server-authoritative via check_login_locked RPC.
+  // Soft lockout pre-check: 5 authoritative failures in 15 min. This is a
+  // courtesy message, NOT a control — it only reports what the migration
+  // 142 auth hook recorded, and that hook is Team/Enterprise-only and is
+  // not currently enabled, so today this always returns false. The real
+  // brute-force controls are Supabase's per-IP auth rate limiting and
+  // Turnstile CAPTCHA enforcement (Authentication -> Attack Protection).
   const { data: locked } = await sb.rpc("check_login_locked", { p_email: email });
   if (locked) {
     notice("Too many failed sign-in attempts. Please wait 15 minutes and try again.", "error");
@@ -46,18 +50,32 @@ document.getElementById("signin-form").addEventListener("submit", async (e) => {
     email, password, options: { captchaToken },
   });
 
-  // Attempts are recorded authoritatively by the Password Verification
-  // auth hook (migration 142) — inside the auth server, so they can't be
-  // forged from the client. We no longer record from here (doing so would
-  // double-count and skew the lockout). The check_login_locked pre-check
-  // above still reads that hook-populated data for a fast "locked" message.
+  // Attempt logging (migration 162). Rows written from here are stamped
+  // source='client' and are FORENSICS ONLY — check_login_locked counts
+  // only source='auth_hook' rows, written inside the auth server by the
+  // migration 142 hook. That split is deliberate: this endpoint is
+  // anon-callable, so if it could move the lockout, anyone could lock out
+  // any employee by posting failures for their address.
+  //
+  // Logging must never break a sign-in, so every call is best-effort.
+  const logAttempt = (fn, args) => sb.rpc(fn, args).catch(() => {});
+
   if (error) {
+    logAttempt("record_login_attempt", {
+      p_email: email,
+      p_failure_reason: error.message || "sign_in_failed",
+      p_user_agent: navigator.userAgent,
+    });
     notice(error.message || "Sign in failed", "error");
     turnstile.reset();
     btn.disabled = false;
     btn.textContent = "Sign in";
     return;
   }
+
+  // Success path: the RPC derives the email from auth.uid() server-side,
+  // so it can't be fabricated for another account.
+  logAttempt("record_login_success", {});
 
   // Check if this user must change their default password
   const sess = signinData?.session;

@@ -130,6 +130,12 @@ function cacheControlFor(pathname) {
   return "no-cache";
 }
 
+// IMPORTANT: with run_worker_first off (see wrangler.toml), this function
+// only decorates the SPA-fallback path — Cloudflare's asset layer serves
+// every real page/script/style without invoking the Worker at all. The
+// headers that actually reach browsers on those responses come from
+// public/_headers, which carries an identical copy. Change both, or
+// neither. (Security audit 2026-08, finding A1.)
 function addSecurityHeaders(response, pathname) {
   const headers = new Headers(response.headers);
   if (pathname) headers.set("Cache-Control", cacheControlFor(pathname));
@@ -157,7 +163,7 @@ function addSecurityHeaders(response, pathname) {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co https://esm.sh",
+      "connect-src 'self' https://*.supabase.co https://esm.sh https://challenges.cloudflare.com",
       // Turnstile renders its challenge UI inside an iframe served from
       // challenges.cloudflare.com.
       "frame-src https://challenges.cloudflare.com",
