@@ -1614,15 +1614,11 @@ create policy "users update own entries" on public.timesheet_entries for update 
 create policy "users delete own entries" on public.timesheet_entries for delete to authenticated using ((exists ( select 1 from (public.timesheets t join public.users u on ((u.id = t.user_id))) where ((t.id = timesheet_entries.timesheet_id) and (u.auth_user_id = auth.uid()) and (t.status = any (array['draft'::text, 'rejected'::text]))))));
 
 -- ---- Function grants ----
-do $$
-declare r record;
-begin
-    for r in select n.nspname, p.proname, pg_get_function_identity_arguments(p.oid) as args
-             from pg_proc p
-             join pg_namespace n on n.oid = p.pronamespace
-             where n.nspname = 'public'
-    loop
-        execute format('grant execute on function %I.%I(%s) to authenticated, anon, service_role',
-            r.nspname, r.proname, r.args);
-    end loop;
-end$$;
+-- Deliberately NOT scripted here. A blanket grant-execute loop over every
+-- public function used to live in this file; it was removed because it would
+-- silently re-grant EXECUTE (including to anon) on functions whose only
+-- protection is a revoked grant — e.g. _org_live_status_impl and
+-- _offsite_report_impl — reopening security audit finding A2 (High).
+-- Function grants are managed per-function in supabase/migrations/
+-- (see 159_gate_clock_report_rpcs.sql and later). When rebuilding a
+-- database, run the migrations; do not add a blanket grant loop back here.
