@@ -704,6 +704,7 @@ export function renderTopbar(opts) {
   // Render the entire topbar in one place. Pages can leave the element empty
   // and we'll fill it; pages that pre-populated it (legacy) are overwritten.
   el.innerHTML = `
+    <div class="app-switcher-slot"></div>
     <div class="brand">
       <img src="/img/ptl-logo.png" class="brand-logo" alt="PTL" />
       <span class="brand-name">Timesheet</span>
@@ -725,6 +726,10 @@ export function renderTopbar(opts) {
     </div>
   `;
 
+  // Cross-module switcher, top-left. Populated async so the topbar paints on
+  // the first frame regardless — the RPC is never on the critical path.
+  mountModuleSwitcher(el.querySelector(".app-switcher-slot"), opts.sb);
+
   if (orgSwitcher && typeof opts.onOrgChange === "function") {
     document
       .getElementById("org-switcher")
@@ -737,8 +742,11 @@ export function renderTopbar(opts) {
     // Wipe the dashboard data cache too. If a different operator signs in
     // on the same browser before the 30s TTL elapses, they'd otherwise see
     // the previous user's cached dashboard rendered against their own
-    // (potentially different-scope) view.
+    // (potentially different-scope) view. Same reasoning for the module
+    // list — otherwise the next user briefly sees the previous user's
+    // module grants in the switcher.
     invalidateWeekDashboard();
+    clearModuleSwitcherCache();
     if (opts.sb) {
       await opts.sb.auth.signOut();
     } else {
@@ -748,6 +756,112 @@ export function renderTopbar(opts) {
     }
     location.replace("/signin.html");
   });
+}
+
+/* ------------------------------------------------- ERP module switcher ---- */
+//
+// The nine-dot button at the top-left, listing the other PTL ERP modules this
+// user may open. Driven by public.my_allowed_modules() (migration 164), which
+// returns registry rows — name, href and description — so one call renders
+// the whole menu and module URLs live in the database rather than in a
+// per-repo erp-apps.js copy.
+//
+// FAILS CLOSED. Any error, or an empty result, leaves the slot empty and the
+// button never appears. Showing every module on error would be the wrong
+// default: this is the list of places someone has been granted, and guessing
+// generously would advertise modules they can't use.
+//
+// Note this is navigation, not enforcement. Each module gates its own entry
+// via public.module_access_granted('<key>'); hiding a tile here does not by
+// itself stop someone opening that URL directly.
+
+const MODULE_SWITCHER_TTL_MS = 5 * 60_000;
+const MODULE_SWITCHER_KEY = "ptl-modules";
+
+async function fetchAllowedModules(sb) {
+  try {
+    const cached = sessionStorage.getItem(MODULE_SWITCHER_KEY);
+    if (cached) {
+      const { data, ts } = JSON.parse(cached);
+      if (Date.now() - ts < MODULE_SWITCHER_TTL_MS) return data;
+    }
+  } catch { /* cache unreadable — fall through and refetch */ }
+
+  const client = sb || (await (await import("/js/supabase-client.js")).getSupabase());
+  const { data, error } = await client.rpc("my_allowed_modules");
+  if (error) throw error;
+  const rows = data || [];
+  try {
+    sessionStorage.setItem(MODULE_SWITCHER_KEY, JSON.stringify({ data: rows, ts: Date.now() }));
+  } catch { /* private mode / quota — the menu just refetches next load */ }
+  return rows;
+}
+
+export function clearModuleSwitcherCache() {
+  try { sessionStorage.removeItem(MODULE_SWITCHER_KEY); } catch { /* ignore */ }
+}
+
+async function mountModuleSwitcher(slot, sb) {
+  if (!slot) return;
+
+  let modules;
+  try {
+    modules = await fetchAllowedModules(sb);
+  } catch (err) {
+    console.warn("module switcher unavailable:", err?.message || err);
+    return;                       // fail closed
+  }
+  // One entry is this app itself — no menu worth opening for that alone.
+  if (!Array.isArray(modules) || modules.length < 2) return;
+  if (!slot.isConnected) return;  // topbar re-rendered while we were awaiting
+
+  const items = modules
+    .map((m) => {
+      const current = m.key === "timesheet";
+      return `<a class="app-switcher-item${current ? " current" : ""}" role="menuitem"
+                 href="${escapeHtml(m.href)}"${current ? ' aria-current="page"' : ""}>
+                <span class="app-name">${escapeHtml(m.name)}</span>
+                <span class="app-desc">${escapeHtml(m.description || "")}</span>
+              </a>`;
+    })
+    .join("");
+
+  slot.innerHTML = `
+    <div class="app-switcher">
+      <button class="app-switcher-btn" type="button" aria-label="Switch module"
+              aria-haspopup="true" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <circle cx="2.5" cy="2.5" r="1.6"/><circle cx="8" cy="2.5" r="1.6"/><circle cx="13.5" cy="2.5" r="1.6"/>
+          <circle cx="2.5" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13.5" cy="8" r="1.6"/>
+          <circle cx="2.5" cy="13.5" r="1.6"/><circle cx="8" cy="13.5" r="1.6"/><circle cx="13.5" cy="13.5" r="1.6"/>
+        </svg>
+      </button>
+      <div class="app-switcher-menu" role="menu">${items}</div>
+    </div>`;
+
+  const wrap = slot.querySelector(".app-switcher");
+  const btn = slot.querySelector(".app-switcher-btn");
+  const setOpen = (open) => {
+    wrap.classList.toggle("open", open);
+    btn.setAttribute("aria-expanded", String(open));
+  };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setOpen(!wrap.classList.contains("open"));
+  });
+
+  // Document-level closers self-remove once this topbar instance is replaced,
+  // so repeated renderTopbar() calls don't leak listeners.
+  const onDocClick = (e) => {
+    if (!wrap.isConnected) return document.removeEventListener("click", onDocClick);
+    if (!wrap.contains(e.target)) setOpen(false);
+  };
+  const onDocKey = (e) => {
+    if (!wrap.isConnected) return document.removeEventListener("keydown", onDocKey);
+    if (e.key === "Escape") setOpen(false);
+  };
+  document.addEventListener("click", onDocClick);
+  document.addEventListener("keydown", onDocKey);
 }
 
 /* ---------------------------------------------------------------- router */

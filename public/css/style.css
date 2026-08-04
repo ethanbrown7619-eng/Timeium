@@ -122,6 +122,74 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ---- cross-module switcher (top-left nine-dot button) -------------------
+   The slot is rendered empty and filled asynchronously by
+   mountModuleSwitcher() in shared.js. `:empty { display:none }` matters:
+   without it the flex `gap` above would still reserve 24px and push the
+   brand across for users who have no switcher, so the topbar would sit
+   differently depending on permissions. */
+.app-switcher-slot:empty { display: none; }
+.app-switcher { position: relative; display: flex; align-items: center; }
+.app-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid rgba(20,26,10,.10);
+  border-radius: 9px;
+  background: rgba(255,255,255,.7);
+  color: var(--text-muted, #5a6270);
+  cursor: pointer;
+  transition: background .15s var(--ease-out, ease), color .15s var(--ease-out, ease);
+}
+.app-switcher-btn:hover { background: rgba(20,26,10,.06); color: var(--text, #1a1a1a); }
+.app-switcher-btn:focus-visible { outline: 2px solid var(--accent, #7aa32b); outline-offset: 2px; }
+
+.app-switcher-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  display: none;
+  min-width: 260px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid rgba(20,26,10,.10);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px -18px rgba(10,10,10,.38);
+}
+.app-switcher.open .app-switcher-menu { display: block; }
+
+.app-switcher-item {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.app-switcher-item:hover { background: rgba(20,26,10,.05); }
+.app-switcher-item .app-name { display: block; font-weight: 600; font-size: 13.5px; }
+.app-switcher-item .app-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  margin-top: 1px;
+}
+/* Current module stays listed so the menu reads as a full directory, but is
+   visibly inert rather than a link that appears to go nowhere. */
+.app-switcher-item.current {
+  background: rgba(20,26,10,.04);
+  cursor: default;
+  pointer-events: none;
+}
+.app-switcher-item.current .app-name::after {
+  content: " • current";
+  font-weight: 500;
+  color: var(--text-muted, #6b7280);
+}
+
 .pagination {
   display: flex;
   align-items: center;
