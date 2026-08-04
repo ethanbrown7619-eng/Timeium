@@ -27,6 +27,7 @@
         <button class="tab" data-tab="deptcodes">Dept Codes</button>
         <button class="tab" data-tab="stafftypes">Staff Types</button>
         <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab" data-tab="modules">Module Access</button>
         <button class="tab" data-tab="xero" id="tab-btn-xero" style="display:none">Xero</button>
       </div>
 
@@ -1087,6 +1088,34 @@
       <!-- Shown only when an active Xero connection exists. Maps PTL    -->
       <!-- employees ↔ Xero employees and our leave types ↔ Xero types.  -->
       <!-- ============================================================ -->
+
+      <!-- ============================================================ -->
+      <!-- Module Access tab — which departments may open which PTL ERP -->
+      <!-- modules. Developer-only; the grid renders from              -->
+      <!-- list_module_access_matrix() (migration 164).                -->
+      <!-- ============================================================ -->
+      <section id="tab-modules" class="tab-panel" style="display:none">
+        <div class="card" style="max-width:1100px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Module access</h2>
+            <div class="grow"></div>
+            <span id="modules-status" class="muted small"></span>
+          </div>
+          <p class="muted small" style="margin:0 0 4px">
+            Tick the modules each department may open. Departments with nothing
+            ticked can only reach Timesheet.
+          </p>
+          <p class="muted small" style="margin:0 0 16px">
+            Admins and developers always see every module. Timesheet is
+            available to everyone and cannot be switched off. Changes reach
+            signed-in users within about 5 minutes, or immediately if they
+            sign out and back in.
+          </p>
+          <div id="modules-body">
+            <p class="muted small" style="margin:0">Loading…</p>
+          </div>
+        </div>
+      </section>
 
       <section id="tab-xero" class="tab-panel" style="display:none">
         <div class="card" style="max-width:920px">

@@ -58,9 +58,11 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
     document.getElementById("tab-deptcodes").style.display  = activeTab === "deptcodes"  ? "" : "none";
     document.getElementById("tab-stafftypes").style.display = activeTab === "stafftypes" ? "" : "none";
     document.getElementById("tab-settings").style.display   = activeTab === "settings"   ? "" : "none";
+    document.getElementById("tab-modules").style.display    = activeTab === "modules"    ? "" : "none";
     document.getElementById("tab-xero").style.display       = activeTab === "xero"       ? "" : "none";
     if (activeTab === "stafftypes") loadSettings();
     if (activeTab === "settings") { loadSettings(); loadHolidays(); loadXeroStatus(); loadLeaveJobMapping(); }
+    if (activeTab === "modules") loadModuleAccess();
     if (activeTab === "xero") loadXeroMapping();
   });
 });
@@ -1880,6 +1882,137 @@ function reloadAll() {
   jobsCtl.load();
   tasksCtl.load();
   deptCodesCtl.load();
+  // Only when it's on screen — the org switcher can fire while another tab
+  // is showing, and the matrix reloads itself on open anyway.
+  if (activeTab === "modules") loadModuleAccess();
 }
 
 reloadAll();
+
+/* ======================================================================
+ * Module Access — which departments may open which PTL ERP modules.
+ *
+ * Grid of departments (rows) x modules (columns), one checkbox per cell.
+ * Reads list_module_access_matrix() and writes through
+ * set_dept_module_access(); both are developer-gated in the database
+ * (migration 164), so this page's requireDeveloper() guard is UX, not the
+ * boundary — a non-developer calling the RPC directly still gets refused.
+ * ====================================================================== */
+
+// Grants for the currently rendered grid, and a one-shot guard for the
+// delegated listener. loadModuleAccess() runs again on every tab switch and
+// org change; binding inside it would stack a listener per call and fire one
+// save per previous visit.
+let moduleGranted = new Set();
+let moduleListenerBound = false;
+
+async function loadModuleAccess() {
+  const body = document.getElementById("modules-body");
+  const statusEl = document.getElementById("modules-status");
+  if (!body) return;
+  statusEl.textContent = "";
+  body.innerHTML = `<p class="muted small" style="margin:0">Loading…</p>`;
+
+  let data;
+  try {
+    const res = await sb.rpc("list_module_access_matrix", { p_org_id: currentOrgId });
+    if (res.error) throw res.error;
+    data = res.data;
+  } catch (err) {
+    body.innerHTML =
+      `<p class="small" style="margin:0;color:var(--danger,#b3261e)">Could not load module access: ${
+        escapeHtml(err.message || String(err))
+      }</p>`;
+    return;
+  }
+
+  if (!data || data.is_developer === false) {
+    body.innerHTML =
+      `<p class="muted small" style="margin:0">Developer access is required to change module permissions.</p>`;
+    return;
+  }
+
+  const modules = data.modules || [];
+  const departments = data.departments || [];
+
+  if (!modules.length) {
+    body.innerHTML = `<p class="muted small" style="margin:0">No active modules in the registry.</p>`;
+    return;
+  }
+  if (!departments.length) {
+    body.innerHTML =
+      `<p class="muted small" style="margin:0">No active departments in this organisation — add them on the Staff page first.</p>`;
+    return;
+  }
+
+  moduleGranted = new Set((data.grants || []).map((g) => `${g.department_id}:${g.module_key}`));
+
+  const head = modules
+    .map((m) => {
+      const title = m.always_granted
+        ? "Available to everyone — cannot be switched off"
+        : (m.description || "");
+      return `<th class="num" style="white-space:nowrap" title="${escapeHtml(title)}">${
+        escapeHtml(m.name)
+      }${m.always_granted ? ' <span class="muted small">(always)</span>' : ""}</th>`;
+    })
+    .join("");
+
+  const rows = departments
+    .map((d) => {
+      const cells = modules
+        .map((m) => {
+          const on = m.always_granted || moduleGranted.has(`${d.id}:${m.key}`);
+          return `<td class="num">
+            <input type="checkbox" data-dept="${d.id}" data-module="${escapeHtml(m.key)}"
+                   aria-label="${escapeHtml(d.name)} — ${escapeHtml(m.name)}"
+                   ${on ? "checked" : ""} ${m.always_granted ? "disabled" : ""} />
+          </td>`;
+        })
+        .join("");
+      return `<tr><td>${escapeHtml(d.name)}</td>${cells}</tr>`;
+    })
+    .join("");
+
+  body.innerHTML = `
+    <div style="overflow-x:auto">
+      <table class="small">
+        <thead><tr><th>Department</th>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  // One delegated listener rather than one per cell — this grid is
+  // departments x modules and grows on both axes. Bound once for the life of
+  // the page; the grid's HTML is replaced beneath it on every reload.
+  if (moduleListenerBound) return;
+  moduleListenerBound = true;
+
+  body.addEventListener("change", async (e) => {
+    const box = e.target.closest("input[type=checkbox][data-dept]");
+    if (!box) return;
+
+    const allowed = box.checked;          // optimistic; reverted on failure
+    box.disabled = true;
+    statusEl.textContent = "Saving…";
+    try {
+      const { error } = await sb.rpc("set_dept_module_access", {
+        p_department_id: Number(box.dataset.dept),
+        p_module_key: box.dataset.module,
+        p_allowed: allowed,
+        p_org_id: currentOrgId,
+      });
+      if (error) throw error;
+      const key = `${box.dataset.dept}:${box.dataset.module}`;
+      if (allowed) moduleGranted.add(key); else moduleGranted.delete(key);
+      statusEl.textContent = "Saved ✓";
+      setTimeout(() => { if (statusEl.textContent === "Saved ✓") statusEl.textContent = ""; }, 2500);
+    } catch (err) {
+      box.checked = !allowed;
+      statusEl.textContent = "";
+      notice(err.message || "Could not save module access", "error");
+    } finally {
+      box.disabled = false;
+    }
+  });
+}
