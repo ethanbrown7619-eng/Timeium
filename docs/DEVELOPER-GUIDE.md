@@ -50,8 +50,9 @@ You need, in this order:
 2. **Node.js ≥ 18** and npm (the only dev dependency is `wrangler`; there is no
    build step and no other toolchain).
 3. **Cloudflare access** — only needed to deploy or read worker logs. `wrangler
-   login` opens a browser auth flow; the owner grants you to account
-   `d9f2db0d7367062acbb75cf6afc7f8b6`.
+   login` opens a browser auth flow; the owner grants you access to the PTL
+   Cloudflare account (its account ID is not committed to the repo — once
+   granted you'll see it in the dashboard URL).
 4. **A Supabase app account** — the app talks to the live shared Supabase project
    directly, so to sign in locally you need a real `public.users` row (and an
    `admins` row if you need admin/dev tools). The owner creates this for you.
@@ -338,7 +339,8 @@ own Cloudflare account. There is no automation: after a change here, the
 touched `public/` files are **manually copied** into the B repo by the
 owner. When you finish a change, list the exact files to copy. DB
 migrations run **once** (shared database covers both). The B repo's
-`wrangler.toml` must keep its own `account_id` — don't copy that file.
+`wrangler.toml` is its own (different worker, different Cloudflare
+account) — never copy that file across.
 
 ## 7. Deployment & environment
 

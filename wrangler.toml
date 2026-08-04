@@ -1,5 +1,8 @@
 name = "temporium"
-account_id = "d9f2db0d7367062acbb75cf6afc7f8b6"
+# No account_id committed (removed 2026-08-05). Git-connected Workers Builds
+# supply the account from the connection; the break-glass GitHub Action takes
+# it from the CLOUDFLARE_ACCOUNT_ID secret; a local `wrangler deploy` infers
+# it from your `wrangler login` (it prompts if your login spans accounts).
 compatibility_date = "2024-10-01"
 main = "worker.js"
 # Serve on the account's workers.dev subdomain. The recreated worker came
