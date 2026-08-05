@@ -13,8 +13,7 @@
 // geographic restrictions and what most CDNs use here.
 const BLOCKED_COUNTRIES = new Set(["RU", "CN", "NG"]);
 
-export default {
-  async fetch(request, env, ctx) {
+async function route(request, env, ctx) {
     const country = request.cf?.country;
     if (country && BLOCKED_COUNTRIES.has(country)) {
       return new Response(
@@ -128,6 +127,17 @@ export default {
         }
       );
     }
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    // Worker-generated responses (SSO mint, /config.json, the /xero 410,
+    // and the 500/503 error pages) bypass public/_headers, so decorate every
+    // response here. The asset path already decorated itself and set
+    // Cache-Control; re-applying with a null pathname adds the security
+    // headers idempotently and leaves Cache-Control untouched.
+    const resp = await route(request, env, ctx);
+    try { return addSecurityHeaders(resp, null); } catch { return resp; }
   },
 };
 
@@ -177,7 +187,10 @@ function addSecurityHeaders(response, pathname) {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "connect-src 'self' https://*.supabase.co https://esm.sh https://challenges.cloudflare.com",
+      // temporium is the fleet's SSO broker: this frontend (incl. the
+      // businessautomation production mirror) fetches its /sso/mint
+      // cross-origin, so connect-src must permit it explicitly.
+      "connect-src 'self' https://temporium.ethanbrown7619.workers.dev https://*.supabase.co https://esm.sh https://challenges.cloudflare.com",
       // Turnstile renders its challenge UI inside an iframe served from
       // challenges.cloudflare.com.
       "frame-src https://challenges.cloudflare.com",
@@ -251,7 +264,13 @@ async function handleSsoMint(request, env) {
 
   const auth = request.headers.get("Authorization") || "";
   const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  const user = jwt ? await supabaseUser(env, jwt) : null;
+  // Cheap flood guard: only spend an upstream /auth/v1/user round-trip on a
+  // structurally-plausible JWT (three dot-separated segments). Garbage
+  // bearer values are rejected here without touching Supabase. (This is not
+  // a rate limit — for that, add a Cloudflare Rate Limiting rule on the path
+  // plus a per-user counter; tracked as a follow-up.)
+  const looksJwt = jwt && jwt.split(".").length === 3;
+  const user = looksJwt ? await supabaseUser(env, jwt) : null;
   if (!user?.email) {
     return new Response(JSON.stringify({ error: "not authenticated" }), {
       status: 401,
@@ -269,13 +288,25 @@ async function handleSsoMint(request, env) {
     body: JSON.stringify({ type: "magiclink", email: user.email }),
   });
   if (!resp.ok) {
-    console.error("generate_link failed:", resp.status, await resp.text());
+    // Status only — the error body can carry the email/token material and
+    // would otherwise be retained in Workers Logs (100% sampling).
+    console.error("generate_link failed:", resp.status);
     return new Response(JSON.stringify({ error: "mint failed" }), {
       status: 502,
       headers: { "content-type": "application/json", ...cors },
     });
   }
   const link = await resp.json();
+  // Defense in depth against email non-uniqueness across identity providers:
+  // the mint must only ever produce a token for the exact caller we verified.
+  const mintedId = link?.user?.id ?? null;
+  if (mintedId && mintedId !== user.sub) {
+    console.error("generate_link identity mismatch");
+    return new Response(JSON.stringify({ error: "mint failed" }), {
+      status: 502,
+      headers: { "content-type": "application/json", ...cors },
+    });
+  }
   const tokenHash = link?.hashed_token ?? link?.properties?.hashed_token ?? null;
   if (!tokenHash) {
     console.error("generate_link: no hashed_token in response");

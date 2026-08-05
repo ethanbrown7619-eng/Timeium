@@ -778,21 +778,39 @@ export function renderTopbar(opts) {
 const MODULE_SWITCHER_TTL_MS = 5 * 60_000;
 const MODULE_SWITCHER_KEY = "ptl-modules";
 
+// The registry href drives BOTH the tile link and the SSO hop destination
+// (the freshly-minted one-time login token is appended to it). It is
+// developer-writable free text, so validate it here before it is ever used
+// as a navigation target: https only, and only the known workers.dev fleet.
+// This stops a hostile/typo'd registry row from turning a tile into a
+// token-exfiltration link or a javascript: XSS.
+const SSO_FLEET_HOST_RE = /^[a-z0-9-]+\.(ethanbrown7619|businessautomation)\.workers\.dev$/;
+function ssoDestOk(href) {
+  try {
+    const u = new URL(href, location.origin);
+    return u.protocol === "https:" && SSO_FLEET_HOST_RE.test(u.host);
+  } catch { return false; }
+}
+
 async function fetchAllowedModules(sb) {
+  const client = sb || (await (await import("/js/supabase-client.js")).getSupabase());
+  const { data: { session } } = await client.auth.getSession();
+  const uid = session?.user?.id ?? null;
   try {
     const cached = sessionStorage.getItem(MODULE_SWITCHER_KEY);
     if (cached) {
-      const { data, ts } = JSON.parse(cached);
-      if (Date.now() - ts < MODULE_SWITCHER_TTL_MS) return data;
+      const { data, ts, u } = JSON.parse(cached);
+      // Keyed to the user: a cached list from a previous account (sign-out
+      // that didn't clear it, expiry, another tab) must never be served.
+      if (u === uid && Date.now() - ts < MODULE_SWITCHER_TTL_MS) return data;
     }
   } catch { /* cache unreadable — fall through and refetch */ }
 
-  const client = sb || (await (await import("/js/supabase-client.js")).getSupabase());
   const { data, error } = await client.rpc("my_allowed_modules");
   if (error) throw error;
   const rows = data || [];
   try {
-    sessionStorage.setItem(MODULE_SWITCHER_KEY, JSON.stringify({ data: rows, ts: Date.now() }));
+    sessionStorage.setItem(MODULE_SWITCHER_KEY, JSON.stringify({ data: rows, ts: Date.now(), u: uid }));
   } catch { /* private mode / quota — the menu just refetches next load */ }
   return rows;
 }
@@ -816,6 +834,9 @@ async function mountModuleSwitcher(slot, sb) {
   if (!slot.isConnected) return;  // topbar re-rendered while we were awaiting
 
   const items = modules
+    // Drop any registry row whose href isn't a valid fleet https URL — it
+    // would otherwise be an unsafe navigation/exfiltration target.
+    .filter((m) => m.key === "timesheet" || ssoDestOk(m.href))
     .map((m) => {
       const current = m.key === "timesheet";
       return `<a class="app-switcher-item${current ? " current" : ""}" role="menuitem"
@@ -865,7 +886,10 @@ async function mountModuleSwitcher(slot, sb) {
         headers: { authorization: `Bearer ${session.access_token}` },
       });
       const { token_hash } = res.ok ? await res.json() : {};
-      location.href = token_hash ? `${href}#ptl-sso=${encodeURIComponent(token_hash)}` : href;
+      // Only ever attach the login token to a validated fleet destination.
+      location.href = (token_hash && ssoDestOk(href))
+        ? `${href}#ptl-sso=${encodeURIComponent(token_hash)}`
+        : href;
     } catch {
       location.href = href;
     }

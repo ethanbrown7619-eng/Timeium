@@ -37,7 +37,13 @@ document.getElementById("signin-form").addEventListener("submit", async (e) => {
   // not currently enabled, so today this always returns false. The real
   // brute-force controls are Supabase's per-IP auth rate limiting and
   // Turnstile CAPTCHA enforcement (Authentication -> Attack Protection).
-  const { data: locked } = await sb.rpc("check_login_locked", { p_email: email });
+  // Best-effort: a network blip on this courtesy check must NOT strand the
+  // button on "Signing in…" — treat any failure as "not locked" and proceed
+  // to the real sign-in, which surfaces its own errors.
+  let locked = false;
+  try {
+    ({ data: locked } = await sb.rpc("check_login_locked", { p_email: email }));
+  } catch { /* proceed as not-locked */ }
   if (locked) {
     notice("Too many failed sign-in attempts. Please wait 15 minutes and try again.", "error");
     btn.disabled = false;
