@@ -49,14 +49,14 @@ TURNSTILE_SITE_KEY = "0x4AAAAAAEFhSpbPy4xVI7Da"
 
 # Secrets (set via `wrangler secret put NAME`, never committed):
 #
-#   SUPABASE_SERVICE_ROLE_KEY
-#     Used only by the Xero integration routes (/xero/*) to read/write the
-#     xero_connections table, which is locked down to service_role by RLS.
-#     All other Supabase queries from the Worker still use the anon key +
-#     user JWT.
+#   SUPABASE_SERVICE_ROLE_KEY   (REQUIRED for cross-module SSO)
+#     Used by POST /sso/mint to mint one-time sign-in tokens (GoTrue
+#     admin/generate_link) for the ERP app-switcher handoff. Without it
+#     the endpoint returns 503 and module switching falls back to each
+#     module's login page. All other Supabase queries from the Worker
+#     use the anon key + user JWT.
+#     NOTE: secrets are per-worker and are LOST if the worker is deleted
+#     and recreated — re-set this after any recreation.
 #
-#   XERO_CLIENT_ID
-#     From the Xero developer portal app — "PTL Timesheet Integration".
-#
-#   XERO_CLIENT_SECRET
-#     The matching secret. Rotate via the Xero dev portal if compromised.
+# (XERO_CLIENT_ID / XERO_CLIENT_SECRET belonged to the Xero integration,
+#  archived 2026-08-05 — git tag archive/xero-integration.)
