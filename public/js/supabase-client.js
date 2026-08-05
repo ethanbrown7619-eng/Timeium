@@ -57,28 +57,39 @@ async function consumeSsoToken(client) {
   }
 }
 
-export async function getSupabase() {
-  if (_client) return _client;
-  const cfg = await getConfig();
-  _client = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
-  await consumeSsoToken(_client);
-  // Safety net for password-reset emails: if Supabase's redirect
-  // allow-list rejects our redirect_to, the recovery link falls back to
-  // the Site URL and the token lands on whatever page that is (signin,
-  // index, …). detectSessionInUrl still consumes it there, so without
-  // this the user just gets silently signed in and never sees the
-  // set-new-password form. Whatever page catches the recovery event,
-  // forward it to the reset page.
-  _client.auth.onAuthStateChange((event) => {
-    if (event === "PASSWORD_RECOVERY" && !location.pathname.startsWith("/reset-password")) {
-      location.replace("/reset-password.html");
-    }
-  });
-  return _client;
+// Memoize the PROMISE, not the client: with `if (_client) return _client`
+// after an await, every module that called getSupabase() during the same
+// boot tick passed the check before any assignment landed and got its OWN
+// GoTrueClient. Multiple instances on one storage key contend on the same
+// Navigator LockManager lock and DEADLOCK auth mutations (sign-in hanging
+// until refresh). The promise memo makes the first caller win and everyone
+// else await the same client.
+let _clientPromise = null;
+
+export function getSupabase() {
+  _clientPromise ??= (async () => {
+    const cfg = await getConfig();
+    _client = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+    await consumeSsoToken(_client);
+    // Safety net for password-reset emails: if Supabase's redirect
+    // allow-list rejects our redirect_to, the recovery link falls back to
+    // the Site URL and the token lands on whatever page that is (signin,
+    // index, …). detectSessionInUrl still consumes it there, so without
+    // this the user just gets silently signed in and never sees the
+    // set-new-password form. Whatever page catches the recovery event,
+    // forward it to the reset page.
+    _client.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY" && !location.pathname.startsWith("/reset-password")) {
+        location.replace("/reset-password.html");
+      }
+    });
+    return _client;
+  })();
+  return _clientPromise;
 }
