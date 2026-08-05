@@ -212,7 +212,10 @@ function addSecurityHeaders(response, pathname) {
 // token_hash is a standard GoTrue one-time magic-link hash: the destination
 // module calls supabase.auth.verifyOtp({ type: "magiclink", token_hash })
 // and receives a fresh, independent session. No email is sent.
-const SSO_ORIGIN_RE = /^https:\/\/[a-z0-9-]+\.ethanbrown7619\.workers\.dev$/;
+// Both Cloudflare accounts serve PTL apps: the ERP modules live on
+// ethanbrown7619.workers.dev and the production Timesheet mirror on
+// businessautomation.workers.dev (ptl-timesheet).
+const SSO_ORIGIN_RE = /^https:\/\/[a-z0-9-]+\.(ethanbrown7619|businessautomation)\.workers\.dev$/;
 
 function ssoCorsHeaders(origin) {
   return {

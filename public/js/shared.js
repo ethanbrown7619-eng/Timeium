@@ -856,7 +856,11 @@ async function mountModuleSwitcher(slot, sb) {
       const client = sb || (await (await import("/js/supabase-client.js")).getSupabase());
       const { data: { session } } = await client.auth.getSession();
       if (!session) { location.href = href; return; }
-      const res = await fetch("/sso/mint", {
+      // Absolute URL, not "/sso/mint": this frontend is ALSO mirrored on the
+      // production businessautomation worker, which has no mint endpoint —
+      // temporium is the one SSO broker for the whole fleet (CORS covers
+      // both accounts).
+      const res = await fetch("https://temporium.ethanbrown7619.workers.dev/sso/mint", {
         method: "POST",
         headers: { authorization: `Bearer ${session.access_token}` },
       });
