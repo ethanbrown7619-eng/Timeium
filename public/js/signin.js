@@ -58,7 +58,14 @@ document.getElementById("signin-form").addEventListener("submit", async (e) => {
   // any employee by posting failures for their address.
   //
   // Logging must never break a sign-in, so every call is best-effort.
-  const logAttempt = (fn, args) => sb.rpc(fn, args).catch(() => {});
+  // NOTE: sb.rpc() returns a PostgrestBuilder THENABLE, not a Promise — it
+  // has .then() but no .catch() in the vendored supabase-js. Calling .catch
+  // on it threw a TypeError that killed this handler right after a
+  // successful sign-in, leaving the button on "Signing in…" until a manual
+  // refresh (the session was already saved). await-in-try is the safe shape.
+  const logAttempt = async (fn, args) => {
+    try { await sb.rpc(fn, args); } catch { /* best effort */ }
+  };
 
   if (error) {
     logAttempt("record_login_attempt", {
