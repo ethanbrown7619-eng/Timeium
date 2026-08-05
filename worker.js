@@ -25,6 +25,23 @@ export default {
 
     const url = new URL(request.url);
 
+    // Cross-module single sign-on mint. A signed-in ERP module presents its
+    // user's JWT and gets back a one-time magic-link token_hash; the
+    // destination module exchanges it (verifyOtp) for its OWN session with
+    // its own refresh-token family — never a shared/copied token, so
+    // Supabase's refresh-token reuse detection can't revoke anything.
+    if (url.pathname === "/sso/mint") {
+      try {
+        return await handleSsoMint(request, env);
+      } catch (err) {
+        console.error("SSO mint error:", err);
+        return new Response(JSON.stringify({ error: "mint failed" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
+
     // Xero Payroll NZ OAuth flow. Tokens live server-side in
     // public.xero_connections; the browser never sees them.
     if (url.pathname.startsWith("/xero/")) {
@@ -566,6 +583,90 @@ function constantTimeEqual(a, b) {
 // Verify a Supabase JWT by calling /auth/v1/user. Returns the decoded
 // user object (with .sub = auth.uid) or null. Doing it this way means we
 // don't have to verify signatures locally — Supabase enforces it.
+// ---------------------------------------------------------------- SSO mint --
+// POST /sso/mint  (Authorization: Bearer <caller's Supabase access token>)
+// → { token_hash }
+//
+// Called by the ERP module apps' app-switchers (cross-origin, hence CORS).
+// The caller proves who they are with their own JWT; the mint is always for
+// that same user — the endpoint can't mint for anyone else. The returned
+// token_hash is a standard GoTrue one-time magic-link hash: the destination
+// module calls supabase.auth.verifyOtp({ type: "magiclink", token_hash })
+// and receives a fresh, independent session. No email is sent.
+const SSO_ORIGIN_RE = /^https:\/\/[a-z0-9-]+\.ethanbrown7619\.workers\.dev$/;
+
+function ssoCorsHeaders(origin) {
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "authorization, content-type",
+    "access-control-max-age": "86400",
+    vary: "origin",
+  };
+}
+
+async function handleSsoMint(request, env) {
+  const origin = request.headers.get("Origin") || "";
+  // Same-origin (Timesheet's own switcher) sends no Origin on same-origin
+  // fetches in some browsers; cross-origin must match the workers.dev fleet.
+  if (origin && !SSO_ORIGIN_RE.test(origin)) {
+    return new Response("forbidden origin", { status: 403 });
+  }
+  const cors = origin ? ssoCorsHeaders(origin) : {};
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+  if (request.method !== "POST") {
+    return new Response("method not allowed", { status: 405, headers: cors });
+  }
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) {
+    return new Response(JSON.stringify({ error: "sso not configured" }), {
+      status: 503,
+      headers: { "content-type": "application/json", ...cors },
+    });
+  }
+
+  const auth = request.headers.get("Authorization") || "";
+  const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const user = jwt ? await supabaseUser(env, jwt) : null;
+  if (!user?.email) {
+    return new Response(JSON.stringify({ error: "not authenticated" }), {
+      status: 401,
+      headers: { "content-type": "application/json", ...cors },
+    });
+  }
+
+  const resp = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ type: "magiclink", email: user.email }),
+  });
+  if (!resp.ok) {
+    console.error("generate_link failed:", resp.status, await resp.text());
+    return new Response(JSON.stringify({ error: "mint failed" }), {
+      status: 502,
+      headers: { "content-type": "application/json", ...cors },
+    });
+  }
+  const link = await resp.json();
+  const tokenHash = link?.hashed_token ?? link?.properties?.hashed_token ?? null;
+  if (!tokenHash) {
+    console.error("generate_link: no hashed_token in response");
+    return new Response(JSON.stringify({ error: "mint failed" }), {
+      status: 502,
+      headers: { "content-type": "application/json", ...cors },
+    });
+  }
+  return new Response(JSON.stringify({ token_hash: tokenHash }), {
+    headers: { "content-type": "application/json", "cache-control": "no-store", ...cors },
+  });
+}
+
 async function supabaseUser(env, jwt) {
   const resp = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${jwt}` },

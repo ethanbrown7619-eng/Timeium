@@ -35,6 +35,28 @@ export async function getConfig() {
   return _config;
 }
 
+// Cross-module single sign-on: arriving from an ERP module's app-switcher,
+// the URL carries a one-time magic-link token_hash (#ptl-sso=…) minted by
+// this worker's /sso/mint. Exchange it for a session here and strip it.
+// Runs once inside getSupabase() so every page — they all fetch the client
+// before checking the session — picks it up with no per-page wiring.
+let _ssoConsumed = false;
+async function consumeSsoToken(client) {
+  if (_ssoConsumed) return;
+  _ssoConsumed = true;
+  const m = /[#&]ptl-sso=([^&]+)/.exec(location.hash);
+  if (!m) return;
+  // Strip immediately — the one-time hash must not linger in the URL/history.
+  history.replaceState(null, "", location.pathname + location.search);
+  try {
+    const { data: { session } } = await client.auth.getSession();
+    if (session) return; // already signed in here — let the token lapse
+    await client.auth.verifyOtp({ type: "magiclink", token_hash: decodeURIComponent(m[1]) });
+  } catch (err) {
+    console.warn("SSO token exchange failed:", err);
+  }
+}
+
 export async function getSupabase() {
   if (_client) return _client;
   const cfg = await getConfig();
@@ -45,6 +67,7 @@ export async function getSupabase() {
       detectSessionInUrl: true,
     },
   });
+  await consumeSsoToken(_client);
   // Safety net for password-reset emails: if Supabase's redirect
   // allow-list rejects our redirect_to, the recovery link falls back to
   // the Site URL and the token lands on whatever page that is (signin,

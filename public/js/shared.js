@@ -841,6 +841,32 @@ async function mountModuleSwitcher(slot, sb) {
 
   const wrap = slot.querySelector(".app-switcher");
   const btn = slot.querySelector(".app-switcher-btn");
+
+  // Plain left-clicks hop via SSO (/sso/mint on this worker) so the
+  // destination module signs the user in silently; modified clicks (new tab
+  // etc.) keep native behaviour and fall back to the module's own login.
+  const menuEl = slot.querySelector(".app-switcher-menu");
+  menuEl.addEventListener("click", async (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest("a.app-switcher-item");
+    if (!a || a.classList.contains("current")) return;
+    e.preventDefault();
+    const href = a.href;
+    try {
+      const client = sb || (await (await import("/js/supabase-client.js")).getSupabase());
+      const { data: { session } } = await client.auth.getSession();
+      if (!session) { location.href = href; return; }
+      const res = await fetch("/sso/mint", {
+        method: "POST",
+        headers: { authorization: `Bearer ${session.access_token}` },
+      });
+      const { token_hash } = res.ok ? await res.json() : {};
+      location.href = token_hash ? `${href}#ptl-sso=${encodeURIComponent(token_hash)}` : href;
+    } catch {
+      location.href = href;
+    }
+  });
+
   const setOpen = (open) => {
     wrap.classList.toggle("open", open);
     btn.setAttribute("aria-expanded", String(open));
