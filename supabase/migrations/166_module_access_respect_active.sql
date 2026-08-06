@@ -76,6 +76,8 @@ create or replace function public.module_access_granted(p_module_key text)
 returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp
 as $$
+declare
+    v_org bigint;
 begin
     if auth.uid() is null or p_module_key is null then
         return false;
@@ -90,31 +92,28 @@ begin
         return true;
     end if;
 
-    declare v_org bigint;
-    begin
-        v_org := public._caller_org_id();
-        if v_org is null then
-            return false;
-        end if;
-        if public.is_admin_of(v_org) then
-            return true;
-        end if;
+    v_org := public._caller_org_id();
+    if v_org is null then
+        return false;
+    end if;
+    if public.is_admin_of(v_org) then
+        return true;
+    end if;
 
-        return exists (
-            select 1
-              from public.dept_module_access a
-              join public.users u
-                on u.department_id   = a.department_id
-               and u.auth_user_id    = auth.uid()
-               and coalesce(u.active, true)            -- (F2) skip deactivated staff
-              join public.departments d
-                on d.id = a.department_id
-               and coalesce(d.active, true)            -- (F1) skip deactivated depts
-              join public.erp_modules m
-                on m.key = a.module_key and m.active
-             where a.module_key      = p_module_key
-               and a.organisation_id = v_org);
-    end;
+    return exists (
+        select 1
+          from public.dept_module_access a
+          join public.users u
+            on u.department_id   = a.department_id
+           and u.auth_user_id    = auth.uid()
+           and coalesce(u.active, true)            -- (F2) skip deactivated staff
+          join public.departments d
+            on d.id = a.department_id
+           and coalesce(d.active, true)            -- (F1) skip deactivated depts
+          join public.erp_modules m
+            on m.key = a.module_key and m.active
+         where a.module_key      = p_module_key
+           and a.organisation_id = v_org);
 exception
     -- (F4) The header promises this never raises so it is safe embedded in an
     -- RLS policy; a future dependency change must fail CLOSED, not error the
