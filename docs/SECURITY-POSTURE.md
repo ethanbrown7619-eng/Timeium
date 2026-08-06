@@ -241,10 +241,12 @@ anything.
   factor, strengthening §1 for privileged accounts in particular.
 - **Bringing the last two export libraries in-house** — removing the final
   third-party CDN dependency to fully close §10.
-- **Country-level connection blocking** — under evaluation; the correct
-  implementation moves the apps to custom domains so Cloudflare's edge firewall
-  applies. (Country blocks are readily bypassed with a VPN, so this is a compliance
-  signal rather than a primary control.)
+- **Country-level connection blocking (e.g. Russia, China, Nigeria)** — planned.
+  It requires putting the app on a **custom domain** (rather than the current
+  built-in workers.dev address) so that Cloudflare's edge firewall rules can be
+  applied — an ongoing cost of roughly **$15 per year** for the domain. (Country
+  blocks are readily bypassed with a VPN, so this is a compliance signal rather
+  than a primary control.)
 
 ---
 
