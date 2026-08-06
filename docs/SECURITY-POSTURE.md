@@ -111,6 +111,9 @@ a matter of trust in the front end.
 reuses username/password pairs leaked from other websites.
 
 **How we're protected.**
+- **A CAPTCHA challenge (Cloudflare Turnstile) guards the login form**, so automated
+  bots and scripted password-guessing are stopped before a sign-in attempt even
+  reaches the authentication server.
 - **Passwords are never stored in a readable form** — they are one-way hashed with
   bcrypt, so even we cannot see them and guessing is deliberately slow.
 - **The login server rate-limits attempts per source**, throttling rapid-fire
@@ -121,7 +124,7 @@ reuses username/password pairs leaked from other websites.
 - Admin-issued starter passwords are **random and unique per person**, delivered
   out of band — there is no shared or default password to guess.
 
-*(CAPTCHA and multi-factor authentication add further layers here — see
+*(Multi-factor authentication adds a further layer here — see
 [Being strengthened](#being-strengthened).)*
 
 ## 2. A stolen copy of the database
@@ -234,9 +237,6 @@ In the spirit of the honesty this document is meant to carry, these layers are i
 progress. They *add to* the protections above; they are not the sole defence for
 anything.
 
-- **CAPTCHA (Cloudflare Turnstile)** — integrated in the code; enforcement is being
-  switched on at the authentication server to further blunt automated
-  password-guessing (§1).
 - **Multi-factor authentication (MFA)** — planned: an authenticator-app second
   factor, strengthening §1 for privileged accounts in particular.
 - **Bringing the last two export libraries in-house** — removing the final
