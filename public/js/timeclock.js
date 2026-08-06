@@ -17,6 +17,19 @@ import {
 
 const sb = await getSupabase();
 
+// Day columns show "7 Aug" (day + short month, no year). Accepts a Date or a
+// yyyy-mm-dd string; the string is parsed by parts to avoid any timezone
+// shift on a date-only value.
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmtDayShort(v) {
+  if (v == null || v === "") return "";
+  if (v instanceof Date) return isNaN(v) ? "" : `${v.getDate()} ${MONTHS_SHORT[v.getMonth()]}`;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+  if (m) return `${Number(m[3])} ${MONTHS_SHORT[Number(m[2]) - 1]}`;
+  const d = new Date(v);
+  return isNaN(d) ? String(v) : `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+}
+
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
@@ -747,10 +760,7 @@ function renderCvtTable({ employees, deptMap, loggedMap, clockedMap }) {
     return v ? fmtHours(v) : "–";
   }
 
-  const dateCells = DAYS.map((_, i) => {
-    const d = addDays(cvtWeek, i);
-    return `${d.getDate()}/${d.getMonth() + 1}`;
-  });
+  const dateCells = DAYS.map((_, i) => fmtDayShort(addDays(cvtWeek, i)));
 
   tableEl.innerHTML = `
     <table class="cvt-grid small">
@@ -994,7 +1004,7 @@ async function loadFlagReport() {
           const f = flagLabel(effectiveFlag(r.flag, hrs));
           return `<tr>
             <td><span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span></td>
-            <td class="small">${escapeHtml(r.day || "")}</td>
+            <td class="small">${escapeHtml(fmtDayShort(r.day))}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
@@ -1131,7 +1141,7 @@ async function loadFullReport() {
           }
           const f = eff ? flagLabel(eff) : null;
           return `<tr>
-            <td class="small">${escapeHtml(r.day || "")}</td>
+            <td class="small">${escapeHtml(fmtDayShort(r.day))}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
@@ -1262,7 +1272,7 @@ async function loadOffsiteReport() {
           const stillOut = !r.returned_at && r.return_kind === "open";
           const lateCls = r.late_back ? "cvt-danger" : "";
           return `<tr>
-            <td class="small">${escapeHtml(r.day || "")}</td>
+            <td class="small">${escapeHtml(fmtDayShort(r.day))}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="small">${escapeHtml(r.reason || "")}${r.break_paid === true ? ' <span class="small muted">(paid)</span>' : ""}</td>
