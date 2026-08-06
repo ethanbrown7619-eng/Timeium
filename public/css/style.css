@@ -198,6 +198,7 @@ a:hover { text-decoration: underline; }
    visibly inert rather than a link that appears to go nowhere. */
 .app-switcher-item.current {
   background: rgba(20,26,10,.04);
+  box-shadow: inset 3px 0 0 var(--ptl-lime);
   cursor: default;
   pointer-events: none;
 }
