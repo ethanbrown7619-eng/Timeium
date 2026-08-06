@@ -199,9 +199,7 @@ its own independent session** rather than sharing one, keeping them isolated.
 
 **How we're protected.** The core security-critical library is **downloaded once,
 reviewed, version-pinned, and served from our own site** — not fetched live from a
-third party — so it cannot be swapped out from under us. *(Two export helpers still
-load from a CDN and are being brought in-house — see
-[Being strengthened](#being-strengthened).)*
+party we don't control — so it cannot be swapped out from under us.
 
 ## 11. Leaked keys and secrets
 
@@ -239,8 +237,6 @@ anything.
 
 - **Multi-factor authentication (MFA)** — planned: an authenticator-app second
   factor, strengthening §1 for privileged accounts in particular.
-- **Bringing the last two export libraries in-house** — removing the final
-  third-party CDN dependency to fully close §10.
 - **Country-level connection blocking (e.g. Russia, China, Nigeria)** — planned.
   It requires putting the app on a **custom domain** (rather than the current
   built-in workers.dev address) so that Cloudflare's edge firewall rules can be
