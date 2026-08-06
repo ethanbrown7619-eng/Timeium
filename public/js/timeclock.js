@@ -17,10 +17,6 @@ import {
 
 const sb = await getSupabase();
 
-// Compact zero-padded day-month, no year (e.g. 07-08). Used for the
-// week-range labels across the Clock panels.
-const ddmm = (d) => `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
@@ -614,7 +610,7 @@ function effectiveFlag(originalFlag, recomputedHours) {
 function updateCvtWeekLabel() {
   const end = addDays(cvtWeek, 6);
   document.getElementById("cvt-week-label").textContent =
-    `${ddmm(cvtWeek)} — ${ddmm(end)}`;
+    `${cvtWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
 updateCvtWeekLabel();
@@ -804,7 +800,7 @@ let flagWeek = new Date(thisMonday);
 function updateFlagWeekLabel() {
   const end = addDays(flagWeek, 6);
   document.getElementById("flag-week-label").textContent =
-    `${ddmm(flagWeek)} — ${ddmm(end)}`;
+    `${flagWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 updateFlagWeekLabel();
 
@@ -1023,7 +1019,7 @@ let fullWeek = new Date(thisMonday);
 function updateFullWeekLabel() {
   const end = addDays(fullWeek, 6);
   document.getElementById("full-week-label").textContent =
-    `${ddmm(fullWeek)} — ${ddmm(end)}`;
+    `${fullWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 updateFullWeekLabel();
 
@@ -1162,7 +1158,7 @@ let offsiteWeek = new Date(thisMonday);
 function updateOffsiteWeekLabel() {
   const end = addDays(offsiteWeek, 6);
   document.getElementById("offsite-week-label").textContent =
-    `${ddmm(offsiteWeek)} — ${ddmm(end)}`;
+    `${offsiteWeek.toLocaleDateString(undefined, { day: "numeric", month: "short" })} — ${end.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 updateOffsiteWeekLabel();
 
