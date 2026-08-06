@@ -778,6 +778,20 @@ export function renderTopbar(opts) {
 const MODULE_SWITCHER_TTL_MS = 5 * 60_000;
 const MODULE_SWITCHER_KEY = "ptl-modules";
 
+// A representative symbol per module, shown at the left of each switcher item
+// (muted, then pops to colour on hover). Keyed by the registry module key.
+const MODULE_ICONS = {
+  timesheet: "🕒",
+  partsmaster: "🔩",
+  "bom-import": "📐",
+  procure: "🛒",
+  purchaseorders: "🧾",
+  stock: "📦",
+  partslogistics: "🚚",
+  spares: "🔧",
+  map: "🗺️",
+};
+
 // The registry href drives BOTH the tile link and the SSO hop destination
 // (the freshly-minted one-time login token is appended to it). It is
 // developer-writable free text, so validate it here before it is ever used
@@ -839,10 +853,14 @@ async function mountModuleSwitcher(slot, sb) {
     .filter((m) => m.key === "timesheet" || ssoDestOk(m.href))
     .map((m) => {
       const current = m.key === "timesheet";
+      const icon = MODULE_ICONS[m.key] || "▪";
       return `<a class="app-switcher-item${current ? " current" : ""}" role="menuitem"
                  href="${escapeHtml(m.href)}"${current ? ' aria-current="page"' : ""}>
-                <span class="app-name">${escapeHtml(m.name)}</span>
-                <span class="app-desc">${escapeHtml(m.description || "")}</span>
+                <span class="app-switcher-icon" aria-hidden="true">${icon}</span>
+                <span class="app-switcher-text">
+                  <span class="app-name">${escapeHtml(m.name)}</span>
+                  <span class="app-desc">${escapeHtml(m.description || "")}</span>
+                </span>
               </a>`;
     })
     .join("");

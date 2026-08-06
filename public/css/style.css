@@ -163,13 +163,33 @@ a:hover { text-decoration: underline; }
 .app-switcher.open .app-switcher-menu { display: block; }
 
 .app-switcher-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 8px 10px;
   border-radius: 8px;
   text-decoration: none;
   color: inherit;
 }
 .app-switcher-item:hover { background: rgba(20,26,10,.05); }
+/* Per-module symbol: muted by default, pops to full colour on hover. */
+.app-switcher-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  font-size: 17px;
+  line-height: 1;
+  filter: grayscale(1);
+  opacity: .6;
+  transition: filter .12s ease, opacity .12s ease, transform .12s ease;
+}
+.app-switcher-item:hover .app-switcher-icon,
+.app-switcher-item:focus-visible .app-switcher-icon {
+  filter: grayscale(0);
+  opacity: 1;
+  transform: scale(1.15);
+}
+.app-switcher-text { display: block; min-width: 0; }
 .app-switcher-item .app-name { display: block; font-weight: 600; font-size: 13.5px; }
 .app-switcher-item .app-desc {
   display: block;
