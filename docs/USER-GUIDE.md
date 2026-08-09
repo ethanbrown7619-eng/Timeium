@@ -247,14 +247,19 @@ history of every request.
 **Clock** — org-wide clock reports across six sub-tabs: **Live** (who's on
 site right now, incl. the guest count), **Clock vs Timesheet** (clocked
 hours against logged hours with a tolerance), **Flags** (short / late /
-auto-closed shifts), **Full report** (every employee against every weekday —
+auto-closed shifts — a weekend is never counted short, and neither is a
+shortfall that approved leave accounts for, so this stays a real chase
+list), **Full report** (every employee against every weekday —
 break deductions and the 15-minute early-leave credit, rounded to quarter
-hours; a weekday somebody didn't clock shows a red **No Clock**, and a day
-they clocked less than a full shift shows **Short shift** — but approved
-leave settles both: a covered day shows the leave type in blue instead, and
-a short shift stops being flagged once the leave hours make up the
-shortfall, so you only chase what's genuinely unexplained; weekend days
-appear only when someone actually clocked), **Off-site**
+hours; a weekday somebody didn't clock shows a red **No Clock**, and a
+weekday they clocked less than a full shift shows **Short shift** — but
+approved leave settles both: a covered day shows the leave type in blue
+instead, and a short shift stops being flagged once the leave hours make up
+the shortfall, so you only chase what's genuinely unexplained. Weekends are
+never short shifts — the threshold is a standard weekday and nobody is
+rostered a full day on Sat/Sun — though a forgotten clock-out still shows
+as **Auto-closed** any day of the week; weekend days appear only when
+someone actually clocked), **Off-site**
 (breaks, off-site jobs, personal time, genuine early clock-outs), and
 **Adjustments** (approving employee time-fix requests). Each panel shows a
 compact status pill summarising the view.

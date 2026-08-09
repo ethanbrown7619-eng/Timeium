@@ -638,12 +638,107 @@ async function loadClockStandard() {
 // 'red' (short shift) — yellow/orange depend on factors we don't
 // recompute (auto-close, lateness). If our recomputed hours equal or
 // exceed the threshold, suppress 'red'.
-function effectiveFlag(originalFlag, recomputedHours) {
-  if (originalFlag === "red" && clockStandardHours != null
+//
+// A weekend can never be a short shift. The threshold is a standard weekday,
+// and nobody is rostered a full day on Sat/Sun, so a three-hour Saturday
+// callout is ordinary work rather than a shortfall to chase — flagging it
+// only trains people to ignore the flag. Auto-closed and late still show
+// through on a weekend: forgetting to clock out matters any day of the week,
+// which is why both callers promote auto-close from the *raw* flag rather
+// than from this function's result.
+//
+// An unrecognised day shape keeps the flag (isWeekendDay returns false), so
+// the failure mode is a flag too many, never a real short shift hidden.
+function effectiveFlag(originalFlag, recomputedHours, day) {
+  if (originalFlag !== "red") return originalFlag;
+  if (isWeekendDay(day)) return null;
+  if (clockStandardHours != null
       && recomputedHours > 0 && recomputedHours >= clockStandardHours) {
     return null;
   }
   return originalFlag;
+}
+
+// Days where an auto-closed event happened, keyed `${user_id}_${day}`. Used to
+// promote 'red' (Short shift) to 'yellow' (Auto-closed) — the shared Clock RPC's
+// flag column picks red first, but auto-close is the more useful signal, so both
+// clock reports override it.
+async function fetchAutoClosedDays(weekStart) {
+  try {
+    const { data } = await sb.rpc("clock_auto_closed_days", {
+      p_org_id:   currentOrgId,
+      p_start:    fmtDate(weekStart),
+      p_end_excl: fmtDate(addDays(weekStart, 7)),
+      p_tz:       null,
+    });
+    return new Set((data || []).map((r) => `${r.user_id}_${r.day}`));
+  } catch {
+    // RPC may not exist yet (migration 121 not applied) or the caller lacks
+    // access — an empty set leaves the original RPC-supplied flag in place.
+    return new Set();
+  }
+}
+
+// Days each employee was on approved leave, keyed `${user_id}_${day}` like
+// fetchAutoClosedDays, valued `{ name, hours }`. Leave accounts for time the
+// clock can't see, so it settles both absence signals: a day with no clock at
+// all is the leave type rather than a red "No Clock", and a short shift stops
+// being flagged once the leave hours cover the shortfall.
+//
+// Only 'approved' counts — a request still awaiting a manager (or awaiting the
+// employee's acceptance) isn't leave yet, so those days stay chaseable.
+//
+// Degradation: RLS lets any manager/admin read leave_requests org-wide, but a
+// plain clock-viewer (can_view_clock_comparison without manager status) isn't
+// covered by that policy. They get no error — just their own rows — so other
+// people's absences keep showing as unexplained. Acceptable: the fallback is
+// the pre-existing behaviour, never a wrong label.
+async function fetchApprovedLeaveDays(weekStart) {
+  const map = new Map();
+  const ws = fmtDate(weekStart);
+  const weekEnd = fmtDate(addDays(weekStart, 6));
+  try {
+    const { data, error } = await sb
+      .from("leave_requests")
+      .select("user_id, start_date, end_date, skip_weekends, hours_per_day, leave_types!leave_requests_leave_type_id_fkey ( name )")
+      .eq("organisation_id", currentOrgId)
+      .eq("status", "approved")
+      .lte("start_date", weekEnd)
+      .gte("end_date", ws);
+    if (error) throw error;
+    for (const lv of data || []) {
+      // hours_per_day is always hours even for leave types measured in days —
+      // it's the figure apply_leave_to_timesheet writes onto the timesheet.
+      const entry = {
+        name: lv.leave_types?.name || "Leave",
+        hours: Number(lv.hours_per_day) || 0,
+      };
+      // Walk the request's days clamped to this week, stepping a local Date so
+      // no yyyy-mm-dd value is ever round-tripped through new Date(string) —
+      // that parses as UTC and would land on the wrong day here.
+      let d = dayToLocalDate(lv.start_date < ws ? ws : lv.start_date);
+      const last = dayToLocalDate(lv.end_date > weekEnd ? weekEnd : lv.end_date);
+      if (!d || !last) continue;
+      while (d <= last) {
+        const dow = d.getDay();
+        if (!(lv.skip_weekends && (dow === 0 || dow === 6))) {
+          map.set(`${lv.user_id}_${fmtDate(d)}`, entry);
+        }
+        d = addDays(d, 1);
+      }
+    }
+  } catch {
+    // Caller can't read leave (see above) — absences stay unexplained.
+  }
+  return map;
+}
+
+// Does approved leave account for a short shift? Adds the leave hours back
+// before judging the shortfall: half a day off plus half a day clocked is a
+// full day, not something to chase. Falls short still → still a short shift.
+function leaveCoversShortShift(leave, workedHours) {
+  return !!leave && clockStandardHours != null
+    && workedHours + leave.hours >= clockStandardHours;
 }
 
 function updateCvtWeekLabel() {
@@ -966,6 +1061,10 @@ async function loadFlagReport() {
 
   await Promise.all([loadClockStandard(), loadClockScope(), loadUnpaidBreaks()]);
   const ws = fmtDate(flagWeek);
+  const [autoClosedSet, leaveDays] = await Promise.all([
+    fetchAutoClosedDays(flagWeek),
+    fetchApprovedLeaveDays(flagWeek),
+  ]);
   let rows = [];
   try {
     const { data, error } = await sb.rpc("weekly_timesheet", {
@@ -977,12 +1076,27 @@ async function loadFlagReport() {
     // Re-derive the flag client-side from the shared worked-hours calc
     // (same as the Full report's Hours column): rows whose credited,
     // quarter-hour-rounded hours meet the standard shouldn't carry 'red'.
+    //
+    // Auto-close is checked against the raw flag, before effectiveFlag can
+    // clear it. Otherwise a forgotten clock-out on a Saturday would vanish
+    // from this list entirely, since weekends never carry 'red' — and this
+    // list is exactly where forgotten clock-outs get chased.
+    //
+    // Approved leave clears a short shift here too, on the same arithmetic the
+    // Full report uses. This list is the chase list, so a shortfall leave
+    // already explains has even less business appearing here than there.
     rows = (data || [])
       .filter((r) => scopeAllowsUserId(r.user_id))
-      .map((r) => ({
-        ...r,
-        flag: effectiveFlag(r.flag, shiftWorkedCalc(r).hrs),
-      }))
+      .map((r) => {
+        const hrs = shiftWorkedCalc(r).hrs;
+        let flag = (r.flag === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`))
+          ? "yellow"
+          : effectiveFlag(r.flag, hrs, r.day);
+        if (flag === "red" && leaveCoversShortShift(leaveDays.get(`${r.user_id}_${r.day}`), hrs)) {
+          flag = null;
+        }
+        return { ...r, flag };
+      })
       .filter((r) => r.flag);
   } catch (err) {
     setPanelStatus(summaryEl,
@@ -1027,7 +1141,8 @@ async function loadFlagReport() {
       <tbody>
         ${rows.map((r) => {
           const { raw, hrs } = shiftWorkedCalc(r);
-          const f = flagLabel(effectiveFlag(r.flag, hrs));
+          // r.flag is already the effective flag — resolved in the map above.
+          const f = flagLabel(r.flag);
           return `<tr>
             <td><span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span></td>
             <td class="small">${escapeHtml(fmtDayShort(r.day))}</td>
@@ -1080,75 +1195,10 @@ async function loadFullReport() {
 
   await Promise.all([loadClockStandard(), loadClockScope(), loadUnpaidBreaks()]);
   const ws = fmtDate(fullWeek);
-  // Days where an auto-closed event happened. Used to promote 'red'
-  // (Short shift) to 'yellow' (Auto-closed) in the row render — the
-  // shared Clock RPC's flag column picks red first, but for the Full
-  // report we want auto-close to take priority.
-  let autoClosedSet = new Set();
-  try {
-    const weekEndExcl = fmtDate(addDays(fullWeek, 7));
-    const { data: acRows } = await sb.rpc("clock_auto_closed_days", {
-      p_org_id:   currentOrgId,
-      p_start:    ws,
-      p_end_excl: weekEndExcl,
-      p_tz:       null,
-    });
-    autoClosedSet = new Set((acRows || []).map((r) => `${r.user_id}_${r.day}`));
-  } catch {
-    // RPC may not exist yet (migration 121 not applied) or caller
-    // lacks access — fall through with an empty set so the original
-    // RPC-supplied flag still renders.
-  }
-
-  // Days each employee was on approved leave, keyed `${user_id}_${day}` like
-  // autoClosedSet, valued `{ name, hours }`. Leave accounts for time the clock
-  // can't see, so it settles both absence flags in this report: a day with no
-  // clock at all renders as the leave type instead of the red "No Clock", and a
-  // short shift stops being flagged once the leave hours cover the shortfall.
-  //
-  // Only 'approved' counts — a request still awaiting a manager (or awaiting
-  // the employee's acceptance) isn't leave yet, so those days stay chaseable.
-  //
-  // Degradation: RLS lets any manager/admin read leave_requests org-wide, but a
-  // plain clock-viewer (can_view_clock_comparison without manager status) isn't
-  // covered by that policy. They get no error — just their own rows — so other
-  // people's absences keep showing "No Clock". Acceptable: the fallback is the
-  // pre-existing behaviour, never a wrong label.
-  const leaveDays = new Map();
-  try {
-    const weekEnd = fmtDate(addDays(fullWeek, 6));
-    const { data: lvRows, error: lvErr } = await sb
-      .from("leave_requests")
-      .select("user_id, start_date, end_date, skip_weekends, hours_per_day, leave_types!leave_requests_leave_type_id_fkey ( name )")
-      .eq("organisation_id", currentOrgId)
-      .eq("status", "approved")
-      .lte("start_date", weekEnd)
-      .gte("end_date", ws);
-    if (lvErr) throw lvErr;
-    for (const lv of lvRows || []) {
-      // hours_per_day is always hours even for leave types measured in days —
-      // it's the figure apply_leave_to_timesheet writes onto the timesheet.
-      const entry = {
-        name: lv.leave_types?.name || "Leave",
-        hours: Number(lv.hours_per_day) || 0,
-      };
-      // Walk the request's days clamped to this week, stepping a local Date so
-      // no yyyy-mm-dd value is ever round-tripped through new Date(string) —
-      // that parses as UTC and would land on the wrong day here.
-      let d = dayToLocalDate(lv.start_date < ws ? ws : lv.start_date);
-      const last = dayToLocalDate(lv.end_date > weekEnd ? weekEnd : lv.end_date);
-      if (!d || !last) continue;
-      while (d <= last) {
-        const dow = d.getDay();
-        if (!(lv.skip_weekends && (dow === 0 || dow === 6))) {
-          leaveDays.set(`${lv.user_id}_${fmtDate(d)}`, entry);
-        }
-        d = addDays(d, 1);
-      }
-    }
-  } catch {
-    // Caller can't read leave (see above) — absences stay as "No Clock".
-  }
+  const [autoClosedSet, leaveDays] = await Promise.all([
+    fetchAutoClosedDays(fullWeek),
+    fetchApprovedLeaveDays(fullWeek),
+  ]);
 
   let rows = [];
   try {
@@ -1240,20 +1290,17 @@ async function loadFullReport() {
           // red "No Clock" — nothing to chase up.
           const absent = !hasClock(r);
           const leave = leaveDays.get(`${r.user_id}_${r.day}`) || null;
-          let eff = absent ? null : effectiveFlag(r.flag, hrs);
-          // Auto-closed takes priority over short-shift in this view.
-          if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
+          let eff = absent ? null : effectiveFlag(r.flag, hrs, r.day);
+          // Auto-closed takes priority over short-shift. The weekend case reads
+          // the raw flag because effectiveFlag has already cleared 'red' there,
+          // and a forgotten clock-out on a Saturday is still worth flagging.
+          if (!absent && autoClosedSet.has(`${r.user_id}_${r.day}`)
+              && (eff === "red" || (r.flag === "red" && isWeekendDay(r.day)))) {
             eff = "yellow";
           }
-          // A part day of leave explains part of a short shift, so add the
-          // leave hours back before judging the shortfall: half a day off plus
-          // half a day clocked is a full day, not something to chase. If the
-          // two together still fall short it stays red — that's a real short
-          // shift. Only 'red' is settled this way; auto-closed and late are
-          // about *when* the clock fired, which leave says nothing about.
-          const leaveCoversShortfall =
-            eff === "red" && leave && clockStandardHours != null &&
-            hrs + leave.hours >= clockStandardHours;
+          // Only 'red' is settled by leave; auto-closed and late are about
+          // *when* the clock fired, which leave says nothing about.
+          const leaveCoversShortfall = eff === "red" && leaveCoversShortShift(leave, hrs);
           if (leaveCoversShortfall) eff = null;
           // Blue leave pill whenever leave is what accounts for the gap.
           const showLeave = leave && (absent || leaveCoversShortfall);
