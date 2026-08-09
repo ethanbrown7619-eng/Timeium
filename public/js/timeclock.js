@@ -30,6 +30,32 @@ function fmtDayShort(v) {
   return isNaN(d) ? String(v) : `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
 }
 
+// Local Date for a yyyy-mm-dd value. Built from the parts so it lands on
+// local midnight — `new Date("2026-08-07")` parses as UTC and can report the
+// wrong weekday once NZ is a day ahead.
+const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function dayToLocalDate(v) {
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ""));
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function isWeekendDay(v) {
+  const d = dayToLocalDate(v);
+  if (!d) return false;   // unknown shape — treat as a weekday, never hide it
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+// "Fri 7 Aug" — the weekday name matters now that unworked days are listed,
+// since you're scanning for which day of the week someone was absent.
+function fmtDayLabel(v) {
+  const d = dayToLocalDate(v);
+  const short = fmtDayShort(v);
+  return d ? `${DAYS_SHORT[d.getDay()]} ${short}` : short;
+}
+
 const { data: { session } } = await sb.auth.getSession();
 if (!session) { location.replace("/signin.html"); throw new Error("not signed in"); }
 
@@ -1089,17 +1115,29 @@ async function loadFullReport() {
     return;
   }
 
-  // Hide rows with neither clock-in nor clock-out — they're just the
-  // RPC's filler for days an employee didn't work. Also drop anyone
-  // outside this viewer's managed-departments scope.
-  const worked = rows.filter((r) => (r.first_in || r.last_out) && scopeAllowsUserId(r.user_id));
-  if (!worked.length) {
-    setPanelStatus(summaryEl, "No clock events this week", "info");
+  // Every weekday shows a row per employee whether they clocked or not — an
+  // absence is precisely what this report needs to surface, so a day with no
+  // clock-in renders a red "No Clock" instead of silently vanishing. The RPC
+  // already returns a filler row for every active user × every day, so this
+  // is just a matter of keeping them.
+  //
+  // Weekends are the exception: nobody is rostered Sat/Sun, so filling those
+  // in would add ~110 red rows a week and bury the weekday absences that
+  // matter. A weekend day appears only when someone actually clocked.
+  const hasClock = (r) => !!(r.first_in || r.last_out);
+  const visible = rows.filter(
+    (r) => scopeAllowsUserId(r.user_id) && (hasClock(r) || !isWeekendDay(r.day))
+  );
+
+  // Summary counts real shifts only — a No Clock row isn't a shift.
+  const worked = visible.filter(hasClock);
+  if (!visible.length) {
+    setPanelStatus(summaryEl, "No employees in scope this week", "info");
     tableEl.innerHTML = "";
     return;
   }
 
-  worked.sort((a, b) => {
+  visible.sort((a, b) => {
     const an = String(a.name || ""); const bn = String(b.name || "");
     if (an !== bn) return an.localeCompare(bn);
     return (a.day || "") < (b.day || "") ? -1 : 1;
@@ -1110,11 +1148,16 @@ async function loadFullReport() {
   // rounding) also used by Clock vs Timesheet, so the views agree. The
   // summary total sums the rounded values so it matches the rows.
   const totalHours = worked.reduce((s, r) => s + shiftWorkedCalc(r).hrs, 0);
-  const uniqueEmps = new Set(worked.map((r) => r.user_id)).size;
+  const uniqueEmps = new Set(visible.map((r) => r.user_id)).size;
+  const noClockCount = visible.length - worked.length;
   setPanelStatus(summaryEl,
     `<strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} ·
      <strong>${uniqueEmps}</strong> employee${uniqueEmps === 1 ? "" : "s"} ·
-     <strong>${fmtHours(totalHours)}h</strong> total`, "info");
+     <strong>${fmtHours(totalHours)}h</strong> total${
+       noClockCount
+         ? ` · <strong>${noClockCount}</strong> no-clock day${noClockCount === 1 ? "" : "s"}`
+         : ""
+     }`, "info");
 
   tableEl.innerHTML = `
     <table class="small">
@@ -1132,22 +1175,27 @@ async function loadFullReport() {
         </tr>
       </thead>
       <tbody>
-        ${worked.map((r) => {
+        ${visible.map((r) => {
           const { raw, breakMin, hrs } = shiftWorkedCalc(r);
-          let eff = effectiveFlag(r.flag, hrs);
+          // No clock events at all: the row exists to flag the absence, so
+          // every metric column is a dash and the flag is a red "No Clock".
+          const absent = !hasClock(r);
+          let eff = absent ? null : effectiveFlag(r.flag, hrs);
           // Auto-closed takes priority over short-shift in this view.
           if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
             eff = "yellow";
           }
-          const f = eff ? flagLabel(eff) : null;
-          return `<tr>
-            <td class="small">${escapeHtml(fmtDayShort(r.day))}</td>
+          const f = absent
+            ? { label: "No Clock", cls: "cvt-danger" }
+            : (eff ? flagLabel(eff) : null);
+          return `<tr${absent ? ' class="tc-no-clock"' : ""}>
+            <td class="small">${escapeHtml(fmtDayLabel(r.day))}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.first_in))}</td>
             <td class="num small">${escapeHtml(fmtClockTime(r.last_out))}</td>
             <td class="num small">${(r.first_in && r.last_out) ? fmtHours(raw) : "—"}</td>
-            <td class="num small">${breakMin ? breakMin + "m" : "—"}</td>
+            <td class="num small">${(!absent && breakMin) ? breakMin + "m" : "—"}</td>
             <td class="num"><strong>${(r.first_in && r.last_out) ? fmtHours(hrs) : "—"}</strong></td>
             <td>${f ? `<span class="cvt-cell ${f.cls}" style="padding:2px 8px;border-radius:999px;display:inline-block">${escapeHtml(f.label)}</span>` : ""}</td>
           </tr>`;

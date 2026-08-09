@@ -1211,6 +1211,10 @@ details.card[open] > summary::before { content: "▾ "; }
 .cvt-ok { }
 .cvt-warn { background: var(--warn-bg); color: var(--warn-text-dark); }
 .cvt-danger { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
+
+/* Full report: a day the employee never clocked. Tinted so a week's absences
+   read as a block at a glance, without shouting over real flagged shifts. */
+.tc-no-clock > td { background: color-mix(in srgb, var(--danger-bg) 45%, transparent); }
 .cvt-row-flag td.cvt-sticky,
 .cvt-row-flag td.cvt-sticky-dept { border-left: 3px solid var(--danger); }
 
