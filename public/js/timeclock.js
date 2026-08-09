@@ -1099,6 +1099,51 @@ async function loadFullReport() {
     // lacks access — fall through with an empty set so the original
     // RPC-supplied flag still renders.
   }
+
+  // Days each employee was on approved leave, keyed `${user_id}_${day}` like
+  // autoClosedSet, valued with the leave type name. A no-clock day that leave
+  // already accounts for isn't an absence to chase, so it renders as "Leave"
+  // instead of the red "No Clock".
+  //
+  // Only 'approved' counts — a request still awaiting a manager (or awaiting
+  // the employee's acceptance) isn't leave yet, so those days stay chaseable.
+  //
+  // Degradation: RLS lets any manager/admin read leave_requests org-wide, but a
+  // plain clock-viewer (can_view_clock_comparison without manager status) isn't
+  // covered by that policy. They get no error — just their own rows — so other
+  // people's absences keep showing "No Clock". Acceptable: the fallback is the
+  // pre-existing behaviour, never a wrong label.
+  const leaveDays = new Map();
+  try {
+    const weekEnd = fmtDate(addDays(fullWeek, 6));
+    const { data: lvRows, error: lvErr } = await sb
+      .from("leave_requests")
+      .select("user_id, start_date, end_date, skip_weekends, leave_types!leave_requests_leave_type_id_fkey ( name )")
+      .eq("organisation_id", currentOrgId)
+      .eq("status", "approved")
+      .lte("start_date", weekEnd)
+      .gte("end_date", ws);
+    if (lvErr) throw lvErr;
+    for (const lv of lvRows || []) {
+      const label = lv.leave_types?.name || "Leave";
+      // Walk the request's days clamped to this week, stepping a local Date so
+      // no yyyy-mm-dd value is ever round-tripped through new Date(string) —
+      // that parses as UTC and would land on the wrong day here.
+      let d = dayToLocalDate(lv.start_date < ws ? ws : lv.start_date);
+      const last = dayToLocalDate(lv.end_date > weekEnd ? weekEnd : lv.end_date);
+      if (!d || !last) continue;
+      while (d <= last) {
+        const dow = d.getDay();
+        if (!(lv.skip_weekends && (dow === 0 || dow === 6))) {
+          leaveDays.set(`${lv.user_id}_${fmtDate(d)}`, label);
+        }
+        d = addDays(d, 1);
+      }
+    }
+  } catch {
+    // Caller can't read leave (see above) — absences stay as "No Clock".
+  }
+
   let rows = [];
   try {
     const { data, error } = await sb.rpc("weekly_timesheet", {
@@ -1149,7 +1194,11 @@ async function loadFullReport() {
   // summary total sums the rounded values so it matches the rows.
   const totalHours = worked.reduce((s, r) => s + shiftWorkedCalc(r).hrs, 0);
   const uniqueEmps = new Set(visible.map((r) => r.user_id)).size;
-  const noClockCount = visible.length - worked.length;
+  // Leave is counted separately from no-clock: the no-clock number is the
+  // chase list, so letting leave inflate it would defeat the point.
+  const unworked = visible.filter((r) => !hasClock(r));
+  const onLeaveCount = unworked.filter((r) => leaveDays.has(`${r.user_id}_${r.day}`)).length;
+  const noClockCount = unworked.length - onLeaveCount;
   setPanelStatus(summaryEl,
     `<strong>${worked.length}</strong> shift${worked.length === 1 ? "" : "s"} ·
      <strong>${uniqueEmps}</strong> employee${uniqueEmps === 1 ? "" : "s"} ·
@@ -1157,6 +1206,8 @@ async function loadFullReport() {
        noClockCount
          ? ` · <strong>${noClockCount}</strong> no-clock day${noClockCount === 1 ? "" : "s"}`
          : ""
+     }${
+       onLeaveCount ? ` · <strong>${onLeaveCount}</strong> on leave` : ""
      }`, "info");
 
   tableEl.innerHTML = `
@@ -1178,17 +1229,22 @@ async function loadFullReport() {
         ${visible.map((r) => {
           const { raw, breakMin, hrs } = shiftWorkedCalc(r);
           // No clock events at all: the row exists to flag the absence, so
-          // every metric column is a dash and the flag is a red "No Clock".
+          // every metric column is a dash. Approved leave explains the
+          // absence, so those days get a neutral leave pill instead of the
+          // red "No Clock" — nothing to chase up.
           const absent = !hasClock(r);
+          const onLeave = absent ? leaveDays.get(`${r.user_id}_${r.day}`) : null;
           let eff = absent ? null : effectiveFlag(r.flag, hrs);
           // Auto-closed takes priority over short-shift in this view.
           if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
             eff = "yellow";
           }
           const f = absent
-            ? { label: "No Clock", cls: "cvt-danger" }
+            ? (onLeave
+                ? { label: onLeave, cls: "cvt-leave" }
+                : { label: "No Clock", cls: "cvt-danger" })
             : (eff ? flagLabel(eff) : null);
-          return `<tr${absent ? ' class="tc-no-clock"' : ""}>
+          return `<tr${absent ? (onLeave ? ' class="tc-on-leave"' : ' class="tc-no-clock"') : ""}>
             <td class="small">${escapeHtml(fmtDayLabel(r.day))}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>

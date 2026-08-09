@@ -249,8 +249,10 @@ site right now, incl. the guest count), **Clock vs Timesheet** (clocked
 hours against logged hours with a tolerance), **Flags** (short / late /
 auto-closed shifts), **Full report** (every employee against every weekday —
 break deductions and the 15-minute early-leave credit, rounded to quarter
-hours; a weekday nobody clocked shows a red **No Clock**, and weekend days
-appear only when someone actually clocked), **Off-site**
+hours; a weekday somebody didn't clock shows a red **No Clock** — unless
+their approved leave covers that day, which shows the leave type in blue
+instead so you know it needs no chasing; weekend days appear only when
+someone actually clocked), **Off-site**
 (breaks, off-site jobs, personal time, genuine early clock-outs), and
 **Adjustments** (approving employee time-fix requests). Each panel shows a
 compact status pill summarising the view.

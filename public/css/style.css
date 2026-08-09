@@ -1233,6 +1233,9 @@ details.card[open] > summary::before { content: "▾ "; }
 /* Full report: a day the employee never clocked. Tinted so a week's absences
    read as a block at a glance, without shouting over real flagged shifts. */
 .tc-no-clock > td { background: color-mix(in srgb, var(--danger-bg) 45%, transparent); }
+/* Approved leave explains a no-clock day — neutral blue, not the red chase-me tint. */
+.cvt-leave { background: var(--info-blue-bg); color: var(--info-blue); font-weight: 600; }
+.tc-on-leave > td { background: color-mix(in srgb, var(--info-blue-bg) 45%, transparent); }
 .cvt-row-flag td.cvt-sticky,
 .cvt-row-flag td.cvt-sticky-dept { border-left: 3px solid var(--danger); }
 
