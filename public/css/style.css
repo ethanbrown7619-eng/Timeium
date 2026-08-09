@@ -1011,6 +1011,24 @@ dialog::backdrop {
   animation: fadeSlideIn 0.35s cubic-bezier(0, 0, 0.2, 1) backwards;
 }
 
+/* Pending-leave banner rows (timesheet): one booked-but-unanswered request
+   each, details left, Accept/Decline right. Stacks on narrow screens so the
+   buttons never get squeezed off. */
+.pending-leave-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+}
+.pending-leave-row:first-child { border-top: none; padding-top: 0; }
+.pending-leave-actions { display: flex; gap: 6px; flex-shrink: 0; }
+/* The banner paints text in --danger; the muted sub-text needs to stay
+   readable against the tint rather than inheriting the red. */
+.pending-leave-row .muted { color: color-mix(in srgb, var(--danger) 70%, var(--text)); }
+
 /* -------- autocomplete -------- */
 
 .ac-wrap { position: relative; }

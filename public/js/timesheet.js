@@ -9,7 +9,19 @@ import {
   invalidateWeekDashboard,
   getActiveMonday,
   isUserEffectiveOverhead,
+  refreshLeaveBadge,
 } from "/js/shared.js";
+
+// "Mon 3 Aug" from a yyyy-mm-dd value. Parsed by parts, not new Date(str),
+// which reads the string as UTC and can report the wrong weekday in NZ.
+const _DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const _MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function fmtLeaveDay(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v ?? ""));
+  if (!m) return String(v ?? "");
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return `${_DAYS_SHORT[d.getDay()]} ${Number(m[3])} ${_MONTHS_SHORT[Number(m[2]) - 1]}`;
+}
 
 const sb = await getSupabase();
 
@@ -136,6 +148,11 @@ let tsStatus = "draft";
 // its job isn't in this set and its hours stay editable. Rebuilt per week
 // in loadWeek. Empty in admin mode (admins edit everything).
 let lockedLeaveJobIds = new Set();
+
+// Leave requests raised on this user's behalf that they haven't accepted yet,
+// overlapping the open week. These block submission — see the submit guard.
+// Always empty in admin mode. Rebuilt per week in loadWeek.
+let pendingLeave = [];
 let tsSubmittedAt = null;
 let entries = [];
 let jobs = [];
@@ -481,6 +498,10 @@ function paintEditorLoading() {
   if (status) status.innerHTML = `<span class="skel skel-chip"></span>`;
   const banner = document.getElementById("rejection-banner");
   if (banner) banner.hidden = true;
+  // Clear the pending-leave state as well as the banner: it gates submission,
+  // so leaving the previous week's requests in place would block the new week.
+  pendingLeave = [];
+  renderPendingLeaveBanner();
   document.getElementById("submit-ts-btn").style.display = "none";
   document.getElementById("ts-locked-msg").style.display = "none";
   for (const d of DAYS) {
@@ -975,7 +996,7 @@ async function loadWeek() {
   // other — fetch in parallel.
   const weekEnd = fmtDate(addDays(weekStart, 6));
   const weekStartStr = fmtDate(weekStart);
-  const [statusRes, entriesRes, lockedRes] = await Promise.allSettled([
+  const [statusRes, entriesRes, lockedRes, pendingLeaveRes] = await Promise.allSettled([
     sb.from("timesheets")
       .select("status, submitted_at, notes")
       .eq("id", timesheetId)
@@ -996,6 +1017,24 @@ async function loadWeek() {
           .eq("status", "approved")
           .lte("start_date", weekEnd)
           .gte("end_date", weekStartStr),
+    // Leave a manager/admin raised on this person's behalf that they haven't
+    // accepted yet, overlapping this week. Surfaced as a banner and gates
+    // submission — otherwise the request sits unseen on the Leave page and
+    // the week gets submitted with the leave missing.
+    //
+    // Skipped in admin mode: accept_leave_request/decline_leave_request only
+    // accept the employee themselves as caller, so the buttons would throw
+    // and the gate would be unclearable by the admin editing the week.
+    ADMIN_MODE || !employee?.id
+      ? Promise.resolve({ data: [] })
+      : sb.from("leave_requests")
+          .select("id, start_date, end_date, hours_per_day, reason, leave_types!leave_requests_leave_type_id_fkey ( name ), requested_by_user:users!leave_requests_requested_by_fkey ( name )")
+          .eq("user_id", employee.id)
+          .eq("status", "pending_employee")
+          .is("dismissed_at", null)
+          .lte("start_date", weekEnd)
+          .gte("end_date", weekStartStr)
+          .order("start_date"),
   ]);
   if (myToken !== loadSeq) return;
 
@@ -1009,6 +1048,13 @@ async function loadWeek() {
     console.warn("locked-leave-jobs load failed:", lockedRes.reason);
   }
 
+  pendingLeave = [];
+  if (pendingLeaveRes.status === "fulfilled" && !pendingLeaveRes.value?.error) {
+    pendingLeave = pendingLeaveRes.value?.data || [];
+  } else if (pendingLeaveRes.status === "rejected") {
+    console.warn("pending-leave load failed:", pendingLeaveRes.reason);
+  }
+
   if (statusRes.status === "fulfilled") {
     const data = statusRes.value?.data;
     tsStatus = data?.status || "draft";
@@ -1018,6 +1064,10 @@ async function loadWeek() {
   } else {
     console.warn("status badge refresh failed:", statusRes.reason);
   }
+
+  // After the status resolve — the banner's wording and whether Accept is
+  // offered both depend on whether this week is still editable.
+  renderPendingLeaveBanner();
 
   if (entriesRes.status === "fulfilled" && !entriesRes.value?.error) {
     entries = entriesRes.value?.data || [];
@@ -1231,6 +1281,112 @@ function renderRejectionBanner(notes) {
     banner.hidden = true;
   }
 }
+
+/* ---------------------------------------------------------------- pending leave banner */
+
+// Leave a manager booked on this person's behalf that's still sitting in
+// pending_employee. Staff were missing these entirely — the only hint lived on
+// the Leave page — and submitting a week with the leave left off. So it lands
+// on the timesheet itself, with Accept/Decline in place, and gates submission.
+function renderPendingLeaveBanner() {
+  const banner = document.getElementById("pending-leave-banner");
+  if (!banner) return;
+  const list = document.getElementById("pending-leave-list");
+
+  if (!pendingLeave.length) {
+    banner.hidden = true;
+    if (list) list.innerHTML = "";
+    return;
+  }
+
+  // Once a week is submitted/approved/exported, accepting here would write
+  // hours straight into a timesheet that's already been through payroll —
+  // populate_timesheet_for_leave doesn't check status. So Accept is withheld
+  // and the fix goes via a manager. Declining is still fine: it only closes
+  // the request and never touches the timesheet.
+  const weekLocked = isTsSubmittedOrApproved(tsStatus);
+  const intro = document.getElementById("pending-leave-intro");
+  if (intro) {
+    intro.textContent = weekLocked
+      ? "Your manager booked this leave for you and it was never accepted. This week has already been submitted, so ask your manager to add the leave for you — or decline it if it's wrong."
+      : "Your manager booked this leave for you. Accept it to add the hours to this timesheet, or decline it if it's wrong. You can't submit this week until you've responded.";
+  }
+
+  list.innerHTML = pendingLeave.map((r) => {
+    const type  = r.leave_types?.name || "Leave";
+    const range = r.start_date === r.end_date
+      ? fmtLeaveDay(r.start_date)
+      : `${fmtLeaveDay(r.start_date)} — ${fmtLeaveDay(r.end_date)}`;
+    const by    = r.requested_by_user?.name;
+    const hrs   = Number(r.hours_per_day);
+    return `
+      <div class="pending-leave-row">
+        <div>
+          <strong>${escapeHtml(type)}</strong> · ${escapeHtml(range)}
+          ${hrs ? `· ${escapeHtml(fmtHours(hrs))}h/day` : ""}
+          ${by ? `<span class="muted small"> · booked by ${escapeHtml(by)}</span>` : ""}
+          ${r.reason ? `<div class="muted small">${escapeHtml(r.reason)}</div>` : ""}
+        </div>
+        <div class="pending-leave-actions">
+          ${weekLocked ? "" : `<button class="primary small" data-accept-leave="${r.id}">Accept</button>`}
+          <button class="ghost small" data-decline-leave="${r.id}">Decline</button>
+        </div>
+      </div>`;
+  }).join("");
+
+  banner.hidden = false;
+}
+
+// Delegated so the buttons survive every re-render of the list.
+document.getElementById("pending-leave-list")?.addEventListener("click", async (e) => {
+  const acceptBtn  = e.target.closest("[data-accept-leave]");
+  const declineBtn = e.target.closest("[data-decline-leave]");
+  if (!acceptBtn && !declineBtn) return;
+
+  const accepting = !!acceptBtn;
+  const id = Number(accepting
+    ? acceptBtn.dataset.acceptLeave
+    : declineBtn.dataset.declineLeave);
+  if (!id) return;
+
+  if (accepting) {
+    const ok = await confirmDialog({
+      title: "Accept leave request",
+      message: "Accept this leave? It'll be approved and the hours added to your timesheet automatically.",
+      confirmText: "Accept",
+    });
+    if (!ok) return;
+  } else {
+    const ok = await confirmDialog({
+      title: "Decline leave request",
+      message: "Decline this leave? Your manager will need to book it again if that's wrong.",
+      confirmText: "Decline", danger: true,
+    });
+    if (!ok) return;
+  }
+
+  // Both buttons off while the RPC is in flight — a double-accept would throw
+  // "only requests awaiting your acceptance can be accepted".
+  for (const b of document.querySelectorAll("#pending-leave-list button")) b.disabled = true;
+
+  try {
+    const { error } = accepting
+      ? await sb.rpc("accept_leave_request", { p_request_id: id })
+      : await sb.rpc("decline_leave_request", { p_request_id: id, p_note: null });
+    if (error) throw error;
+    notice(
+      accepting ? "Leave accepted — added to your timesheet" : "Leave declined",
+      "success"
+    );
+    // Reload the week: accepting writes the hours in, so the grid needs to
+    // pick up the new locked leave row.
+    await loadWeek();
+    refreshLeaveBadge(sb).catch(() => {});
+  } catch (err) {
+    notice(err.message || "Couldn't update the leave request", "error");
+    for (const b of document.querySelectorAll("#pending-leave-list button")) b.disabled = false;
+  }
+});
 
 /* ---------------------------------------------------------------- status badge */
 
@@ -1746,6 +1902,22 @@ document.getElementById("import-last-week").addEventListener("click", async () =
 document.getElementById("submit-ts-btn").addEventListener("click", () => {
   if (!timesheetId) return notice("Timesheet not loaded yet", "warn");
   if (isTsSubmittedOrApproved(tsStatus)) return notice("This timesheet has already been submitted", "info");
+
+  // Leave lockdown: a week with leave booked-but-unanswered can't be
+  // submitted, because doing so is exactly how leave went missing off
+  // timesheets. Accept adds the hours; Decline clears the block. Checked
+  // before the field validation so the real blocker is the first thing
+  // they're told about. Never set in admin mode (see the loadWeek fetch).
+  if (pendingLeave.length) {
+    const n = pendingLeave.length;
+    notice(
+      `You have ${n} leave request${n === 1 ? "" : "s"} for this week awaiting your response — accept or decline ${n === 1 ? "it" : "them"} before submitting`,
+      "warn"
+    );
+    const banner = document.getElementById("pending-leave-banner");
+    banner?.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
 
   if (!entries.length) {
     notice("Add at least one task before submitting", "warn");

@@ -148,6 +148,16 @@
           <span id="rejection-banner-note" style="white-space:pre-wrap"></span>
         </div>
 
+        <!-- Leave your manager booked for you that you haven't accepted yet.
+             Blocks submitting this week until each one is accepted or
+             declined, so leave can't be missed off a timesheet. Filled in by
+             renderPendingLeaveBanner(). -->
+        <div id="pending-leave-banner" hidden class="banner-danger">
+          <strong style="display:block;margin-bottom:6px">Leave awaiting your response</strong>
+          <p class="small" id="pending-leave-intro" style="margin:0 0 8px"></p>
+          <div id="pending-leave-list"></div>
+        </div>
+
         <div class="ts-grid-scroll">
           <table class="ts-grid" data-no-sort>
             <thead>

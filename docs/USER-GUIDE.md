@@ -147,11 +147,25 @@ Managers can raise leave *for* a team member (e.g. arranged verbally). It
 lands in the employee's **My Requests** as *Awaiting your acceptance* — the
 employee must accept it before it counts.
 
+These used to get missed, so an unaccepted request is now hard to walk past:
+
+- a **red count** sits on the **Leave** tab in the top bar,
+- the request appears as a **banner on the timesheet itself** for any week it
+  covers, with Accept / Decline right there,
+- and that week **can't be submitted** until the employee has responded — so a
+  timesheet can't go to payroll with the leave left off.
+
+Accepting is the only thing that adds the hours; declining just closes the
+request. If the week has *already* been submitted or exported, Accept is
+withheld (it would rewrite a timesheet payroll has already taken) and the
+banner says to ask a manager instead.
+
 ```mermaid
 flowchart TD
     M[Manager: Team Requests →<br/>+ Request on behalf<br/>picks employee + dates] --> PE[Awaiting employee acceptance]
-    PE -->|Employee accepts| AP[Approved<br/>added to their timesheet]
-    PE -->|Employee declines| CA[Cancelled]
+    PE -->|"Leave nav badge +<br/>timesheet banner<br/>(blocks submitting)"| E[Employee responds]
+    E -->|Accepts| AP[Approved<br/>added to their timesheet]
+    E -->|Declines| CA[Cancelled]
 ```
 
 ### Changing approved leave
@@ -233,8 +247,10 @@ history of every request.
 **Clock** — org-wide clock reports across six sub-tabs: **Live** (who's on
 site right now, incl. the guest count), **Clock vs Timesheet** (clocked
 hours against logged hours with a tolerance), **Flags** (short / late /
-auto-closed shifts), **Full report** (every shift with break deductions and
-the 15-minute early-leave credit, rounded to quarter hours), **Off-site**
+auto-closed shifts), **Full report** (every employee against every weekday —
+break deductions and the 15-minute early-leave credit, rounded to quarter
+hours; a weekday nobody clocked shows a red **No Clock**, and weekend days
+appear only when someone actually clocked), **Off-site**
 (breaks, off-site jobs, personal time, genuine early clock-outs), and
 **Adjustments** (approving employee time-fix requests). Each panel shows a
 compact status pill summarising the view.
