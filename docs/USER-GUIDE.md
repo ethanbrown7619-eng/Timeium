@@ -227,10 +227,19 @@ Admins run the payroll pipeline and keep the org configured. Their pages:
 and employees have submitted, everyone's status and hours at a glance.
 
 **Admin → Infusion Export** — the payroll step. For the selected week:
-review the *Pending decisions* list (approve or reject every submitted
+review the *Pending decisions* list (approve or reject each submitted
 timesheet — "Approve all" available), then **Preview** and **Export to
-Excel** in Infusion's import format. Exporting flips the week's timesheets
-to *Exported*.
+Excel** in Infusion's import format. Exporting flips the week's *approved*
+timesheets to *Exported*.
+
+You don't have to clear the whole list first. If some timesheets are still
+undecided you can export anyway — a prompt names who's affected, their
+sheets are left out of the file, and they stay in *Pending decisions*.
+Approve them later and press **Export to Excel** again: because only
+*approved* sheets are exportable and *Exported* ones are skipped, the second
+file contains **only the newly approved rows**, so there's nothing to
+de-duplicate on the Infusion side. The same is true of anyone who never
+submitted.
 
 **Admin → Leave** — org-wide leave oversight: an approvals queue (admins
 can approve/reject like a manager), change requests, and a filterable

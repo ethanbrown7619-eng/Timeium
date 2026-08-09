@@ -402,7 +402,8 @@ async function loadInfusionStatus(signal) {
     const ts = tsMap[e.id];
     return ts && (ts.status === TS_STATUS.APPROVED || ts.status === TS_STATUS.REJECTED || ts.status === TS_STATUS.EXPORTED);
   }).length;
-  // Pending = submitted but no decision yet. Blocks export hard.
+  // Pending = submitted but no decision yet. Prompts for confirmation at
+  // export time and is then left out of the file; see the export handler.
   infPendingDecisionCount = employees.filter((e) => {
     const ts = tsMap[e.id];
     return ts && ts.status === TS_STATUS.SUBMITTED;
@@ -848,22 +849,44 @@ document.getElementById("inf-preview-btn").addEventListener("click", async () =>
 document.getElementById("inf-export-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("inf-status");
 
-  // Hard block: every submitted timesheet must be approved or rejected
-  // before the export. Decline / approve in the "Pending decisions" card
-  // above. No override - undecided submissions are not exportable.
+  // Undecided submitted timesheets used to block the export outright. They no
+  // longer do: the admin confirms and those sheets are simply left out.
+  // Nothing extra is needed to exclude them — buildInfusionRows only takes
+  // 'approved' rows, and the post-export stamp only flips 'approved' to
+  // 'exported', so an undecided sheet stays 'submitted'. It keeps its place in
+  // "Pending decisions", and approving it later then re-exporting produces a
+  // top-up file containing only those rows.
+  //
+  // The prompt names who's being left out. That's the point of the dialog: the
+  // one real risk of proceeding is forgetting whose hours didn't go to payroll,
+  // and a bare count doesn't tell the admin who to follow up.
   if (infPendingDecisionCount > 0) {
-    notice(
-      `${infPendingDecisionCount} submitted timesheet${infPendingDecisionCount === 1 ? "" : "s"} ` +
-      `still awaiting a decision. Approve or reject each one in the "Pending decisions" card above before exporting.`,
-      "error",
-    );
-    statusEl.textContent = "";
-    return;
-  }
-  // Soft warn: employees who never submitted (or are still in draft).
-  // Admin can choose to proceed - those rows simply won't appear in the
-  // export (no entries to push).
-  if (infMissingCount > 0) {
+    const pendingNames = infEmployees
+      .filter((e) => infTsMap[e.id]?.status === TS_STATUS.SUBMITTED)
+      .map((e) => e.name || `#${e.id}`);
+    const extra = pendingNames.length - 6;
+    const who = extra > 0
+      ? `${pendingNames.slice(0, 6).join(", ")} and ${extra} more`
+      : pendingNames.join(", ");
+    const n = infPendingDecisionCount;
+    if (!await confirmDialog({
+      title: "Export without undecided timesheets",
+      message:
+        `${n} submitted timesheet${n === 1 ? " has" : "s have"} no decision yet${who ? ` (${who})` : ""}. ` +
+        `${n === 1 ? "It" : "They"} will be left out of this export and stay in Pending decisions — ` +
+        `approve ${n === 1 ? "it" : "them"} later and export again to send just those rows. ` +
+        (infMissingCount > 0
+          ? `${infMissingCount} employee${infMissingCount === 1 ? " also hasn't" : "s also haven't"} submitted at all. `
+          : "") +
+        `Export anyway?`,
+      confirmText: "Export",
+    })) {
+      statusEl.textContent = "";
+      return;
+    }
+  } else if (infMissingCount > 0) {
+    // Employees who never submitted (or are still in draft). Those rows simply
+    // won't appear in the export — there are no entries to push.
     if (!await confirmDialog({
       title: "Export with missing timesheets",
       message: `${infMissingCount} employee${infMissingCount === 1 ? " hasn't" : "s haven't"} submitted a timesheet for this week. Export anyway?`,
