@@ -10,6 +10,7 @@ import { getSupabase } from "/js/supabase-client.js";
 import {
   notice, escapeHtml, renderTopbar, getUserContext,
   fmtDate, fmtHours, leaveTotalHours, confirmDialog, promptDialog,
+  refreshLeaveBadge,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -145,6 +146,9 @@ async function loadRequests() {
   }
   const rows = data || [];
   leaveRows = rows;
+  // Keep the topbar's Leave pill in step — accepting or declining here must
+  // clear it without needing a reload.
+  refreshLeaveBadge(sb).catch(() => {});
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="9" class="muted small" style="text-align:center;padding:24px">No leave requests yet. Click "Request leave" to submit one.</td></tr>`;
     return;

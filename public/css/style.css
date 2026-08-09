@@ -310,6 +310,25 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
 }
 
+/* Red count pill inside a nav link (Leave: requests awaiting your
+   acceptance). Stays red on the lime active pill — it's an alert, so it
+   must not blend into the brand colour. */
+.nav-count-badge {
+  display: inline-block;
+  margin-left: 6px;
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: middle;
+}
+.nav-count-badge[hidden] { display: none; }
+
 .topbar .who {
   color: var(--text-muted);
   font-size: 13px;

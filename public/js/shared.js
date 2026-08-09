@@ -714,7 +714,14 @@ export function renderTopbar(opts) {
         .filter((l) => l.show)
         .map(
           (l) =>
-            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}</a>`
+            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}${
+              // Leave gets a red count pill for requests waiting on THIS user
+              // to accept — staff were missing manager-raised leave because
+              // nothing on the nav pointed at it. Filled in async below.
+              l.key === "leave"
+                ? `<span class="nav-count-badge" id="nav-leave-badge" hidden></span>`
+                : ""
+            }</a>`
         )
         .join("")}
     </nav>
@@ -729,6 +736,11 @@ export function renderTopbar(opts) {
   // Cross-module switcher, top-left. Populated async so the topbar paints on
   // the first frame regardless — the RPC is never on the critical path.
   mountModuleSwitcher(el.querySelector(".app-switcher-slot"), opts.sb);
+
+  // Leave badge, same fire-and-forget deal — never blocks the paint, and a
+  // failure just leaves the pill hidden.
+  refreshLeaveBadge(opts.sb).catch((err) =>
+    console.warn("leave badge unavailable:", err?.message || err));
 
   if (orgSwitcher && typeof opts.onOrgChange === "function") {
     document
@@ -756,6 +768,62 @@ export function renderTopbar(opts) {
     }
     location.replace("/signin.html");
   });
+}
+
+/* ------------------------------------------------- leave nav badge -------- */
+//
+// Red count pill on the Leave tab: how many leave requests are sitting in
+// pending_employee waiting for THIS person to accept or decline. Staff kept
+// missing requests their manager raised on their behalf because the only
+// hint lived inside the Leave page itself.
+//
+// The user_id filter is load-bearing, not decoration. Admins can read the
+// whole org's leave_requests under RLS, so an unfiltered count renders every
+// outstanding request in the company on their own nav pill (verified against
+// the RLS snapshot: unscoped = 11, correct = 0).
+export async function refreshLeaveBadge(sb) {
+  const badge = document.getElementById("nav-leave-badge");
+  if (!badge) return;  // no Leave link for this user, or topbar not rendered
+
+  if (!sb) {
+    const { getSupabase } = await import("/js/supabase-client.js");
+    sb = await getSupabase();
+  }
+
+  let userId = _lastEmployeeId;
+  if (!userId) {
+    // No context cached yet (direct load of a page that renders the topbar
+    // before getUserContext resolves). Resolve it once ourselves.
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return;
+    const { data } = await sb.from("users").select("id")
+      .eq("auth_user_id", session.user.id).maybeSingle();
+    userId = data?.id ?? null;
+  }
+  if (!userId) return;  // admin-only account with no users row
+
+  const { count, error } = await sb
+    .from("leave_requests")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "pending_employee")
+    // Match the Leave page's own filter. A row counted here but hidden there
+    // would be a badge the user has no way to clear.
+    .is("dismissed_at", null);
+  if (error) throw error;
+
+  if (!badge.isConnected) return;  // topbar re-rendered while we awaited
+  setNavBadge(badge, count || 0);
+}
+
+function setNavBadge(badge, n) {
+  if (n > 0) {
+    badge.textContent = String(n);
+    badge.title = `${n} leave request${n === 1 ? "" : "s"} waiting for you to accept`;
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
 }
 
 /* ------------------------------------------------- ERP module switcher ---- */
@@ -1004,6 +1072,11 @@ const USER_CONTEXT_TTL_MS = 5 * 60_000;
 // having to thread it through — every page calls getUserContext first.
 let _lastReceivesLeave = true;
 
+// Last-known users.id for the signed-in caller, stashed for the same reason
+// as _lastReceivesLeave: renderTopbar needs it for the Leave nav badge and
+// no page threads it through. Null until getUserContext has run once.
+let _lastEmployeeId = null;
+
 function userContextKey(session) {
   return `ptl-ctx:${session?.user?.id || "anon"}`;
 }
@@ -1042,6 +1115,7 @@ export async function getUserContext(sb, session, { force = false } = {}) {
         const { data, ts } = JSON.parse(cached);
         if (Date.now() - ts < USER_CONTEXT_TTL_MS) {
           _lastReceivesLeave = data?.receivesLeave !== false;
+          _lastEmployeeId = data?.employee?.id ?? null;
           // Serve the cache instantly; refresh it in the background so
           // the next navigation sees any permission changes.
           fetchFreshUserContext(sb, session, cacheKey).catch((err) =>
@@ -1095,6 +1169,7 @@ async function fetchFreshUserContext(sb, session, cacheKey) {
     console.warn("receivesLeave lookup failed; defaulting to visible:", err?.message || err);
   }
   _lastReceivesLeave = receivesLeave;
+  _lastEmployeeId = employee?.id ?? null;
 
   const data = {
     isDeveloper,
