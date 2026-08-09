@@ -1101,9 +1101,10 @@ async function loadFullReport() {
   }
 
   // Days each employee was on approved leave, keyed `${user_id}_${day}` like
-  // autoClosedSet, valued with the leave type name. A no-clock day that leave
-  // already accounts for isn't an absence to chase, so it renders as "Leave"
-  // instead of the red "No Clock".
+  // autoClosedSet, valued `{ name, hours }`. Leave accounts for time the clock
+  // can't see, so it settles both absence flags in this report: a day with no
+  // clock at all renders as the leave type instead of the red "No Clock", and a
+  // short shift stops being flagged once the leave hours cover the shortfall.
   //
   // Only 'approved' counts — a request still awaiting a manager (or awaiting
   // the employee's acceptance) isn't leave yet, so those days stay chaseable.
@@ -1118,14 +1119,19 @@ async function loadFullReport() {
     const weekEnd = fmtDate(addDays(fullWeek, 6));
     const { data: lvRows, error: lvErr } = await sb
       .from("leave_requests")
-      .select("user_id, start_date, end_date, skip_weekends, leave_types!leave_requests_leave_type_id_fkey ( name )")
+      .select("user_id, start_date, end_date, skip_weekends, hours_per_day, leave_types!leave_requests_leave_type_id_fkey ( name )")
       .eq("organisation_id", currentOrgId)
       .eq("status", "approved")
       .lte("start_date", weekEnd)
       .gte("end_date", ws);
     if (lvErr) throw lvErr;
     for (const lv of lvRows || []) {
-      const label = lv.leave_types?.name || "Leave";
+      // hours_per_day is always hours even for leave types measured in days —
+      // it's the figure apply_leave_to_timesheet writes onto the timesheet.
+      const entry = {
+        name: lv.leave_types?.name || "Leave",
+        hours: Number(lv.hours_per_day) || 0,
+      };
       // Walk the request's days clamped to this week, stepping a local Date so
       // no yyyy-mm-dd value is ever round-tripped through new Date(string) —
       // that parses as UTC and would land on the wrong day here.
@@ -1135,7 +1141,7 @@ async function loadFullReport() {
       while (d <= last) {
         const dow = d.getDay();
         if (!(lv.skip_weekends && (dow === 0 || dow === 6))) {
-          leaveDays.set(`${lv.user_id}_${fmtDate(d)}`, label);
+          leaveDays.set(`${lv.user_id}_${fmtDate(d)}`, entry);
         }
         d = addDays(d, 1);
       }
@@ -1233,18 +1239,30 @@ async function loadFullReport() {
           // absence, so those days get a neutral leave pill instead of the
           // red "No Clock" — nothing to chase up.
           const absent = !hasClock(r);
-          const onLeave = absent ? leaveDays.get(`${r.user_id}_${r.day}`) : null;
+          const leave = leaveDays.get(`${r.user_id}_${r.day}`) || null;
           let eff = absent ? null : effectiveFlag(r.flag, hrs);
           // Auto-closed takes priority over short-shift in this view.
           if (eff === "red" && autoClosedSet.has(`${r.user_id}_${r.day}`)) {
             eff = "yellow";
           }
-          const f = absent
-            ? (onLeave
-                ? { label: onLeave, cls: "cvt-leave" }
-                : { label: "No Clock", cls: "cvt-danger" })
-            : (eff ? flagLabel(eff) : null);
-          return `<tr${absent ? (onLeave ? ' class="tc-on-leave"' : ' class="tc-no-clock"') : ""}>
+          // A part day of leave explains part of a short shift, so add the
+          // leave hours back before judging the shortfall: half a day off plus
+          // half a day clocked is a full day, not something to chase. If the
+          // two together still fall short it stays red — that's a real short
+          // shift. Only 'red' is settled this way; auto-closed and late are
+          // about *when* the clock fired, which leave says nothing about.
+          const leaveCoversShortfall =
+            eff === "red" && leave && clockStandardHours != null &&
+            hrs + leave.hours >= clockStandardHours;
+          if (leaveCoversShortfall) eff = null;
+          // Blue leave pill whenever leave is what accounts for the gap.
+          const showLeave = leave && (absent || leaveCoversShortfall);
+          const f = showLeave
+            ? { label: leave.name, cls: "cvt-leave" }
+            : absent
+              ? { label: "No Clock", cls: "cvt-danger" }
+              : (eff ? flagLabel(eff) : null);
+          return `<tr${showLeave ? ' class="tc-on-leave"' : (absent ? ' class="tc-no-clock"' : "")}>
             <td class="small">${escapeHtml(fmtDayLabel(r.day))}</td>
             <td>${escapeHtml(r.name || "")}</td>
             <td class="small muted">${escapeHtml(r.department || "")}</td>
