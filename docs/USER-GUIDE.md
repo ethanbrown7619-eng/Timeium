@@ -273,6 +273,11 @@ someone actually clocked), **Off-site**
 **Adjustments** (approving employee time-fix requests). Each panel shows a
 compact status pill summarising the view.
 
+When someone is waiting on you to approve a time fix, a **red count** sits on
+the **Clock** tab in the top bar — the same pill the Leave tab uses. It counts
+only what you can actually action: org-wide for admins, or just your own
+departments if your clock access is scoped that way.
+
 **Staff** — the roster: add/deactivate staff, set department, employment
 type (waged/salaried/contractor), overtime eligibility and thresholds,
 rates, and manager status.

@@ -13,6 +13,7 @@ import {
   isUserEffectiveOverhead,
   confirmDialog, promptDialog,
   skeletonBlock, fmtHours,
+  refreshClockBadge,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -1503,6 +1504,9 @@ async function loadAdjustments() {
       .sort((a, b) => (b.reviewed_at || "").localeCompare(a.reviewed_at || ""))
       .slice(0, 20);
     setAdjustCount(pending.length);
+    // Keep the nav pill honest after an approve/decline — both paths re-run
+    // this function, so the topbar count can't outlive the queue.
+    refreshClockBadge(sb, currentOrgId).catch(() => {});
 
     if (!pending.length) {
       pendingBody.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No pending adjustment requests.</td></tr>`;

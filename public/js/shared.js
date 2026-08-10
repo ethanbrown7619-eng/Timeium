@@ -720,7 +720,12 @@ export function renderTopbar(opts) {
               // nothing on the nav pointed at it. Filled in async below.
               l.key === "leave"
                 ? `<span class="nav-count-badge" id="nav-leave-badge" hidden></span>`
-                : ""
+                // Clock gets the same pill for time-fix requests waiting on a
+                // reviewer — the queue lives three sub-tabs deep, so nothing
+                // outside the Clock page pointed at it either.
+                : l.key === "timeclock"
+                  ? `<span class="nav-count-badge" id="nav-clock-badge" hidden></span>`
+                  : ""
             }</a>`
         )
         .join("")}
@@ -741,6 +746,13 @@ export function renderTopbar(opts) {
   // failure just leaves the pill hidden.
   refreshLeaveBadge(opts.sb).catch((err) =>
     console.warn("leave badge unavailable:", err?.message || err));
+
+  // Only for users who can actually review — the RPC raises otherwise, and the
+  // condition mirrors the Clock link's own `show` above.
+  if (isAdminOrDev || opts.isClockViewer) {
+    refreshClockBadge(opts.sb, opts.currentOrgId).catch((err) =>
+      console.warn("clock badge unavailable:", err?.message || err));
+  }
 
   if (orgSwitcher && typeof opts.onOrgChange === "function") {
     document
@@ -813,13 +825,51 @@ export async function refreshLeaveBadge(sb) {
   if (error) throw error;
 
   if (!badge.isConnected) return;  // topbar re-rendered while we awaited
-  setNavBadge(badge, count || 0);
+  const n = count || 0;
+  setNavBadge(badge, n,
+    `${n} leave request${n === 1 ? "" : "s"} waiting for you to accept`);
 }
 
-function setNavBadge(badge, n) {
+/* ------------------------------------------------- clock nav badge -------- */
+//
+// Red count pill on the Clock tab: pending clock-adjustment requests waiting
+// for this reviewer. Same problem the Leave badge solved — the queue is the
+// sixth sub-tab of the Clock page, so a manager had no reason to look.
+//
+// Scope comes from the RPC, not from us. list_clock_adjustment_requests
+// (migration 146) returns the whole org to an admin/developer or to a clock
+// viewer whose clock_view_scope is 'all', and only the caller's own
+// departments otherwise — so the count always matches what they can actually
+// action. It *raises* for anyone not allowed to review at all, which is why
+// this is only called when the Clock link is shown.
+export async function refreshClockBadge(sb, orgId) {
+  const badge = document.getElementById("nav-clock-badge");
+  if (!badge) return;  // no Clock link for this user, or topbar not rendered
+
+  if (!sb) {
+    const { getSupabase } = await import("/js/supabase-client.js");
+    sb = await getSupabase();
+  }
+
+  const org = orgId ?? _lastOrgId;
+  if (!org) return;
+
+  const { data, error } = await sb.rpc("list_clock_adjustment_requests", {
+    p_org_id: org,
+    p_status: "pending",
+  });
+  if (error) throw error;
+
+  if (!badge.isConnected) return;
+  const n = (data || []).length;
+  setNavBadge(badge, n,
+    `${n} clock time-fix request${n === 1 ? "" : "s"} waiting for your review`);
+}
+
+function setNavBadge(badge, n, title) {
   if (n > 0) {
     badge.textContent = String(n);
-    badge.title = `${n} leave request${n === 1 ? "" : "s"} waiting for you to accept`;
+    if (title) badge.title = title;
     badge.hidden = false;
   } else {
     badge.hidden = true;
@@ -1077,6 +1127,11 @@ let _lastReceivesLeave = true;
 // no page threads it through. Null until getUserContext has run once.
 let _lastEmployeeId = null;
 
+// Same again for the organisation, needed by the Clock nav badge. Not every
+// page passes currentOrgId to renderTopbar (only the ones with the developer
+// org switcher do), so the badge falls back to this.
+let _lastOrgId = null;
+
 function userContextKey(session) {
   return `ptl-ctx:${session?.user?.id || "anon"}`;
 }
@@ -1116,6 +1171,8 @@ export async function getUserContext(sb, session, { force = false } = {}) {
         if (Date.now() - ts < USER_CONTEXT_TTL_MS) {
           _lastReceivesLeave = data?.receivesLeave !== false;
           _lastEmployeeId = data?.employee?.id ?? null;
+          _lastOrgId =
+            data?.adminRow?.organisation_id ?? data?.employee?.organisation_id ?? null;
           // Serve the cache instantly; refresh it in the background so
           // the next navigation sees any permission changes.
           fetchFreshUserContext(sb, session, cacheKey).catch((err) =>
@@ -1170,6 +1227,7 @@ async function fetchFreshUserContext(sb, session, cacheKey) {
   }
   _lastReceivesLeave = receivesLeave;
   _lastEmployeeId = employee?.id ?? null;
+  _lastOrgId = adminRow?.organisation_id ?? employee?.organisation_id ?? null;
 
   const data = {
     isDeveloper,
