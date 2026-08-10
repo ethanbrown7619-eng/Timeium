@@ -47,6 +47,19 @@ SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 # Auth's CAPTCHA settings. Leave blank to disable the widget.
 TURNSTILE_SITE_KEY = "0x4AAAAAAEFhSpbPy4xVI7Da"
 
+# Microsoft Entra (Azure AD) sign-in. "true" reveals the "Sign in with
+# Microsoft" button on the sign-in page; any other value hides it.
+#
+# Leave this "false" until the Azure provider in the Supabase dashboard has
+# a REAL client secret. With a missing or placeholder secret the button
+# still sends people to Microsoft, they authenticate for real, and only
+# then does the token exchange fail — which reads as "the ERP is broken".
+#
+# No secret lives here. The Entra client secret goes in the Supabase
+# dashboard only; the client ID and tenant ID are not secrets but aren't
+# needed by the front end either, so they aren't here.
+ENTRA_ENABLED = "false"
+
 # Secrets (set via `wrangler secret put NAME`, never committed):
 #
 #   SUPABASE_SERVICE_ROLE_KEY   (REQUIRED for cross-module SSO)

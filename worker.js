@@ -76,6 +76,12 @@ async function route(request, env, ctx) {
           // signin/signup/forgot/reset pages render the widget only when
           // a key is present; missing key = CAPTCHA disabled gracefully.
           turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
+          // Microsoft Entra sign-in. Must be the exact string "true" —
+          // anything else, including the var being absent, leaves the
+          // button hidden. This is the switch that stops a half-configured
+          // Azure provider from showing staff a button that walks them
+          // through a Microsoft prompt and then fails on the way back.
+          entraEnabled: env.ENTRA_ENABLED === "true",
         }),
         {
           headers: {

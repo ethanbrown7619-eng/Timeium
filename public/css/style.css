@@ -2031,3 +2031,34 @@ button.primary:hover {
   font-size: 13.5px;
   font-weight: 600;
 }
+
+/* ---- Microsoft / Entra sign-in ------------------------------------------
+   Rendered only when the worker reports entraEnabled (see signin.js). */
+/* button.entra-btn, not .entra-btn — the file styles buttons as
+   `button.ghost` / `button.accent`, so matching that specificity keeps this
+   from being undone by a later edit to those. */
+button.entra-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+/* A rule, with the word sitting in a gap in the middle of it. The
+   pseudo-elements are the two halves of the line; flex keeps them equal
+   whatever the label's width. */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}

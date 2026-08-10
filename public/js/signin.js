@@ -1,6 +1,24 @@
-import { getSupabase } from "/js/supabase-client.js";
+import { getSupabase, getConfig } from "/js/supabase-client.js";
 import { notice, routeAfterAuth } from "/js/shared.js";
 import { mountTurnstile } from "/js/turnstile.js";
+
+// Read the OAuth return markers BEFORE the client boots. getSupabase()
+// creates the client with detectSessionInUrl, which consumes and strips
+// them during initialisation — read them afterwards and they're always
+// gone. Declared above the boot await deliberately: a const read from
+// inside that await would still be in its temporal dead zone.
+const _returnUrl  = new URL(location.href);
+const _returnHash = new URLSearchParams(location.hash.replace(/^#/, ""));
+const RETURNED_FROM_OAUTH =
+  _returnHash.has("access_token") || _returnUrl.searchParams.has("code");
+// Microsoft reports failures on the way back rather than on the way out —
+// consent declined, user not assigned to the app, a bad client secret.
+const OAUTH_ERROR =
+  _returnUrl.searchParams.get("error_description") ||
+  _returnUrl.searchParams.get("error") ||
+  _returnHash.get("error_description") ||
+  _returnHash.get("error") ||
+  null;
 
 const sb = await getSupabase();
 const turnstile = await mountTurnstile(document.getElementById("turnstile-container"));
@@ -17,10 +35,59 @@ document.getElementById("toggle-password").addEventListener("click", (e) => {
   btn.setAttribute("aria-label", showing ? "Show password" : "Hide password");
 });
 
-// Already signed in? Bounce straight through.
+if (OAUTH_ERROR) {
+  notice(`Microsoft sign-in failed: ${OAUTH_ERROR}`, "error");
+  // Strip it so a refresh doesn't re-show the same error forever.
+  history.replaceState(null, "", location.pathname);
+}
+
+// Already signed in? Bounce straight through. This is also the landing
+// point for a Microsoft sign-in: detectSessionInUrl has already turned the
+// returned tokens into a session by the time getSession() resolves.
 const { data: { session } } = await sb.auth.getSession();
 if (session) {
+  // Keep the audit trail complete — the password path logs this from its
+  // own success branch, and an Entra sign-in never goes through there.
+  if (RETURNED_FROM_OAUTH) {
+    try { await sb.rpc("record_login_success", {}); } catch { /* best effort */ }
+  }
   await routeAfterAuth(sb);
+}
+
+// ---- Microsoft / Entra ----------------------------------------------------
+// The button is revealed only when the worker says the provider is
+// configured, so it cannot exist before there's a real client secret behind
+// it. Neither Turnstile nor the lockout pre-check applies here: both guard
+// against password guessing, and this path has no password. Microsoft owns
+// the credential, the MFA prompt and its own lockout.
+try {
+  const cfg = await getConfig();
+  const block = document.getElementById("entra-block");
+  const entraBtn = document.getElementById("entra-btn");
+  if (cfg.entraEnabled && block && entraBtn) {
+    block.hidden = false;
+    entraBtn.addEventListener("click", async () => {
+      entraBtn.disabled = true;
+      // Returns here, where the block above picks the session up.
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: "azure",
+        options: {
+          scopes: "openid email profile",
+          redirectTo: `${location.origin}/signin.html`,
+        },
+      });
+      // Only reached if the redirect never happened — otherwise the page
+      // is already on its way to Microsoft.
+      if (error) {
+        notice(error.message || "Could not start Microsoft sign-in", "error");
+        entraBtn.disabled = false;
+      }
+    });
+  }
+} catch (err) {
+  // Config unavailable: leave the button hidden. Password sign-in below is
+  // unaffected, so this must never throw the page away.
+  console.warn("Entra button setup skipped:", err);
 }
 
 document.getElementById("signin-form").addEventListener("submit", async (e) => {
