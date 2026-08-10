@@ -178,6 +178,32 @@ let orgEmpTypeSettings = null;
 // PUBLIC_HOLIDAY is left out — those types aren't gated by the per-staff-type
 // toggles, so picking them never warns.
 let leaveTypeFlagById = new Map();
+
+// Every leave-type id the org actually has. A leave job is only taken out
+// of the employee's hands if it maps to one of these — see
+// isRequestableLeaveJob.
+let liveLeaveTypeIds = new Set();
+
+// Can this leave job be reached through the leave-request flow?
+//
+// Both halves matter. The request dialog offers leave types by way of the
+// leave JOBS that carry a leave_type_id, and populate_timesheet_for_leave
+// finds the job to write hours to by that same mapping. So a leave job with
+// no leave_type_id — or one pointing at a type the org no longer has — has
+// no request route at all: hiding it from the picker would leave staff no
+// way to record that leave whatsoever. (The snapshot had four such jobs,
+// including UNPAID LEAVE, which two people had used in the fortnight
+// before this rule went in.)
+//
+// So unmapped leave jobs stay hand-enterable, and they drop out of the
+// picker on their own the moment an admin maps them in Configure. Only
+// leave that CAN be requested MUST be requested.
+function isRequestableLeaveJob(job) {
+  return !!job?.is_leave
+    && !!job.leave_type_id
+    && liveLeaveTypeIds.has(job.leave_type_id);
+}
+
 const LEAVE_CODE_TO_FLAG = {
   ANNUAL: "annual_leave",
   SICK: "sick_leave",
@@ -914,6 +940,7 @@ async function loadLookups() {
       .map((lt) => [lt.id, LEAVE_CODE_TO_FLAG[lt.code]])
       .filter(([, flag]) => !!flag),
   );
+  liveLeaveTypeIds = new Set((leaveTypesResult?.data || []).map((lt) => lt.id));
 
   jobs = jobsResult;
   tasks = tasksResult;
@@ -925,14 +952,14 @@ async function loadLookups() {
   // policy now too. Autocomplete still only suggests ACTIVE tasks/codes
   // so archived ones can't be picked for new rows but still render their
   // codes on read-only historical entries.
-  // Leave jobs are deliberately kept out of the employee's job picker.
-  // Leave reaches a timesheet one way only — through a leave request, which
+  // Leave jobs are deliberately kept out of the employee's job picker:
+  // leave reaches a timesheet one way only — through a leave request, which
   // writes the hours via populate_timesheet_for_leave once it's approved —
   // so every leave line on a sheet has an approved request behind it.
   // `jobs` / `jobsById` stay complete so leave rows already on a sheet still
   // render their code. Admin edit mode keeps the full list: managers still
   // need to correct leave by hand.
-  jobItems = (ADMIN_MODE ? jobs : jobs.filter((j) => !j.is_leave))
+  jobItems = (ADMIN_MODE ? jobs : jobs.filter((j) => !isRequestableLeaveJob(j)))
     .map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
   deptItems = deptCodes
     .filter((dc) => dc.status === "ACTIVE")
@@ -1502,9 +1529,10 @@ function rowHtml(e, idx, isSubmitted) {
   const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
   // Duplicating a leave row would mint a second leave line with no request
   // behind it — the one hand-entry route left once the job picker hides
-  // leave codes. Remove stays available so an employee can clear a leave
-  // line they added before this rule and request it properly instead.
-  const canDuplicate = ADMIN_MODE || !isLeaveRow;
+  // leave codes. Same requestable-only rule as the picker. Remove stays
+  // available so an employee can clear a leave line they added before this
+  // rule and request it properly instead.
+  const canDuplicate = ADMIN_MODE || !isRequestableLeaveJob(job);
 
   return `
     <tr data-entry-id="${e.id}" data-idx="${idx}"${leaveLocked ? ' class="leave-locked-row" title="Leave is managed from the Leave page — request a change there"' : ""}>
@@ -2020,7 +2048,7 @@ async function addCommonJobRow(jobCode, deptLetter) {
   // The reference card is ops jobs only, so this can't fire today — it's
   // here so adding a leave code to the card later can't quietly reopen the
   // hand-entry route the job picker now closes.
-  if (!ADMIN_MODE && job.is_leave) {
+  if (!ADMIN_MODE && isRequestableLeaveJob(job)) {
     return notice("Leave goes on your timesheet by requesting it on the Leave page", "warn");
   }
   // Dept letter from the card → active department code. Same ACTIVE-only

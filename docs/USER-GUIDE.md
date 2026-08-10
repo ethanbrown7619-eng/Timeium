@@ -45,13 +45,17 @@ Key rules the grid enforces:
   reference table — double-click any row in it to add that job (with its
   department letter) straight onto your timesheet.
 - Rows autosave as you type; daily totals and the week total update live.
-- **Leave is never typed onto a timesheet by hand.** Leave codes don't appear
-  in the job picker at all — you request leave on **My Leave**, and once it's
-  approved the hours are written onto the week for you. That way every leave
-  line on a timesheet has an approved request, a balance deduction, and a
-  calendar entry behind it. "Import last week's tasks" skips leave rows for
-  the same reason, and a leave row can't be duplicated. Managers and admins
-  editing someone else's sheet still have the full job list.
+- **Leave you can request is never typed onto a timesheet by hand.** Any
+  leave code that's available on **My Leave** is gone from the job picker —
+  you request it, and once it's approved the hours are written onto the week
+  for you. That way every leave line has an approved request, a balance
+  deduction, and a calendar entry behind it. Those rows also can't be
+  duplicated, and "Import last week's tasks" never copies leave forward.
+  Managers and admins editing someone else's sheet keep the full job list.
+- A leave code that *isn't* set up as a requestable leave type yet stays in
+  the picker, so nobody is left unable to record their leave. Mapping it to
+  a leave type in **Configure** is what moves it to request-only — the app
+  picks that up on its own.
 
 ### Timesheet lifecycle
 
