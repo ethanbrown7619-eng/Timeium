@@ -58,7 +58,7 @@ TURNSTILE_SITE_KEY = "0x4AAAAAAEFhSpbPy4xVI7Da"
 # No secret lives here. The Entra client secret goes in the Supabase
 # dashboard only; the client ID and tenant ID are not secrets but aren't
 # needed by the front end either, so they aren't here.
-ENTRA_ENABLED = "false"
+ENTRA_ENABLED = "true"
 
 # Secrets (set via `wrangler secret put NAME`, never committed):
 #
