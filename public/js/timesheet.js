@@ -925,7 +925,15 @@ async function loadLookups() {
   // policy now too. Autocomplete still only suggests ACTIVE tasks/codes
   // so archived ones can't be picked for new rows but still render their
   // codes on read-only historical entries.
-  jobItems = jobs.map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
+  // Leave jobs are deliberately kept out of the employee's job picker.
+  // Leave reaches a timesheet one way only — through a leave request, which
+  // writes the hours via populate_timesheet_for_leave once it's approved —
+  // so every leave line on a sheet has an approved request behind it.
+  // `jobs` / `jobsById` stay complete so leave rows already on a sheet still
+  // render their code. Admin edit mode keeps the full list: managers still
+  // need to correct leave by hand.
+  jobItems = (ADMIN_MODE ? jobs : jobs.filter((j) => !j.is_leave))
+    .map((j) => ({ ...j, _label: j.job_code, _desc: j.description || "" }));
   deptItems = deptCodes
     .filter((dc) => dc.status === "ACTIVE")
     .map((dc) => ({ ...dc, _label: dc.code, _desc: dc.description || "" }));
@@ -1492,6 +1500,11 @@ function rowHtml(e, idx, isSubmitted) {
   // manual or approved alike.
   const deptRo = isSubmitted || isLeaveRow ? "readonly" : "";
   const taskRo = isSubmitted || isLeaveRow ? "readonly" : "";
+  // Duplicating a leave row would mint a second leave line with no request
+  // behind it — the one hand-entry route left once the job picker hides
+  // leave codes. Remove stays available so an employee can clear a leave
+  // line they added before this rule and request it properly instead.
+  const canDuplicate = ADMIN_MODE || !isLeaveRow;
 
   return `
     <tr data-entry-id="${e.id}" data-idx="${idx}"${leaveLocked ? ' class="leave-locked-row" title="Leave is managed from the Leave page — request a change there"' : ""}>
@@ -1532,7 +1545,7 @@ function rowHtml(e, idx, isSubmitted) {
           <div class="row-menu-wrap">
             <button type="button" class="ghost small row-menu-btn" aria-label="Row options" aria-expanded="false">⋯</button>
             <div class="row-menu" hidden role="menu">
-              <button type="button" class="row-menu-item duplicate-entry-btn" role="menuitem">Duplicate row</button>
+              ${canDuplicate ? `<button type="button" class="row-menu-item duplicate-entry-btn" role="menuitem">Duplicate row</button>` : ""}
               <button type="button" class="row-menu-item delete-entry-btn" role="menuitem">Remove row</button>
             </div>
           </div>
@@ -1877,7 +1890,7 @@ document.getElementById("import-last-week").addEventListener("click", async () =
   if (entries.length > 0) {
     if (!await confirmDialog({
       title: "Import last week's tasks",
-      message: "Copy last week's task list (job/dept/task/description, no hours) into this week. Existing rows that match are skipped, so anything you've already added stays. Continue?",
+      message: "Copy last week's task list (job/dept/task/description, no hours) into this week. Existing rows that match are skipped, so anything you've already added stays. Leave isn't copied — request leave on the Leave page. Continue?",
       confirmText: "Import",
     })) return;
   }
@@ -2003,6 +2016,12 @@ async function addCommonJobRow(jobCode, deptLetter) {
     || jobs.find((j) => j.job_code === jobCode);
   if (!job) {
     return notice(`Job ${jobCode} isn't in the jobs list — ask an admin to import it`, "warn");
+  }
+  // The reference card is ops jobs only, so this can't fire today — it's
+  // here so adding a leave code to the card later can't quietly reopen the
+  // hand-entry route the job picker now closes.
+  if (!ADMIN_MODE && job.is_leave) {
+    return notice("Leave goes on your timesheet by requesting it on the Leave page", "warn");
   }
   // Dept letter from the card → active department code. Same ACTIVE-only
   // policy as the dept autocomplete.
