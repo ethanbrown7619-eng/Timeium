@@ -113,12 +113,11 @@ grant execute on function public.import_last_week_tasks(date) to authenticated;
 -- is left alone as well — they're the ones who fix leave when it's wrong,
 -- and RLS already decides whose sheets they can touch at all.
 --
--- Only leave that can actually be REQUESTED is blocked, matching the job
--- picker. A leave job with no leave_type_id — or one pointing at a type the
--- org no longer has — can't be raised as a request and can't be written by
--- populate_timesheet_for_leave either, so blocking it would leave staff no
--- way to record that leave at all. Those stay hand-enterable until an admin
--- maps them in Configure, at which point they're covered automatically.
+-- The test is jobs.is_leave — the "Leave" tick box on the job in Configure,
+-- nothing more. Note that jobs.leave_type_id is NOT the mapping to use for
+-- anything: it is a stale half-populated column. The live type→job mapping
+-- lives on leave_types.job_id (migration 131), which is what Configure edits
+-- and what populate_timesheet_for_leave reads.
 
 create or replace function public.duplicate_timesheet_entry(p_entry_id bigint)
 returns public.timesheet_entries
@@ -136,9 +135,7 @@ begin
         raise exception 'Entry not found';
     end if;
 
-    if exists (select 1
-                 from public.jobs j
-                 join public.leave_types lt on lt.id = j.leave_type_id
+    if exists (select 1 from public.jobs j
                 where j.id = v_src.job_id and j.is_leave = true) then
         select t.organisation_id, t.user_id into v_org_id, v_owner_id
           from public.timesheets t
