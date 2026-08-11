@@ -31,14 +31,26 @@
 --     returns 1900-01-01, so the sentinel arrives looking like a real date.
 --     It has to be caught by value afterwards. The <1901 guard is deliberately
 --     wider than the one literal so the whole family of zero-ish sentinels
---     (0/0/0000 and friends) lands as null too.
+--     (0/0/0000, and the ISO 1900-01-01T00:00:00 the same empty date becomes
+--     once Power Automate serialises it) lands as null too.
 --   * Genuinely malformed input DOES raise. Unhandled, one bad row aborts the
 --     entire webhook payload, because the upsert below is a single statement.
 --     Hence the exception block: a junk date costs that one field, not the
 --     whole sync.
 --
--- Format is M/D/YYYY, confirmed by the data itself (8/28 has day > 12, so it
--- can't be D/M). FM strips the leading-zero requirement.
+-- TWO input formats are accepted, because the sender's format depends on how
+-- Power Automate happens to serialise the column:
+--
+--   * M/D/YYYY  — what a text/display column sends, e.g. 4/21/2026. Confirmed
+--     M/D not D/M by the data itself: 8/28/2026 has day > 12. FM strips the
+--     leading-zero requirement so 04/21/2026 works too.
+--   * ISO 8601  — what a real date/datetime column sends once Power Automate
+--     serialises it, e.g. 2026-04-21T00:00:00. This is NOT a hypothetical: it
+--     is the default for a SQL date column, and the M/D/YYYY parser rejects it
+--     outright, so every date would have silently become null.
+--
+-- Anything else is null rather than an error. A date we can't read costs that
+-- one field; raising would cost the whole payload.
 create or replace function public._parse_infusion_date(raw text)
 returns date
 language plpgsql
@@ -46,13 +58,19 @@ immutable
 as $$
 declare
     v date;
+    t text := trim(raw);
 begin
-    if raw is null or length(trim(raw)) = 0 then
+    if raw is null or length(t) = 0 then
         return null;
     end if;
 
     begin
-        v := to_date(trim(raw), 'FMMM/FMDD/YYYY');
+        if t ~ '^\d{4}-\d{2}-\d{2}' then
+            -- ISO: take the date part and ignore any time/zone suffix.
+            v := substring(t from 1 for 10)::date;
+        else
+            v := to_date(t, 'FMMM/FMDD/YYYY');
+        end if;
     exception when others then
         return null;
     end;
