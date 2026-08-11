@@ -79,6 +79,11 @@ select migration,
     ('171_offsite_adjustment_requests',   exists(select 1 from information_schema.columns
                                                   where table_schema = 'public'
                                                     and table_name = 'clock_adjustment_requests'
-                                                    and column_name = 'status_event_id'),                                           'column clock_adjustment_requests.status_event_id')
+                                                    and column_name = 'status_event_id'),                                           'column clock_adjustment_requests.status_event_id'),
+    -- NB: "yes" here only means the function body is in place. The hook is
+    -- inert until it is switched on at Authentication > Hooks in the
+    -- dashboard, and nothing in the database can tell you whether it is.
+    ('172_microsoft_only_after_linking',  exists(select 1 from fn where proname = 'password_verification_hook'
+                                                   and prosrc like '%microsoft_required%'),                                        'linked-account block in password_verification_hook')
   ) as t(migration, applied, probe)
  order by migration;
