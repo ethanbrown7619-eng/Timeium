@@ -73,6 +73,8 @@ select migration,
     -- out when a later migration moved the body somewhere else.
     ('169_jobs_customer_dates_type',      exists(select 1 from information_schema.columns
                                                   where table_schema = 'public' and table_name = 'jobs'
-                                                    and column_name = 'customer_name'),                                              'column jobs.customer_name')
+                                                    and column_name = 'customer_name'),                                              'column jobs.customer_name'),
+    ('170_parse_excel_serial_dates',      exists(select 1 from fn where proname = '_parse_infusion_date'
+                                                   and prosrc like '%1899-12-30%'),                                                  'Excel epoch in _parse_infusion_date')
   ) as t(migration, applied, probe)
  order by migration;
