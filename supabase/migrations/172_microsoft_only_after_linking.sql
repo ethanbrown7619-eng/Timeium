@@ -10,13 +10,22 @@
 -- server, so it also rejects someone posting directly to /auth/v1/token —
 -- a client-side check would be decoration.
 --
--- BREAK-GLASS: admins and developers are exempt and keep working
--- passwords. This is deliberate and load-bearing. Microsoft sign-in has a
--- single point of failure — the client secret in the Supabase dashboard —
--- and when it lapses or is revoked, EVERY linked account loses its only
--- way in at the same moment. Without an exempt role there is no route back
--- into the app to fix it. Managers are NOT exempt; only role 'admin' and
--- role 'developer' in public.admins.
+-- BREAK-GLASS: role 'developer' ONLY. This is deliberate and load-bearing.
+-- Microsoft sign-in has a single point of failure — the client secret in
+-- the Supabase dashboard — and when it lapses or is revoked, EVERY linked
+-- account loses its only way in at the same moment. Without an exempt role
+-- there is no route back into the app to fix it.
+--
+-- Admins and managers are NOT exempt: once they link Microsoft they are
+-- Microsoft-only like everyone else. Every exempt account is a password
+-- that still bypasses Entra, so the exemption is kept to the smallest set
+-- that can still repair a broken Entra config — which is the developer
+-- role, since fixing it means dashboard access anyway.
+--
+-- The corollary is worth stating plainly: if the only developer account
+-- ever links Microsoft AND the secret lapses, nobody can sign in at all
+-- and recovery is through the Supabase dashboard, not the app. Keeping a
+-- developer account unlinked is the cheap insurance.
 --
 -- Contractors are unaffected automatically: they have no Microsoft account,
 -- never link, and keep signing in with a password forever.
@@ -68,12 +77,12 @@ begin
          where i.user_id = v_uid and i.provider = 'azure'
     ) into v_linked;
 
-    -- Break-glass. Managers are not included: an ordinary manager has no
-    -- more need of a fallback password than anyone else, and every exempt
-    -- account is a password that still bypasses Entra.
+    -- Break-glass, developer role only. Admins and managers are NOT
+    -- included — once they link Microsoft they are Microsoft-only like
+    -- everyone else.
     select exists (
         select 1 from public.admins a
-         where a.user_id = v_uid and a.role in ('admin', 'developer')
+         where a.user_id = v_uid and a.role = 'developer'
     ) into v_exempt;
 
     if v_linked and not v_exempt then
@@ -132,7 +141,7 @@ grant execute on function public.password_verification_hook(jsonb) to supabase_a
 --                   where i.user_id = au.id and i.provider = 'azure')  as linked,
 --          exists (select 1 from public.admins a
 --                   where a.user_id = au.id
---                     and a.role in ('admin','developer'))             as exempt
+--                     and a.role = 'developer')                        as exempt
 --     from public.users u
 --     join auth.users au on au.id = u.auth_user_id
 --    where u.active
