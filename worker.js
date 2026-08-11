@@ -52,6 +52,20 @@ async function route(request, env, ctx) {
       );
     }
 
+    // ⚠ THIS HANDLER DOES NOT RUN IN PRODUCTION.
+    //
+    // `public/config.json` exists as a real file, and with
+    // run_worker_first OFF (deliberately — see wrangler.toml, turning it on
+    // 503'd the site) Cloudflare serves the static asset and never invokes
+    // the worker for this path. Verified 2026-08-11: the live response
+    // carries the asset's `max-age=0, must-revalidate`, not the
+    // `max-age=300` set below.
+    //
+    // So **`public/config.json` is the live config** — edit that. This
+    // handler is the fallback if that file is ever removed, and the two
+    // must be kept in step. They already drifted once: `entraEnabled` was
+    // added here only, so the Microsoft button stayed invisible even though
+    // it had deployed.
     if (url.pathname === "/config.json") {
       if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
         return new Response(
@@ -76,11 +90,8 @@ async function route(request, env, ctx) {
           // signin/signup/forgot/reset pages render the widget only when
           // a key is present; missing key = CAPTCHA disabled gracefully.
           turnstileSiteKey: env.TURNSTILE_SITE_KEY ?? null,
-          // Microsoft Entra sign-in. Must be the exact string "true" —
-          // anything else, including the var being absent, leaves the
-          // button hidden. This is the switch that stops a half-configured
-          // Azure provider from showing staff a button that walks them
-          // through a Microsoft prompt and then fails on the way back.
+          // Microsoft Entra sign-in — see the warning below about which
+          // /config.json actually reaches the browser.
           entraEnabled: env.ENTRA_ENABLED === "true",
         }),
         {

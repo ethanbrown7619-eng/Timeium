@@ -1,5 +1,6 @@
 {
   "supabaseUrl": "https://kyfydyownbgwhquorchn.supabase.co",
   "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5ZnlkeW93bmJnd2hxdW9yY2huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMzYyNDQsImV4cCI6MjA5MTYxMjI0NH0.BqsGiVxhtSqWRnqVM_w1dIDu0tDuzv9Xrg6a3NRUTxM",
-  "turnstileSiteKey": "0x4AAAAAAEFhSpbPy4xVI7Da"
+  "turnstileSiteKey": "0x4AAAAAAEFhSpbPy4xVI7Da",
+  "entraEnabled": true
 }
