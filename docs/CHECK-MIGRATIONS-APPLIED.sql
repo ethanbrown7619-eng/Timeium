@@ -67,6 +67,12 @@ select migration,
                                                    and prosrc like '%active%'),                                                      'active checks in module_access_granted'),
     ('167_erp_modules_href_fleet_check',  exists(select 1 from pg_constraint where conname = 'erp_modules_href_fleet'),                'constraint erp_modules_href_fleet'),
     ('168_leave_only_via_request',        exists(select 1 from fn where proname = 'import_last_week_tasks'
-                                                   and prosrc like '%is_leave%'),                                                    'leave filter in import_last_week_tasks')
+                                                   and prosrc like '%is_leave%'),                                                    'leave filter in import_last_week_tasks'),
+    -- Deliberately the dumbest possible probe: a column either exists or it
+    -- doesn't. Probes that pattern-match a function body have twice caught me
+    -- out when a later migration moved the body somewhere else.
+    ('169_jobs_customer_dates_type',      exists(select 1 from information_schema.columns
+                                                  where table_schema = 'public' and table_name = 'jobs'
+                                                    and column_name = 'customer_name'),                                              'column jobs.customer_name')
   ) as t(migration, applied, probe)
  order by migration;
