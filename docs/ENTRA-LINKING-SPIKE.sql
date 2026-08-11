@@ -48,6 +48,34 @@
 -- So the after-shot has exactly one green reading: still one row, still
 -- id be3c9ea0…, providers now 'azure, email'. A second row with a
 -- different id is the red light, whatever else it says.
+--
+-- ---------------------------------------------------------------------
+-- RESULT 2026-08-12: GREEN. Supabase LINKS.
+-- ---------------------------------------------------------------------
+-- After the first Microsoft sign-in, the same query returned ONE row:
+--
+--   id                        be3c9ea0-76d5-4009-ac9b-723498e0aa75  (unchanged)
+--   last_sign_in_at           2026-08-11 20:11:24+00                (moved)
+--   providers                 azure, email                          (was 'email')
+--   is_the_row_the_erp_uses   true
+--
+-- No duplicate was minted. auth_user_id still resolves, so every RLS
+-- policy, module-access grant and timesheet row keeps working untouched.
+-- Rollout needs NO data migration and NO linkIdentity() UI.
+--
+-- THE ONE REMAINING ROLLOUT RISK is at the bottom of this file: linking
+-- happens on a CONFIRMED email. This account had email_confirmed = true.
+-- Accounts created by the provision_employee_login shim that were never
+-- confirmed are the ones expected to duplicate instead. Run the last
+-- query here and confirm those before telling anyone else to use the
+-- Microsoft button.
+--
+-- Getting here also cost a morning on AADSTS7000215 — the Supabase Azure
+-- provider had the secret ID in it rather than the secret Value. The
+-- browser only ever showed 'Unable to exchange external code: 1.AW',
+-- where the 1.AW is just the first characters of Microsoft's auth code
+-- echoed back and carries no diagnostic meaning. The AADSTS code is in
+-- Supabase → Logs → Auth Logs. Go there first next time.
 -- =====================================================================
 
 
