@@ -1488,6 +1488,27 @@ function fmtAdjustTime(iso) {
   });
 }
 
+// What the request would change, and in which direction. target_kind
+// arrives only once migration 171 is applied; before that every request
+// is a shift one, which is what the fallback assumes.
+const ADJUST_KIND_LABEL = {
+  break:        "Break",
+  off_site_job: "Off-site",
+};
+
+function adjustKindLabel(r) {
+  const kind = ADJUST_KIND_LABEL[r.target_kind];
+  const dir  = r.event_type === "in" ? "in" : "out";
+  return kind ? `${kind} ${dir}` : (r.event_type === "in" ? "In" : "Out");
+}
+
+function adjustKindPill(r) {
+  // Same in/out colouring as the live board: back on site reads green,
+  // away reads amber, whether the row is a shift or a spell.
+  const cls = r.event_type === "in" ? "onsite" : "away";
+  return `<span class="tc-live-pill ${cls}">${escapeHtml(adjustKindLabel(r))}</span>`;
+}
+
 async function loadAdjustments() {
   if (!currentOrgId || !canReviewAdjustments) return;
   const pendingBody  = document.getElementById("tc-adjust-pending-body");
@@ -1515,7 +1536,7 @@ async function loadAdjustments() {
         <tr data-id="${r.id}">
           <td>${escapeHtml(r.employee_name || "")}</td>
           <td class="small muted">${escapeHtml(r.department_name || "")}</td>
-          <td><span class="tc-live-pill ${r.event_type === "in" ? "onsite" : "away"}">${r.event_type === "in" ? "In" : "Out"}</span></td>
+          <td>${adjustKindPill(r)}</td>
           <td class="num small">${escapeHtml(fmtAdjustTime(r.original_time))}</td>
           <td class="num small"><strong>${escapeHtml(fmtAdjustTime(r.requested_time))}</strong></td>
           <td class="small muted">${escapeHtml(r.reason || "")}</td>
@@ -1530,14 +1551,14 @@ async function loadAdjustments() {
           const id = Number(btn.closest("tr").dataset.id);
           if (!await confirmDialog({
             title: "Approve adjustment",
-            message: "Approve this request? The clock event will be updated to the requested time.",
+            message: "Approve this request? The recorded time will be updated to the requested time.",
             confirmText: "Approve",
           })) return;
           const { error: e } = await sb.rpc("review_clock_adjustment", {
             p_request_id: id, p_approve: true, p_note: null,
           });
           if (e) return notice(e.message, "error");
-          notice("Adjustment approved — clock event updated", "success");
+          notice("Adjustment approved — time updated", "success");
           await loadAdjustments();
         });
       });
@@ -1565,7 +1586,7 @@ async function loadAdjustments() {
       reviewedBody.innerHTML = reviewed.map((r) => `
         <tr>
           <td>${escapeHtml(r.employee_name || "")}</td>
-          <td class="small">${r.event_type === "in" ? "In" : "Out"}</td>
+          <td class="small">${escapeHtml(adjustKindLabel(r))}</td>
           <td class="num small">${escapeHtml(fmtAdjustTime(r.original_time))}</td>
           <td class="num small">${escapeHtml(fmtAdjustTime(r.requested_time))}</td>
           <td><span class="dept-badge ${r.status === "approved" ? "dept-badge-approved" : "dept-badge-rejected"}">${r.status === "approved" ? "Approved" : "Declined"}</span></td>

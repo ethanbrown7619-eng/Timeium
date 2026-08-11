@@ -75,6 +75,10 @@ select migration,
                                                   where table_schema = 'public' and table_name = 'jobs'
                                                     and column_name = 'customer_name'),                                              'column jobs.customer_name'),
     ('170_parse_excel_serial_dates',      exists(select 1 from fn where proname = '_parse_infusion_date'
-                                                   and prosrc like '%1899-12-30%'),                                                  'Excel epoch in _parse_infusion_date')
+                                                   and prosrc like '%1899-12-30%'),                                                  'Excel epoch in _parse_infusion_date'),
+    ('171_offsite_adjustment_requests',   exists(select 1 from information_schema.columns
+                                                  where table_schema = 'public'
+                                                    and table_name = 'clock_adjustment_requests'
+                                                    and column_name = 'status_event_id'),                                           'column clock_adjustment_requests.status_event_id')
   ) as t(migration, applied, probe)
  order by migration;

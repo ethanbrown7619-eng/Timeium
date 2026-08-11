@@ -153,32 +153,50 @@ async function loadEvents() {
       dayPush(s.started_at, { kind: s.kind, spell: s, t: s.started_at });
     }
 
-    // A clock event cell: time plus a request-fix affordance (or the
-    // pending marker). Fix buttons only show on FLAGGED rows — showFix
-    // is passed per row, and a flagged row offers Fix on both its In and
-    // Out cells so whichever side is wrong can be requested. Every
+    // One adjustable time cell: the time plus a request-fix affordance
+    // (or the pending marker). Fix buttons only show on FLAGGED rows —
+    // showFix is passed per row, and a flagged row offers Fix on both its
+    // In and Out cells so whichever side is wrong can be requested. Every
     // recorded event cell is also double-clickable to open the same
-    // request dialog, flag or not (data attrs + delegated listener
-    // below the table render). Spell cells are display-only — the
-    // underlying status_events aren't adjustable.
+    // request dialog, flag or not (data attrs + delegated listener below
+    // the table render).
+    //
+    // `target` decides which RPC the dialog submits to: shift rows carry
+    // clock_events ids, spell rows carry status_events ids, and the two
+    // are different tables with different submit functions. `label` is
+    // only used to word the dialog.
+    //
+    // A null id means there is nothing to adjust — either the event was
+    // never recorded (no clock-out, no scan back in), or migration 171
+    // isn't applied yet and the spell RPC returned no ids. Both degrade
+    // to a plain display cell rather than a broken affordance.
+    const adjCell = ({ id, type, time, pendingId, showFix, target, label }) => {
+      if (!time) return `<td class="num muted">—</td>`;
+      const t = escapeHtml(fmtEventTime(time));
+      const sort = ` data-sort-value="${escapeHtml(time)}"`;
+      if (pendingId) {
+        return `<td class="num"${sort}>${t} <span class="small muted">(requested)</span></td>`;
+      }
+      if (!id) return `<td class="num"${sort}>${t}</td>`;
+      const attrs = `data-event-id="${id}" data-type="${type}" data-time="${escapeHtml(time)}" data-target="${target}" data-label="${escapeHtml(label || "")}"`;
+      const fix = showFix
+        ? ` <button class="ghost small mc-request-btn" ${attrs} title="Request a time fix">Fix</button>`
+        : "";
+      return `<td class="num mc-adjustable" ${attrs} title="Double-click to request a time fix"${sort}>${t}${fix}</td>`;
+    };
+
     const evCell = (ev, showFix) => {
       if (!ev) return `<td class="num muted">—</td>`;
-      const t = escapeHtml(fmtEventTime(ev.occurred_at));
-      let action = "";
-      let adjustable = "";
-      if (ev.pending_request_id) {
-        action = ` <span class="small muted">(requested)</span>`;
-      } else {
-        adjustable = ` class="num mc-adjustable" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Double-click to request a time fix"`;
-        if (showFix) {
-          action = ` <button class="ghost small mc-request-btn" data-event-id="${ev.id}" data-type="${ev.event_type}" data-time="${escapeHtml(ev.occurred_at)}" title="Request a time fix">Fix</button>`;
-        }
-      }
-      return `<td${adjustable || ' class="num"'} data-sort-value="${escapeHtml(ev.occurred_at)}">${t}${action}</td>`;
+      return adjCell({
+        id: ev.pending_request_id ? null : ev.id,
+        type: ev.event_type,
+        time: ev.occurred_at,
+        pendingId: ev.pending_request_id,
+        showFix,
+        target: "clock",
+        label: "Shift",
+      });
     };
-    const timeCell = (iso) => iso
-      ? `<td class="num" data-sort-value="${escapeHtml(iso)}">${escapeHtml(fmtEventTime(iso))}</td>`
-      : `<td class="num muted">—</td>`;
 
     const html = [];
     for (let i = 0; i < 7; i++) {
@@ -217,14 +235,28 @@ async function loadEvents() {
             ${evCell(r.inEv, flagged)}${evCell(r.outEv, flagged)}
             <td>${flags}</td></tr>`);
         } else {
+          // Both sides of a spell are adjustable, and they are SEPARATE
+          // status_events rows: leaving site is the Out, scanning back in
+          // is the In. A spell with no return has no second row, so that
+          // cell stays a plain dash — same as a missing clock-out.
           const s = r.spell;
           const label = r.kind === "break"
             ? `Break${s.break_name ? ` (${escapeHtml(s.break_name)})` : ""}`
             : "Off-site job";
+          const plain = r.kind === "break" ? "Break" : "Off-site job";
           const pillCls = r.kind === "break" ? "break" : "offsite";
           html.push(`<tr>${dayCell}
             <td><span class="tc-live-pill ${pillCls}">${label}</span></td>
-            ${timeCell(s.returned_at)}${timeCell(s.started_at)}
+            ${adjCell({
+              id: s.return_event_id, type: "in", time: s.returned_at,
+              pendingId: s.return_pending_request_id,
+              target: "offsite", label: plain,
+            })}
+            ${adjCell({
+              id: s.start_event_id, type: "out", time: s.started_at,
+              pendingId: s.start_pending_request_id,
+              target: "offsite", label: plain,
+            })}
             <td>${!s.returned_at ? `<span class="small muted">no scan back in</span>` : ""}</td></tr>`);
         }
       }
@@ -236,6 +268,8 @@ async function loadEvents() {
         eventId: Number(btn.dataset.eventId),
         type:    btn.dataset.type,
         time:    btn.dataset.time,
+        target:  btn.dataset.target,
+        label:   btn.dataset.label,
       }));
     });
   } catch (err) {
@@ -245,9 +279,9 @@ async function loadEvents() {
 }
 
 // Double-click any recorded event cell to request a fix — works on
-// unflagged shifts too. Delegated once; cells carry the event data.
-// Cells with a pending request don't get the data attrs, so they're
-// naturally inert here.
+// unflagged shifts and on both sides of a break / off-site spell.
+// Delegated once; cells carry the event data. Cells with a pending
+// request don't get the data attrs, so they're naturally inert here.
 document.getElementById("mc-events-body").addEventListener("dblclick", (e) => {
   const td = e.target.closest("td[data-event-id]");
   if (!td || e.target.closest(".mc-request-btn")) return;
@@ -255,17 +289,28 @@ document.getElementById("mc-events-body").addEventListener("dblclick", (e) => {
     eventId: Number(td.dataset.eventId),
     type:    td.dataset.type,
     time:    td.dataset.time,
+    target:  td.dataset.target,
+    label:   td.dataset.label,
   });
 });
 
 /* ---------------------------------------------------------------- request dialog */
 
 let dialogEventId = null;
+let dialogTarget = "clock";
 
-function openAdjustDialog({ eventId, type, time }) {
+function openAdjustDialog({ eventId, type, time, target, label }) {
   dialogEventId = eventId;
+  dialogTarget = target === "offsite" ? "offsite" : "clock";
+  // "Clock in / clock out" is the wrong vocabulary for a spell — nobody
+  // clocks out to take a break, they scan away and scan back.
+  const what = dialogTarget === "offsite"
+    ? (type === "in"
+        ? `Scanned back in from ${label || "off site"}`
+        : `Left site for ${label || "off site"}`)
+    : `Clock ${type === "in" ? "in" : "out"} recorded`;
   document.getElementById("mc-adjust-summary").textContent =
-    `Clock ${type === "in" ? "in" : "out"} recorded at ${fmtEventDay(time)} ${fmtEventTime(time)}. Enter what the time should have been.`;
+    `${what} at ${fmtEventDay(time)} ${fmtEventTime(time)}. Enter what the time should have been.`;
   document.getElementById("mc-adjust-time").value = toLocalDT(time);
   document.getElementById("mc-adjust-reason").value = "";
   document.getElementById("mc-adjust-dialog").showModal();
@@ -283,11 +328,22 @@ document.getElementById("mc-adjust-submit").addEventListener("click", async () =
   const btn = document.getElementById("mc-adjust-submit");
   btn.disabled = true;
   try {
-    const { error } = await sb.rpc("submit_clock_adjustment", {
-      p_clock_event_id: dialogEventId,
-      p_requested_time: requested.toISOString(),
-      p_reason: document.getElementById("mc-adjust-reason").value.trim() || null,
-    });
+    // Two tables, two functions. Deliberately NOT one function with an
+    // optional second id: adding a defaulted parameter to the existing
+    // submit_clock_adjustment would create an overload rather than
+    // replace it, and PostgREST could no longer dispatch by name.
+    const reason = document.getElementById("mc-adjust-reason").value.trim() || null;
+    const { error } = dialogTarget === "offsite"
+      ? await sb.rpc("submit_offsite_adjustment", {
+          p_status_event_id: dialogEventId,
+          p_requested_time: requested.toISOString(),
+          p_reason: reason,
+        })
+      : await sb.rpc("submit_clock_adjustment", {
+          p_clock_event_id: dialogEventId,
+          p_requested_time: requested.toISOString(),
+          p_reason: reason,
+        });
     if (error) throw error;
     document.getElementById("mc-adjust-dialog").close();
     notice("Adjustment requested — a reviewer will approve or decline it", "success");
@@ -301,15 +357,26 @@ document.getElementById("mc-adjust-submit").addEventListener("click", async () =
 
 /* ---------------------------------------------------------------- my requests */
 
+const REQUEST_COLS = "id, event_type, original_time, requested_time, reason, status, review_note, created_at";
+
 async function loadRequests() {
   const body = document.getElementById("mc-requests-body");
   try {
-    const { data, error } = await sb
+    const fetchRequests = (cols) => sb
       .from("clock_adjustment_requests")
-      .select("id, event_type, original_time, requested_time, reason, status, review_note, created_at")
+      .select(cols)
       .eq("user_id", employee.id)
       .order("created_at", { ascending: false })
       .limit(50);
+
+    // status_event_id only exists once migration 171 is applied. Asking
+    // for a column that isn't there is a hard PostgREST error, not an
+    // empty value, so it would take the whole list down — retry without
+    // it instead, exactly as the spells RPC degrades above.
+    let { data, error } = await fetchRequests(`${REQUEST_COLS}, status_event_id`);
+    if (error && /status_event_id/.test(error.message || "")) {
+      ({ data, error } = await fetchRequests(REQUEST_COLS));
+    }
     if (error) throw error;
     const rows = data || [];
     if (!rows.length) {
@@ -321,8 +388,11 @@ async function loadRequests() {
       const cancel = r.status === "pending"
         ? `<button class="ghost small mc-cancel-btn" data-id="${r.id}">Cancel</button>`
         : "";
+      // Without the kind, a shift In and a break In on the same day are
+      // two identical-looking rows.
+      const kind = r.status_event_id ? "Off-site" : "Shift";
       return `<tr>
-        <td class="small">${escapeHtml(fmtEventDay(r.original_time))} · ${r.event_type === "in" ? "In" : "Out"}</td>
+        <td class="small">${escapeHtml(fmtEventDay(r.original_time))} · ${kind} ${r.event_type === "in" ? "in" : "out"}</td>
         <td class="num small">${escapeHtml(fmtEventTime(r.original_time))}</td>
         <td class="num small"><strong>${escapeHtml(fmtEventTime(r.requested_time))}</strong></td>
         <td class="small muted">${escapeHtml(r.reason || "")}</td>
