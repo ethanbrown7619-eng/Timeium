@@ -23,6 +23,31 @@
 -- These auth rows were made by our own provision_employee_login shim and
 -- may not carry an 'email' identity row at all. Without the before-shot,
 -- 'azure, email' vs 'azure' afterwards is ambiguous.
+--
+-- ---------------------------------------------------------------------
+-- BASELINE TAKEN 2026-08-12, before any Microsoft sign-in
+-- ---------------------------------------------------------------------
+-- Query 2 for ethan.brown@ptlmachinery.com returned exactly ONE row:
+--
+--   id                        be3c9ea0-76d5-4009-ac9b-723498e0aa75
+--   created_at                2026-04-13 02:56:25+00
+--   last_sign_in_at           2026-08-11 18:30:14+00
+--   email_confirmed           true
+--   providers                 email
+--   is_the_row_the_erp_uses   true
+--
+-- Two things this settles, both in our favour:
+--
+--   * The shim DID create an 'email' identity, so the ambiguity this
+--     baseline was taken to guard against doesn't apply. A clean link
+--     reads as providers = 'azure, email' on this same id.
+--   * email_confirmed is true, which is the precondition Supabase links
+--     on. A shim row with an unconfirmed email would be expected to
+--     duplicate instead.
+--
+-- So the after-shot has exactly one green reading: still one row, still
+-- id be3c9ea0…, providers now 'azure, email'. A second row with a
+-- different id is the red light, whatever else it says.
 -- =====================================================================
 
 
