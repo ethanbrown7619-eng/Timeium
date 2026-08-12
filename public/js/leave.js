@@ -348,13 +348,14 @@ function updateRequestTotal() {
   const totalEl = document.getElementById("req-total");
   const daysEl = document.getElementById("req-total-days");
   if (!end || end < start || !(hours > 0)) {
-    totalEl.textContent = "0 hours";
+    totalEl.textContent = "0h";
     daysEl.textContent = "";
     return;
   }
   const total = leaveTotalHours(start, end, hours, skip);
   const days = hours > 0 ? Math.round(total / hours) : 0;
-  totalEl.textContent = `${fmtHours(total)} hour${total === 1 ? "" : "s"}`;
+  // fmtHours already carries the unit ("1h", "4h 30m"), so no word after it.
+  totalEl.textContent = fmtHours(total);
   if (partialDay) {
     // Hours still at the whole-day default is the likely mistake here — they
     // came for a part day and would book the lot.

@@ -205,7 +205,9 @@
           <select id="req-type" required style="width:100%"></select>
         </div>
 
-        <div class="row-flex" style="gap:12px">
+        <!-- Top-aligned: .row-flex centres by default, so the hint under the
+             return field would otherwise push that whole column upwards. -->
+        <div class="row-flex" style="gap:12px;align-items:flex-start">
           <div class="mb-sm" style="flex:1">
             <label for="req-start">Start date</label>
             <input id="req-start" type="date" required style="width:100%" />
@@ -213,7 +215,7 @@
           <div class="mb-sm" style="flex:1">
             <label for="req-end">Return to work on</label>
             <input id="req-end" type="date" required style="width:100%" />
-            <span class="muted small">Same day as the start = a partial day</span>
+            <span class="muted small" style="display:block;margin-top:4px">Same day as the start = a partial day</span>
           </div>
         </div>
 
