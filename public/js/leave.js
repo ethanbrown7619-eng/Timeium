@@ -317,10 +317,20 @@ function addDaysIso(iso, n) {
 const dialog = document.getElementById("request-dialog");
 const form = document.getElementById("request-form");
 
-// The "Return to work on" field is the first day BACK at work, so the
-// last leave day is the day before it.
-function returnToEndDate(returnIso) {
+// The hours the form defaults to, i.e. what it treats as a whole day. Only
+// used to spot a partial-day request that still says 8 hours.
+const FULL_DAY_HOURS = 8;
+
+// The "Return to work on" field is the first day BACK at work, so the last
+// leave day is the day before it.
+//
+// The exception is a PARTIAL DAY: returning to work on the start date itself
+// means taking part of that day and working the rest, so the leave is that one
+// day rather than the day before it. Without the start date the caller gets the
+// old behaviour, which is what the amend/edit prefills want.
+function returnToEndDate(returnIso, startIso) {
   if (!returnIso) return "";
+  if (startIso && returnIso === startIso) return startIso;
   const d = new Date(returnIso + "T00:00:00");
   if (isNaN(d)) return "";
   d.setDate(d.getDate() - 1);
@@ -333,7 +343,8 @@ function updateRequestTotal() {
   const ret = document.getElementById("req-end").value;
   const hours = Number(document.getElementById("req-hours").value);
   const skip = document.getElementById("req-skip-weekends").checked;
-  const end = returnToEndDate(ret);
+  const end = returnToEndDate(ret, start);
+  const partialDay = !!start && ret === start;
   const totalEl = document.getElementById("req-total");
   const daysEl = document.getElementById("req-total-days");
   if (!end || end < start || !(hours > 0)) {
@@ -344,7 +355,15 @@ function updateRequestTotal() {
   const total = leaveTotalHours(start, end, hours, skip);
   const days = hours > 0 ? Math.round(total / hours) : 0;
   totalEl.textContent = `${fmtHours(total)} hour${total === 1 ? "" : "s"}`;
-  daysEl.textContent = `(${days} day${days === 1 ? "" : "s"}, last day ${end})`;
+  if (partialDay) {
+    // Hours still at the whole-day default is the likely mistake here — they
+    // came for a part day and would book the lot.
+    daysEl.textContent = hours >= FULL_DAY_HOURS
+      ? `(part of ${end} — set the hours to the time you're actually taking)`
+      : `(part of ${end})`;
+  } else {
+    daysEl.textContent = `(${days} day${days === 1 ? "" : "s"}, last day ${end})`;
+  }
 }
 
 ["req-start", "req-end", "req-hours", "req-skip-weekends"].forEach((id) => {
@@ -445,15 +464,22 @@ form.addEventListener("submit", async (e) => {
   const typeId = Number(document.getElementById("req-type").value);
   const startDate = document.getElementById("req-start").value;
   const returnDate = document.getElementById("req-end").value;
-  const endDate = returnToEndDate(returnDate); // last leave day = day before return
+  // Last leave day = the day before returning, EXCEPT a partial day, where
+  // returning on the start date leaves the leave on that same date.
+  const endDate = returnToEndDate(returnDate, startDate);
   const hoursPerDay = Number(document.getElementById("req-hours").value);
   const skipWeekends = document.getElementById("req-skip-weekends").checked;
   const reason = document.getElementById("req-reason").value.trim() || null;
 
   if (!typeId) return notice("Pick a leave type", "warn");
   if (!startDate || !returnDate) return notice("Pick a start date and a return-to-work date", "warn");
-  if (returnDate <= startDate) return notice("Return-to-work date must be after the start date", "warn");
+  if (returnDate < startDate) return notice("Return-to-work date can't be before the start date", "warn");
   if (!(hoursPerDay > 0 && hoursPerDay <= 24)) return notice("Hours per day must be between 0 and 24", "warn");
+  // Skip-weekends is on by default, so a single Saturday or Sunday request
+  // would otherwise be accepted and then populate nothing at all.
+  if (leaveTotalHours(startDate, endDate, hoursPerDay, skipWeekends) <= 0) {
+    return notice("That request adds up to no leave — check the dates, or untick Skip weekends", "warn");
+  }
 
   const submitBtn = document.getElementById("req-submit-btn");
   submitBtn.disabled = true;
