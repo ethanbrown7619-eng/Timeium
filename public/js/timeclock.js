@@ -14,6 +14,7 @@ import {
   confirmDialog, promptDialog,
   skeletonBlock, fmtHours,
   refreshClockBadge,
+  flagTruncationRisk,
 } from "/js/shared.js";
 
 const sb = await getSupabase();
@@ -1520,6 +1521,10 @@ async function loadAdjustments() {
     });
     if (error) throw error;
     const rows = data || [];
+    // This RPC orders created_at ASCENDING, so if the row cap is hit it's
+    // the newest requests that get silently dropped — new pending
+    // adjustments would stop showing up in the reviewer queue at all.
+    flagTruncationRisk(rows.length, "Clock adjustment request queue (ascending order)");
     const pending  = rows.filter((r) => r.status === "pending");
     const reviewed = rows.filter((r) => r.status !== "pending")
       .sort((a, b) => (b.reviewed_at || "").localeCompare(a.reviewed_at || ""))

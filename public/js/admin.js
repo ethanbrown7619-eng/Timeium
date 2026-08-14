@@ -1136,6 +1136,11 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
     tsQuery = tsQuery.in("status", ["submitted", "approved", "exported"]);
   }
   const { data: timesheets } = await tsQuery;
+  // Unlike the entries fetch below, this .in("week_start", ...) read is
+  // never chunked and has no ORDER BY — a full-year custom report across
+  // ~70 staff can approach ~3600 timesheets, well past Supabase's silent
+  // 1000-row cap.
+  flagTruncationRisk(timesheets?.length, "Leave/Overtime custom report");
   if (!timesheets?.length) return rows;
 
   const tsIds = timesheets.map((t) => t.id);
@@ -2235,6 +2240,9 @@ document.getElementById("gen-timesheets-btn")?.addEventListener("click", async (
     const allJobs = jobRes.data || [];
     const tasks = taskRes.data || [];
     const deptCodes = dcRes.data || [];
+    // Unfiltered org-wide job read with no cap — production has 6000+
+    // jobs, well past Supabase's silent 1000-row default limit.
+    flagTruncationRisk(allJobs.length, "Test-timesheet generator job list");
 
     if (!employees.length) {
       statusMsg.textContent = "";
@@ -2502,6 +2510,12 @@ async function loadAdminLeave() {
   if (error) {
     body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
+  }
+  if (alSubView === "all") {
+    // Only this sub-view is unfiltered by status — approvals/changes are
+    // narrow enough to never approach the row cap, but "all" is a
+    // straight history read that can silently lose rows past 1000.
+    flagTruncationRisk(data?.length, "Leave requests - All Requests view");
   }
 
   // Count of items needing admin action drives the badges — fetched
