@@ -824,10 +824,36 @@ export async function refreshLeaveBadge(sb) {
     .is("dismissed_at", null);
   if (error) throw error;
 
+  // A manager's TEAM queue counts too. The Leave page badges "Team Requests"
+  // with pending approvals plus change requests, but that pill lives inside the
+  // page — so a manager with six requests waiting saw nothing on the nav and had
+  // no reason to open Leave at all. Same problem the Clock badge was added for.
+  //
+  // Both RPCs RAISE for anyone who manages nobody, so failures are swallowed and
+  // simply contribute zero rather than being treated as an error: a staff member
+  // is not in a broken state, they just have no team.
+  let team = 0;
+  const orgId = _lastOrgId;
+  if (orgId) {
+    const [pending, changes] = await Promise.all([
+      sb.rpc("list_team_leave_requests", { p_org_id: orgId, p_status: "pending_manager" })
+        .then((r) => (r.error ? 0 : (r.data || []).length), () => 0),
+      sb.rpc("list_team_leave_change_requests", { p_org_id: orgId })
+        .then((r) => (r.error ? 0 : (r.data || []).length), () => 0),
+    ]);
+    team = pending + changes;
+  }
+
   if (!badge.isConnected) return;  // topbar re-rendered while we awaited
-  const n = count || 0;
-  setNavBadge(badge, n,
-    `${n} leave request${n === 1 ? "" : "s"} waiting for you to accept`);
+  const mine = count || 0;
+  const n = mine + team;
+  // The two halves mean different things — one is yours to accept, the other is
+  // your team's to review — so the tooltip names them separately rather than
+  // presenting a single number the user cannot break down.
+  const parts = [];
+  if (mine) parts.push(`${mine} waiting for you to accept`);
+  if (team) parts.push(`${team} team request${team === 1 ? "" : "s"} to review`);
+  setNavBadge(badge, n, parts.join(" · ") || "No leave needs your attention");
 }
 
 /* ------------------------------------------------- clock nav badge -------- */
