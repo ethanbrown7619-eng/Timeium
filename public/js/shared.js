@@ -1153,8 +1153,27 @@ const MUST_CHANGE_ALLOWED_PATHS = new Set([
   "/reset-password.html",
 ]);
 
-function enforceMustChangePassword(data) {
+// Whether THIS session was established by something other than a password.
+// app_metadata.provider is the provider actually used to sign in, so a person
+// who signs in with Microsoft reads as "azure" even when the account also has a
+// dormant email/password identity from having been created by an admin.
+function isPasswordlessSession(session) {
+  const provider = session?.user?.app_metadata?.provider;
+  return !!provider && provider !== "email";
+}
+
+function enforceMustChangePassword(data, session) {
   if (!data?.mustChangePassword) return data;
+  // A Microsoft sign-in is exempt. The flag is set when an admin creates an
+  // employee with a temp password (migration 140) and exists to stop someone
+  // declining to choose their own — but an Entra user has no password to
+  // change and will never use one, so the gate had nothing to ask for and
+  // simply bounced them to the password screen on every page, forever.
+  //
+  // Deliberately keyed on the provider of the CURRENT session rather than on
+  // whether an email identity exists at all: an admin-created account has a
+  // dormant one either way, so testing for that would exempt nobody.
+  if (isPasswordlessSession(session)) return data;
   if (MUST_CHANGE_ALLOWED_PATHS.has(location.pathname)) return data;
   location.replace(PASSWORD_CHANGE_PATH);
   throw new Error("password change required");
@@ -1177,7 +1196,7 @@ export async function getUserContext(sb, session, { force = false } = {}) {
           // the next navigation sees any permission changes.
           fetchFreshUserContext(sb, session, cacheKey).catch((err) =>
             console.warn("context revalidate failed:", err?.message || err));
-          return enforceMustChangePassword(data);
+          return enforceMustChangePassword(data, session);
         }
       }
     } catch (err) {
@@ -1186,7 +1205,7 @@ export async function getUserContext(sb, session, { force = false } = {}) {
     }
   }
 
-  return enforceMustChangePassword(await fetchFreshUserContext(sb, session, cacheKey));
+  return enforceMustChangePassword(await fetchFreshUserContext(sb, session, cacheKey), session);
 }
 
 async function fetchFreshUserContext(sb, session, cacheKey) {
