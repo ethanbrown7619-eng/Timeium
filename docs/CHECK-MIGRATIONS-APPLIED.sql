@@ -84,6 +84,14 @@ select migration,
     -- inert until it is switched on at Authentication > Hooks in the
     -- dashboard, and nothing in the database can tell you whether it is.
     ('172_microsoft_only_after_linking',  exists(select 1 from fn where proname = 'password_verification_hook'
-                                                   and prosrc like '%microsoft_required%'),                                        'linked-account block in password_verification_hook')
+                                                   and prosrc like '%microsoft_required%'),                                        'linked-account block in password_verification_hook'),
+    -- Probes the function's RESULT SIGNATURE, not its body: 175 exists solely
+    -- to widen the returns table, so the signature is the fact to check and it
+    -- can't be faked by a stray mention of the column inside the query.
+    ('175_team_leave_requested_on',       exists(select 1 from pg_proc p
+                                                  join pg_namespace n on n.oid = p.pronamespace
+                                                 where n.nspname = 'public'
+                                                   and p.proname = 'list_team_leave_requests'
+                                                   and pg_get_function_result(p.oid) like '%created_at%'),                         'created_at in list_team_leave_requests result')
   ) as t(migration, applied, probe)
  order by migration;

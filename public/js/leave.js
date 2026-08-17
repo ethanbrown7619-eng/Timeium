@@ -30,6 +30,21 @@ const currentOrgId = employee.organisation_id;
 const isAdminOrDev = isDeveloper || adminRow?.role === "admin";
 const canReviewTeam = isManager || isAdminOrDev;
 
+// "Requested on" — when the request was raised, date AND time, so a reviewer
+// can see which have been sitting longest (the queues are ordered by it).
+//
+// Renders BLANK, never "Invalid Date", when the timestamp is missing: the team
+// queues get created_at from list_team_leave_requests, which only returns it
+// once migration 175 has been pasted into Supabase by hand. Until then this
+// page is live against the older function and the column is simply empty.
+function fmtRequestedOn(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d)) return "";
+  return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}, `
+       + `${d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
 // Staff whose type receives no leave (e.g. contractors) don't get the Leave
 // tab; block direct /leave.html access too — unless they manage a team or
 // are an admin, who need it for Team Requests.
@@ -173,7 +188,7 @@ async function loadRequests() {
       <td class="num small"><strong>${fmtHours(total)}</strong></td>
       <td>${statusBadge(r.status)}</td>
       <td class="small">${reasonCell}</td>
-      <td class="small muted">${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>
+      <td class="small muted">${escapeHtml(fmtRequestedOn(r.created_at))}</td>
       <td class="small" style="text-align:right">${rowMenu(r)}</td>
     </tr>`;
   }).join("");
@@ -592,14 +607,14 @@ async function loadTeamPending() {
     p_status: "pending_manager",
   });
   if (error) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   const rows = data || [];
   teamCounts.pending = rows.length;
   setTeamCountBadge();
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">No requests waiting on your review.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r) => {
@@ -612,6 +627,7 @@ async function loadTeamPending() {
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td class="small muted">${escapeHtml(fmtRequestedOn(r.created_at))}</td>
       <td style="white-space:nowrap">
         <button class="small approve-tr-btn">Approve</button>
         <button class="ghost small reject-tr-btn">Reject</button>
@@ -649,14 +665,14 @@ async function loadTeamChanges() {
   if (!body) return;
   const { data, error } = await sb.rpc("list_team_leave_change_requests", { p_org_id: currentOrgId });
   if (error) {
-    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   const rows = data || [];
   teamCounts.changes = rows.length;
   setTeamCountBadge();
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="6" class="muted small" style="text-align:center;padding:16px">No cancellation or amendment requests.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">No cancellation or amendment requests.</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((r) => {
@@ -678,6 +694,9 @@ async function loadTeamChanges() {
       <td class="small">${teamDateRange(r)}</td>
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="small"><em style="color:var(--warning)">${label} requested</em>${detail}</td>
+      <!-- when the CHANGE was raised, not the original request — that's what
+           this queue is reviewing, and the RPC has returned it since 152. -->
+      <td class="small muted">${escapeHtml(fmtRequestedOn(r.change_requested_at))}</td>
       <td style="white-space:nowrap">
         ${isAmend ? `<button class="small apply-tc-btn">Apply</button>` : ""}
         <button class="${isAmend ? "ghost " : ""}small revoke-tc-btn">Revoke</button>
@@ -729,12 +748,12 @@ async function loadTeamAwaiting() {
     p_status: "pending_employee",
   });
   if (error) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;color:#c00">${escapeHtml(error.message)}</td></tr>`;
     return;
   }
   const rows = data || [];
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" class="muted small" style="text-align:center;padding:16px">Nothing awaiting employee acceptance.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="muted small" style="text-align:center;padding:16px">Nothing awaiting employee acceptance.</td></tr>`;
     return;
   }
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -748,6 +767,7 @@ async function loadTeamAwaiting() {
       <td class="num">${fmtHours(r.hours_per_day)}</td>
       <td class="num"><strong>${fmtHours(total)}</strong></td>
       <td class="small muted">${escapeHtml(r.reason || "")}</td>
+      <td class="small muted">${escapeHtml(fmtRequestedOn(r.created_at))}</td>
       <td style="white-space:nowrap"><button class="ghost small edit-ta-btn">Edit</button></td>
     </tr>`;
   }).join("");

@@ -50,6 +50,23 @@ function isWeekendDay(v) {
   return dow === 0 || dow === 6;
 }
 
+// Is this day still ahead of us? Used to stop the Full report pre-filling the
+// rest of the week: on a Monday it listed all five weekdays as "No Clock",
+// which reads as four absences nobody has had yet (user 2026-08-18). Days
+// appear as they arrive, today included — the report is live, so this morning
+// counts even before anyone has clocked in.
+//
+// Compares LOCAL calendar dates. Never toISOString() here: NZ is UTC+12, so a
+// local midnight converts to the previous day and the whole report would be a
+// day out for half of every day.
+function isFutureDay(v) {
+  const d = dayToLocalDate(v);
+  if (!d) return false;   // unknown shape — never hide it
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d.getTime() > today.getTime();
+}
+
 // "Fri 7 Aug" — the weekday name matters now that unworked days are listed,
 // since you're scanning for which day of the week someone was absent.
 function fmtDayLabel(v) {
@@ -1227,9 +1244,16 @@ async function loadFullReport() {
   // Weekends are the exception: nobody is rostered Sat/Sun, so filling those
   // in would add ~110 red rows a week and bury the weekday absences that
   // matter. A weekend day appears only when someone actually clocked.
+  //
+  // Days still ahead of us are the same story: viewing the current week on a
+  // Monday used to list Tue–Fri as "No Clock" for everyone, four absences that
+  // haven't had a chance to happen. Weekdays now appear as they arrive. A past
+  // week is unaffected — every day in it has passed — and a clocked row always
+  // shows regardless, so nothing real can be hidden by a clock skew.
   const hasClock = (r) => !!(r.first_in || r.last_out);
   const visible = rows.filter(
-    (r) => scopeAllowsUserId(r.user_id) && (hasClock(r) || !isWeekendDay(r.day))
+    (r) => scopeAllowsUserId(r.user_id)
+        && (hasClock(r) || (!isWeekendDay(r.day) && !isFutureDay(r.day)))
   );
 
   // Summary counts real shifts only — a No Clock row isn't a shift.
