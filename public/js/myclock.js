@@ -225,6 +225,22 @@ async function loadEvents() {
           const isShort = rawH != null && rawH > 0 && rawH < clockStandardHours;
           const autoClosed = !!r.outEv?.auto_closed;
           const flagged = autoClosed || isShort;
+          // An OPEN shift — clocked in, no clock-out yet — also offers Fix, on
+          // its In cell only. This is the "I've just remembered I forgot to
+          // clock in this morning" case, and it is the common one.
+          //
+          // It used to be unreachable until the next day, for a reason nobody
+          // chose: neither flag can fire while a shift is open (rawH is null
+          // without an out event, and auto-close happens at day end), so no
+          // button rendered. People waited for the clock-out that turned the
+          // shift short, which is the following day if they forget again.
+          //
+          // Nothing in the database required the wait —
+          // submit_clock_adjustment (146) checks ownership, a 24-hour window
+          // and no existing pending request, and an open shift passes all
+          // three. The Out cell is a dash on an open shift, so there is
+          // nothing to offer there.
+          const isOpen = !!r.inEv && !r.outEv;
           const flags = autoClosed
             ? `<span class="cvt-cell cvt-warn" style="padding:2px 8px;border-radius:999px;display:inline-block">Auto-closed</span>`
             : isShort
@@ -232,7 +248,7 @@ async function loadEvents() {
             : "";
           html.push(`<tr>${dayCell}
             <td><span class="tc-live-pill onsite">Shift</span></td>
-            ${evCell(r.inEv, flagged)}${evCell(r.outEv, flagged)}
+            ${evCell(r.inEv, flagged || isOpen)}${evCell(r.outEv, flagged)}
             <td>${flags}</td></tr>`);
         } else {
           // Both sides of a spell are adjustable, and they are SEPARATE
