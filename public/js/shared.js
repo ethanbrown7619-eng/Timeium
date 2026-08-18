@@ -1179,10 +1179,12 @@ const MUST_CHANGE_ALLOWED_PATHS = new Set([
   "/reset-password.html",
 ]);
 
-// Whether THIS session was established by something other than a password.
-// app_metadata.provider is the provider actually used to sign in, so a person
-// who signs in with Microsoft reads as "azure" even when the account also has a
-// dormant email/password identity from having been created by an admin.
+// Fast path only. app_metadata.provider is stamped when the ACCOUNT is
+// created, not rewritten per sign-in — and every employee here is created with
+// an email identity by an admin before Microsoft is ever linked, so a linked
+// user can still read as "email". True is trustworthy; false proves nothing.
+// The authority is settle_microsoft_signin() below, which reads
+// auth.identities server-side (migration 176).
 function isPasswordlessSession(session) {
   const provider = session?.user?.app_metadata?.provider;
   return !!provider && provider !== "email";
@@ -1190,15 +1192,21 @@ function isPasswordlessSession(session) {
 
 function enforceMustChangePassword(data, session) {
   if (!data?.mustChangePassword) return data;
-  // A Microsoft sign-in is exempt. The flag is set when an admin creates an
+  // A Microsoft user is exempt. The flag is set when an admin creates an
   // employee with a temp password (migration 140) and exists to stop someone
   // declining to choose their own — but an Entra user has no password to
   // change and will never use one, so the gate had nothing to ask for and
   // simply bounced them to the password screen on every page, forever.
   //
-  // Deliberately keyed on the provider of the CURRENT session rather than on
-  // whether an email identity exists at all: an admin-created account has a
-  // dormant one either way, so testing for that would exempt nobody.
+  // The real resolution happens server-side in fetchFreshUserContext, which
+  // clears the flag outright (migration 176). This is the cheap check that
+  // catches it without a round trip when the JWT happens to say so.
+  //
+  // Known and accepted: a user still flagged in a STALE sessionStorage entry
+  // gets one bounce to change-password.html before the background revalidate
+  // clears it. It self-heals on the next navigation; engineering around it
+  // would mean making this function async, which every caller assumes it is
+  // not.
   if (isPasswordlessSession(session)) return data;
   if (MUST_CHANGE_ALLOWED_PATHS.has(location.pathname)) return data;
   location.replace(PASSWORD_CHANGE_PATH);
@@ -1250,6 +1258,26 @@ async function fetchFreshUserContext(sb, session, cacheKey) {
   const employee = meRes.status === "fulfilled" ? (meRes.value?.data || null) : null;
   const role = adminRow?.role || (isDeveloper ? "developer" : null);
 
+  // Somebody who signs in with Microsoft is never asked to set a password.
+  // Only reached when the flag is actually set, so this costs nothing for the
+  // people it does not concern — and once it fires the flag is cleared for
+  // good, so it costs each affected employee exactly one call, once.
+  //
+  // The server decides: settle_microsoft_signin() reads auth.identities, which
+  // is the only place that knows whether Microsoft is linked (migration 176).
+  // Best-effort in both directions — if the RPC is missing (migration not yet
+  // applied) or the network blips, we fall through to the existing behaviour
+  // and the user is prompted, which is the safe way to be wrong.
+  let mustChange = !!employee?.must_change_password;
+  if (mustChange) {
+    try {
+      const { data: settled } = await sb.rpc("settle_microsoft_signin");
+      if (settled) mustChange = false;
+    } catch (err) {
+      console.warn("settle_microsoft_signin failed; keeping the prompt:", err?.message || err);
+    }
+  }
+
   // Does this user's staff type receive any leave at all? Read from the org's
   // employment_type_settings (Configure > Staff Types). A type with all three
   // entitlements off (e.g. Contractor by default) receives no leave, so the
@@ -1291,7 +1319,8 @@ async function fetchFreshUserContext(sb, session, cacheKey) {
     receivesLeave,
     // Admin-issued temp password not yet replaced. Enforced in
     // getUserContext() so it applies on every page, not just sign-in.
-    mustChangePassword: !!employee?.must_change_password,
+    // Already false for a Microsoft account — see the settle call above.
+    mustChangePassword: mustChange,
   };
 
   try {
