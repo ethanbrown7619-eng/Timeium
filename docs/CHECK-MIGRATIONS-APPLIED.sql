@@ -92,6 +92,13 @@ select migration,
                                                   join pg_namespace n on n.oid = p.pronamespace
                                                  where n.nspname = 'public'
                                                    and p.proname = 'list_team_leave_requests'
-                                                   and pg_get_function_result(p.oid) like '%created_at%'),                         'created_at in list_team_leave_requests result')
+                                                   and pg_get_function_result(p.oid) like '%created_at%'),                         'created_at in list_team_leave_requests result'),
+    ('176_no_password_prompt_for_microsoft', exists(select 1 from fn where proname = 'settle_microsoft_signin'),                    'fn settle_microsoft_signin'),
+    -- The dumb probe again: 177's whole point is the new table, and the two
+    -- reader functions it also rewrites keep their old names and signatures,
+    -- so there is nothing about them worth pattern-matching.
+    ('177_user_module_access',            exists(select 1 from information_schema.tables
+                                                  where table_schema = 'public'
+                                                    and table_name = 'user_module_access'),                                        'table public.user_module_access')
   ) as t(migration, applied, probe)
  order by migration;
