@@ -113,12 +113,28 @@ Shorthand used below: **"Admin"** means `public.is_admin_of(org)` → a row in
 | `xero_set_leave_type_mapping(p_leave_type_id, p_xero_leave_type_id text) → void` | 113 | DEFINER | `is_admin_of` | Older leave-type→Xero mapping | not called from JS (superseded by 114) |
 | `set_leave_notifications(p_org_id, p_enabled bool) → void` | 158 | DEFINER | `is_admin_of(p_org_id)` | Toggle `organisations.notify_leave` (dedicated setter — deliberately NOT folded into `save_org_settings`, whose live definition has drifted) | configure.js |
 
+## Module access (the PTL ERP module switcher)
+
+Added by 164 and never listed here until 177. Access is **deny by default** and
+**additive**: a person may open a module if it is `always_granted`, or their
+department has it, or they have a personal grant. Nothing subtracts.
+
+| Function (signature) | Defined in | SECURITY | Who may call / auth check inside | Purpose | Called from |
+|---|---|---|---|---|---|
+| `my_allowed_modules() → setof(key, name, href, description, sort_order)` | **177** (supersedes 166/164) | DEFINER | any signed-in user; never raises | The module switcher's menu. Devs/org admins get everything; otherwise `always_granted` ∪ department grants ∪ personal grants, all requiring `users.active` | app switcher in every module |
+| `module_access_granted(p_module_key) → bool` | **177** (supersedes 166/164) | DEFINER | any signed-in user; **never raises, fails closed** — safe inside an RLS policy | Per-module entry predicate. A **lockout, not a data boundary** — each module's own RLS still governs its data | module page guards |
+| `list_module_access_matrix(p_org_id=null) → jsonb` | **177** (supersedes 164) | DEFINER | `is_developer()`, else returns `{is_developer:false}` | Whole Module Access tab in one payload: `modules`, `departments`, `grants`, `users`, `user_grants` | configure.js |
+| `set_dept_module_access(p_department_id, p_module_key, p_allowed, p_org_id=null) → void` | 164 | DEFINER | `is_developer()`; rejects `always_granted`; department must be in the resolved org | Toggle one department × module cell | configure.js |
+| `set_user_module_access(p_user_id, p_module_key, p_allowed, p_org_id=null) → void` | **177** | DEFINER | `is_developer()`; rejects `always_granted`; employee must be in the resolved org | Toggle one employee's personal grant. **Additive only** — unticking deletes the personal row, it cannot revoke a department grant | configure.js |
+| `_caller_org_id() → bigint` | 164 | DEFINER | revoked from all client roles | Caller's org without requiring an `admins` row (`resolve_org_id` raises for ordinary employees) | internal |
+
 ## Auth / misc
 
 | Function (signature) | Defined in | SECURITY | Who may call / auth check inside | Purpose | Called from |
 |---|---|---|---|---|---|
 | `claim_employee_by_email() → jsonb` | 024 | DEFINER | Uses `auth.uid()`; links only an unclaimed `users` row whose email equals the auth email | First-login linking of auth account → employee row | shared.js, welcome.js |
 | `clear_must_change_password() → void` | 111 | DEFINER | Own row only (`auth_user_id = auth.uid()`) | Clear the forced-change flag after password change | change-password.js, reset-password.js, settings.js |
+| `settle_microsoft_signin() → bool` | **176** | DEFINER | Own row only, via `auth.uid()`; **never raises** | Clears `must_change_password` for an account with an `azure` identity that is not role `developer` — nobody who signs in with Microsoft should be asked to set a password 172 will then refuse. Called only when the flag is actually set, so it costs each affected employee one call, once | shared.js (`fetchFreshUserContext`) |
 | `check_login_locked(p_email) → bool` | **162** (supersedes 104) | DEFINER | none — public pre-login check (count-only, no data leak) | ≥5 failures in 15 min ⇒ locked. **Counts only `source='auth_hook'` rows**, so the anon endpoint cannot lock anyone out (audit A5). Returns false while the 142 hook is disabled | signin.js |
 | `record_login_attempt(p_email, p_failure_reason=null, p_user_agent=null) → void` | **162** (supersedes 139/104) | DEFINER | none — insert-only (failures only) | Log a failed login as `source='client'` (forensics only, never drives the lockout). Capped at 20 rows per email per 15 min; over the cap it silently no-ops | signin.js |
 | `record_login_success() → void` | **162** (supersedes 139) | DEFINER | Uses `auth.uid()`'s own email | Log a successful login as `source='session'` | signin.js |

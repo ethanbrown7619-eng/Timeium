@@ -1093,6 +1093,32 @@
             <p class="muted small" style="margin:0">Loading…</p>
           </div>
         </div>
+
+        <!-- ---------------------------------------------------------- -->
+        <!-- Individual access — extra modules for one person, on top   -->
+        <!-- of whatever their department already has (migration 177).  -->
+        <!-- ---------------------------------------------------------- -->
+        <div class="card" style="max-width:1100px">
+          <div class="row-flex mb-md">
+            <h2 style="margin:0">Individual access</h2>
+            <div class="grow"></div>
+            <span id="user-access-status" class="muted small"></span>
+          </div>
+          <p class="muted small" style="margin:0 0 16px">
+            Give one person a module their department does not have. These
+            grants only ever add — to take a module away from somebody, remove
+            it from their department above.
+          </p>
+          <div style="max-width:340px">
+            <label for="user-access-select">Employee</label>
+            <select id="user-access-select" style="width:100%">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div id="user-access-body" style="margin-top:16px">
+            <p class="muted small" style="margin:0">Choose an employee to see their access.</p>
+          </div>
+        </div>
       </section>
 
     </main>

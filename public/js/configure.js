@@ -1560,6 +1560,14 @@ reloadAll();
 let moduleGranted = new Set();
 let moduleListenerBound = false;
 
+// The whole tab — both cards — renders from one list_module_access_matrix()
+// payload. Individual access needs the module list, the department grants (to
+// show what a person already inherits) and the department names, so a second
+// fetch would be the same query twice.
+let moduleMatrix = null;
+let userGranted = new Set();
+let userListenerBound = false;
+
 async function loadModuleAccess() {
   const body = document.getElementById("modules-body");
   const statusEl = document.getElementById("modules-status");
@@ -1577,14 +1585,27 @@ async function loadModuleAccess() {
       `<p class="small" style="margin:0;color:var(--danger,#b3261e)">Could not load module access: ${
         escapeHtml(err.message || String(err))
       }</p>`;
+    setUserAccessMessage("Could not load individual access.", true);
     return;
   }
 
   if (!data || data.is_developer === false) {
     body.innerHTML =
       `<p class="muted small" style="margin:0">Developer access is required to change module permissions.</p>`;
+    setUserAccessMessage("Developer access is required to change module permissions.");
     return;
   }
+
+  // Both cards read from here. Populated before the department grid's own
+  // early returns below, because individual access is perfectly usable in an
+  // org that has no departments at all.
+  // moduleGranted is filled here rather than beside the grid it feeds:
+  // Individual access reads it too, to show what a person already inherits,
+  // and renderUserAccess() runs before the grid does.
+  moduleMatrix = data;
+  moduleGranted = new Set((data.grants || []).map((g) => `${g.department_id}:${g.module_key}`));
+  userGranted = new Set((data.user_grants || []).map((g) => `${g.user_id}:${g.module_key}`));
+  renderUserAccess();
 
   const modules = data.modules || [];
   const departments = data.departments || [];
@@ -1598,8 +1619,6 @@ async function loadModuleAccess() {
       `<p class="muted small" style="margin:0">No active departments in this organisation — add them on the Staff page first.</p>`;
     return;
   }
-
-  moduleGranted = new Set((data.grants || []).map((g) => `${g.department_id}:${g.module_key}`));
 
   const head = modules
     .map((m) => {
@@ -1659,6 +1678,9 @@ async function loadModuleAccess() {
       if (error) throw error;
       const key = `${box.dataset.dept}:${box.dataset.module}`;
       if (allowed) moduleGranted.add(key); else moduleGranted.delete(key);
+      // Keep Individual access honest: if the selected employee is in this
+      // department, their "via <dept>" row has just changed meaning.
+      renderUserModules();
       statusEl.textContent = "Saved ✓";
       setTimeout(() => { if (statusEl.textContent === "Saved ✓") statusEl.textContent = ""; }, 2500);
     } catch (err) {
@@ -1669,4 +1691,145 @@ async function loadModuleAccess() {
       box.disabled = false;
     }
   });
+}
+
+/* ======================================================================
+ * Individual access — extra modules for one person, on top of whatever
+ * their department already gives them (migration 177).
+ *
+ * ADDITIVE ONLY, and the UI has to say so plainly: anything already
+ * granted through the department (or always-on, like Timesheet) renders
+ * ticked and DISABLED with the reason next to it, so nobody unticks a box
+ * expecting it to take access away. The only live checkboxes are the ones
+ * that would create or delete a row in user_module_access.
+ * ====================================================================== */
+
+function setUserAccessMessage(text, isError = false) {
+  const body = document.getElementById("user-access-body");
+  const select = document.getElementById("user-access-select");
+  if (select) select.innerHTML = `<option value="">—</option>`;
+  if (!body) return;
+  body.innerHTML = isError
+    ? `<p class="small" style="margin:0;color:var(--danger,#b3261e)">${escapeHtml(text)}</p>`
+    : `<p class="muted small" style="margin:0">${escapeHtml(text)}</p>`;
+}
+
+// Fills the employee picker, preserving the current selection across the
+// reloads that a tab switch or an org change triggers.
+function renderUserAccess() {
+  const select = document.getElementById("user-access-select");
+  const body = document.getElementById("user-access-body");
+  if (!select || !body) return;
+
+  const users = moduleMatrix?.users || [];
+  if (!users.length) {
+    select.innerHTML = `<option value="">—</option>`;
+    body.innerHTML =
+      `<p class="muted small" style="margin:0">No active employees in this organisation.</p>`;
+    return;
+  }
+
+  const previous = select.value;
+  select.innerHTML =
+    `<option value="">Choose an employee…</option>` +
+    users
+      .map((u) => `<option value="${u.id}">${escapeHtml(u.name || `#${u.id}`)}</option>`)
+      .join("");
+  // Only restore it if that person is still in the list — an org switch
+  // replaces the roster entirely.
+  select.value = users.some((u) => String(u.id) === previous) ? previous : "";
+
+  renderUserModules();
+
+  if (userListenerBound) return;
+  userListenerBound = true;
+
+  select.addEventListener("change", renderUserModules);
+
+  // Delegated for the same reason as the department grid: the list is
+  // replaced wholesale every time the picker changes.
+  body.addEventListener("change", async (e) => {
+    const box = e.target.closest("input[type=checkbox][data-user]");
+    if (!box) return;
+
+    const statusEl = document.getElementById("user-access-status");
+    const allowed = box.checked;          // optimistic; reverted on failure
+    box.disabled = true;
+    statusEl.textContent = "Saving…";
+    try {
+      const { error } = await sb.rpc("set_user_module_access", {
+        p_user_id: Number(box.dataset.user),
+        p_module_key: box.dataset.module,
+        p_allowed: allowed,
+        p_org_id: currentOrgId,
+      });
+      if (error) throw error;
+      const key = `${box.dataset.user}:${box.dataset.module}`;
+      if (allowed) userGranted.add(key); else userGranted.delete(key);
+      statusEl.textContent = "Saved ✓";
+      setTimeout(() => { if (statusEl.textContent === "Saved ✓") statusEl.textContent = ""; }, 2500);
+    } catch (err) {
+      box.checked = !allowed;
+      statusEl.textContent = "";
+      notice(err.message || "Could not save individual access", "error");
+    } finally {
+      box.disabled = false;
+    }
+  });
+}
+
+function renderUserModules() {
+  const select = document.getElementById("user-access-select");
+  const body = document.getElementById("user-access-body");
+  if (!select || !body) return;
+
+  const userId = Number(select.value);
+  if (!userId) {
+    body.innerHTML =
+      `<p class="muted small" style="margin:0">Choose an employee to see their access.</p>`;
+    return;
+  }
+
+  const user = (moduleMatrix?.users || []).find((u) => u.id === userId);
+  const modules = moduleMatrix?.modules || [];
+  const deptName = (moduleMatrix?.departments || [])
+    .find((d) => d.id === user?.department_id)?.name || null;
+
+  // Admins and developers get every module unconditionally (migration 164),
+  // so their checkboxes would be describing a permission that isn't doing
+  // any work. Say so rather than let the grid imply otherwise.
+  const note = user?.sees_everything
+    ? `<p class="small" style="margin:0 0 12px;color:var(--warn,#8a6d3b)">
+         ${escapeHtml(user.name || "This employee")} is an admin or developer and
+         already sees every module. These ticks would only matter if that role
+         were removed.
+       </p>`
+    : "";
+
+  const rows = modules
+    .map((m) => {
+      const viaDept = moduleGranted.has(`${user?.department_id}:${m.key}`);
+      const personal = userGranted.has(`${userId}:${m.key}`);
+      const locked = m.always_granted || viaDept;
+      const why = m.always_granted
+        ? `<span class="muted small">available to everyone</span>`
+        : viaDept
+          ? `<span class="muted small">via ${escapeHtml(deptName || "their department")}</span>`
+          : `<span class="muted small">${escapeHtml(m.description || "")}</span>`;
+      return `<tr>
+        <td class="num" style="width:32px">
+          <input type="checkbox" data-user="${userId}" data-module="${escapeHtml(m.key)}"
+                 aria-label="${escapeHtml(user?.name || "employee")} — ${escapeHtml(m.name)}"
+                 ${locked || personal ? "checked" : ""} ${locked ? "disabled" : ""} />
+        </td>
+        <td>${escapeHtml(m.name)}</td>
+        <td>${why}</td>
+      </tr>`;
+    })
+    .join("");
+
+  body.innerHTML = `${note}
+    <table class="small" style="max-width:640px">
+      <tbody>${rows}</tbody>
+    </table>`;
 }
