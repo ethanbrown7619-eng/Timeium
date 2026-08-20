@@ -1008,7 +1008,15 @@ document.querySelectorAll("[data-lv-view]").forEach((btn) => {
 // from leave_requests and pushes one report row per leave day into
 // `rows`. Timesheet staff are skipped — their leave comes through their
 // timesheet entries instead, so including them here would double-count.
-async function appendOverheadLeaveRows(rows, { weekStarts, empMap, deptMap, jobMap, filteredEmpIds }) {
+//
+// Also records `user|date|job_id` for every row it adds, so the
+// timesheet-entry pass below can recognise the SAME leave day arriving
+// from the other direction. Approving a request calls
+// populate_timesheet_for_leave (migration 150), which writes the hours
+// into a draft timesheet for every employee — overhead or not. That
+// draft is normally filtered out of the report, but "Include draft
+// timesheets" admits it, and the day is then counted twice.
+async function appendOverheadLeaveRows(rows, seen, { weekStarts, empMap, deptMap, jobMap, filteredEmpIds }) {
   // Report date window = the span covered by the requested week starts.
   const sorted = [...weekStarts].sort();
   const rangeStart = sorted[0];
@@ -1055,6 +1063,11 @@ async function appendOverheadLeaveRows(rows, { weekStarts, empMap, deptMap, jobM
       const isWeekend = dow === 0 || dow === 6;
       // Clip to the report window and respect skip_weekends.
       if (iso >= rangeStart && iso <= rangeEnd && !(req.skip_weekends && isWeekend)) {
+        // The key mirrors what populate_timesheet_for_leave writes: the
+        // leave type's mapped job, on this day, for this employee. An
+        // unmapped type has no job and never populates a timesheet, so
+        // it can't collide and doesn't need a key.
+        if (lt?.job_id) seen.add(`${req.user_id}|${iso}|${lt.job_id}`);
         rows.push({
           employee: emp.name || "",
           employee_code: emp.employee_code || "",
@@ -1120,7 +1133,8 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
   // approved leave_requests. Timesheet staff are intentionally excluded
   // here — their leave already shows via their timesheet entries, and
   // including both would double-count.
-  await appendOverheadLeaveRows(rows, {
+  const overheadLeaveDays = new Set();
+  await appendOverheadLeaveRows(rows, overheadLeaveDays, {
     weekStarts, empMap, deptMap, jobMap, filteredEmpIds,
   });
 
@@ -1184,6 +1198,15 @@ async function buildLeaveRowsForWeeks(weekStarts, typeFilter, includeDrafts) {
       const h = Number(entry[`${DAYS[i]}_hours`]) || 0;
       if (h === 0) continue;
       const dayDate = addDays(wsDate, i);
+      // Already reported from the leave request that created it. Approving
+      // leave populates a draft timesheet for EVERY employee, so an
+      // overhead person's day arrives twice once drafts are included. The
+      // leave_requests row wins: for staff who don't file timesheets the
+      // request is the record, and keeping it means toggling the checkbox
+      // never changes which row an admin sees — only whether extra draft
+      // data appears. Keyed per day rather than skipping overhead staff
+      // wholesale, so leave entered by hand on a draft still reports.
+      if (overheadLeaveDays.has(`${ts.user_id}|${fmtDate(dayDate)}|${entry.job_id}`)) continue;
       rows.push({
         employee: emp.name || "",
         employee_code: emp.employee_code || "",
