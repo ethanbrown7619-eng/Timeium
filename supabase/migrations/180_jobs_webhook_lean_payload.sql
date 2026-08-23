@@ -11,23 +11,45 @@
 -- type) on the assumption they always ride along. They don't.
 --
 --
--- FAULT 1 -- a lean payload silently wipes the Spares columns
+-- FAULT 1 -- job_type has another owner, and this feed was fighting it
 --
---   169 writes customer_name / start_date / due_date / job_type PLAINLY on
---   conflict, on purpose: a date cleared in Infusion has to clear here too, so
---   coalesce() was rejected. Correct -- but it cannot tell "the sender cleared
---   this field" from "the sender never sent this field". A three-key payload
---   therefore nulls all four columns on EVERY job in one call, and the Spares
---   module loses every customer and date it has. Same shape of trap as the PO
---   worker: a narrower payload than expected, ingested as authoritative.
+--   public.jobs.job_type is written by ingest_invoices_via_webhook (173, body
+--   carried forward by 174), off each invoice line's `jobtype` column. That is
+--   where SPARES comes from. 169 then had the jobs feed write job_type as
+--   well, so the two feeds overwrite each other and last-run-wins -- and since
+--   the jobs sender has no `type` key at all, the jobs feed wins by nulling
+--   it. SPARES appears after an invoice sync and vanishes after a job sync.
 --
---   Fix: decide per CALL, not per row. If a key is absent from the entire
---   payload, that column is not part of this feed's contract today and is left
---   alone. If the key is present anywhere, the column is authoritative again
---   and an empty value still clears -- 169's semantics, unchanged.
+--   173 had already drawn this line, in the other direction: "customer_name is
+--   absent from both the insert and the update: this feed must never touch it
+--   -- jobs sends the CUSTOMER, invoices send the DEBTOR." job_type is the
+--   mirror of that rule, and 169 missed it.
+--
+--   Fix: job_type is absent from both the insert and the update here. One
+--   column, one writer. Invoices sends the TYPE.
 --
 --
--- FAULT 2 -- a broken column map succeeds with zero rows
+-- FAULT 2 -- a lean payload silently wipes the remaining 169 columns
+--
+--   169 writes customer_name / start_date / due_date PLAINLY on conflict, on
+--   purpose: a date cleared in Infusion has to clear here too, so coalesce()
+--   was rejected. Correct -- but it cannot tell "the sender cleared this
+--   field" from "the sender never sent this field". A three-key payload
+--   therefore nulls all three on EVERY job in one call. Same shape of trap as
+--   the PO worker: a narrower payload than expected, ingested as
+--   authoritative.
+--
+--   These three stay on this feed rather than moving to invoices, because
+--   invoices only ever sees jobs that have been invoiced -- an uninvoiced job
+--   would never get a customer or a date at all. So the answer here isn't
+--   ownership, it's presence: decide per CALL, not per row. If a key is absent
+--   from the entire payload, that column is not part of this feed's contract
+--   today and is left alone. If the key is present anywhere, the column is
+--   authoritative again and an empty value still clears -- 169's semantics,
+--   unchanged.
+--
+--
+-- FAULT 3 -- a broken column map succeeds with zero rows
 --
 --   v_code_col defaults to 'job_code', but this sender's key is 'jobid'. That
 --   only works because organisations.jobs_import_map says code_column=jobid.
@@ -61,8 +83,8 @@ returns jsonb language plpgsql security definer set search_path = public as $fun
 declare
     v_org bigint; v_map jsonb;
     v_code_col text; v_desc_col text; v_stat_col text; v_stat_map jsonb;
-    v_cust_col text; v_start_col text; v_due_col text; v_type_col text;
-    v_has_cust boolean; v_has_start boolean; v_has_due boolean; v_has_type boolean;
+    v_cust_col text; v_start_col text; v_due_col text;
+    v_has_cust boolean; v_has_start boolean; v_has_due boolean;
     v_rows jsonb;
     v_in integer := 0;
     v_count integer := 0;
@@ -87,22 +109,23 @@ begin
     v_cust_col  := coalesce(v_map->>'customer_column',    'name');
     v_start_col := coalesce(v_map->>'start_date_column',  'startdate');
     v_due_col   := coalesce(v_map->>'due_date_column',    'duedate');
-    v_type_col  := coalesce(v_map->>'type_column',        'type');
+    -- NOTE: there is deliberately no `type` mapping. See FAULT 1 in the header.
 
-    -- Which of 169's four columns is this payload actually carrying? One pass,
-    -- whole payload: present in ANY row means the field is in play for this
-    -- call, so a row that omits it is a genuine clear. Present in NO row means
-    -- the sender is not sending it at all and the stored value is left alone.
+    -- Which of these three is this payload actually carrying? One pass, whole
+    -- payload: present in ANY row means the field is in play for this call, so
+    -- a row that omits it is a genuine clear. Present in NO row means the
+    -- sender is not sending it at all and the stored value is left alone.
     select coalesce(bool_or(jsonb_typeof(r) = 'object' and r ? v_cust_col),  false),
            coalesce(bool_or(jsonb_typeof(r) = 'object' and r ? v_start_col), false),
-           coalesce(bool_or(jsonb_typeof(r) = 'object' and r ? v_due_col),   false),
-           coalesce(bool_or(jsonb_typeof(r) = 'object' and r ? v_type_col),  false)
-      into v_has_cust, v_has_start, v_has_due, v_has_type
+           coalesce(bool_or(jsonb_typeof(r) = 'object' and r ? v_due_col),   false)
+      into v_has_cust, v_has_start, v_has_due
       from jsonb_array_elements(v_rows) as t(r);
 
+    -- job_type appears in neither the column list nor the update below: it
+    -- belongs to ingest_invoices_via_webhook. See FAULT 1 in the header.
     insert into public.jobs (
         organisation_id, job_code, description, status, source, last_synced_at,
-        customer_name, start_date, due_date, job_type
+        customer_name, start_date, due_date
     )
     select distinct on (code)
         v_org,
@@ -113,8 +136,7 @@ begin
         now(),
         nullif(trim(coalesce(r->>v_cust_col, '')), ''),
         public._parse_infusion_date(r->>v_start_col),
-        public._parse_infusion_date(r->>v_due_col),
-        nullif(upper(trim(coalesce(r->>v_type_col, ''))), '')
+        public._parse_infusion_date(r->>v_due_col)
     from jsonb_array_elements(v_rows) with ordinality as t(r, rn)
     cross join lateral (select trim(r->>v_code_col) as code) c
     where length(coalesce(code, '')) > 0
@@ -127,8 +149,7 @@ begin
             updated_at     = now(),
             customer_name  = case when v_has_cust  then excluded.customer_name else jobs.customer_name end,
             start_date     = case when v_has_start then excluded.start_date    else jobs.start_date    end,
-            due_date       = case when v_has_due   then excluded.due_date      else jobs.due_date      end,
-            job_type       = case when v_has_type  then excluded.job_type      else jobs.job_type      end;
+            due_date       = case when v_has_due   then excluded.due_date      else jobs.due_date      end;
 
     get diagnostics v_count = row_count;
 
@@ -150,7 +171,7 @@ begin
         'received', v_in, 'count', v_count,
         'columns_in_payload', jsonb_build_object(
             'customer_name', v_has_cust, 'start_date', v_has_start,
-            'due_date', v_has_due, 'job_type', v_has_type));
+            'due_date', v_has_due));
 end$function$;
 
 grant execute on function public.ingest_jobs_via_webhook(text, jsonb) to anon, authenticated;
