@@ -1,6 +1,8 @@
 // Shared utilities for the Temporium timesheet module.
 // Narrow by design — more helpers land here as later units ship.
 
+import { notificationBell } from "./bell.js";
+
 /* ---------------------------------------------------------------- dates */
 
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -737,6 +739,13 @@ export function renderTopbar(opts) {
       <a href="#" id="signout-link" class="muted">Sign out</a>
     </div>
   `;
+
+  // Cross-module notification bell (public.notifications, hitlist migration
+  // 005) — first child of topbar-user, matching the sibling ERP apps'
+  // wiring. Self-removing when the infrastructure isn't applied, so a
+  // missing migration is harmless here too.
+  const topbarUser = el.querySelector(".topbar-user");
+  if (topbarUser) topbarUser.prepend(notificationBell());
 
   // Cross-module switcher, top-left. Populated async so the topbar paints on
   // the first frame regardless — the RPC is never on the critical path.
