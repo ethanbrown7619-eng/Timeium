@@ -943,6 +943,7 @@ const MODULE_ICONS = {
   partslogistics: "🚚",
   spares: "🔧",
   map: "🗺️",
+  hitlist: "🎯",
 };
 
 // The registry href drives BOTH the tile link and the SSO hop destination
