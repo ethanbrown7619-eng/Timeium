@@ -50,8 +50,9 @@
 --   alternated, last-run-wins. That write is gone too, so this feed is the only
 --   writer and nothing repairs it.
 --
---   It matters beyond display. timesheet.js resolves a scanned job only when
---   status = 'ACTIVE', so completed jobs became clock-in-able again; and
+--   It matters beyond display. public/js/timesheet.js:2019 resolves a scanned
+--   job as `job_code === jobCode && j.status === "ACTIVE"`, so every completed
+--   job became clock-in-able again for as long as this ran; and
 --   COMPLETED / DISPATCHED / INVOICED are the terminal statuses that outrank
 --   everything in po.spares_pipeline's composition (042), so finished spares
 --   jobs fall back to derivation and reappear as live stages.
