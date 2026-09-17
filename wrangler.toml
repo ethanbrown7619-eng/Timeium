@@ -39,8 +39,8 @@ binding = "ASSETS"
 # Override via: wrangler secret put SUPABASE_URL (etc.) — or set here as vars for
 # values that are safe to expose (the anon key is public, URL is public).
 [vars]
-SUPABASE_URL = "https://kyfydyownbgwhquorchn.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt5ZnlkeW93bmJnd2hxdW9yY2huIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwMzYyNDQsImV4cCI6MjA5MTYxMjI0NH0.BqsGiVxhtSqWRnqVM_w1dIDu0tDuzv9Xrg6a3NRUTxM"
+SUPABASE_URL = "https://swpxduxnjimsxtfpyxur.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN3cHhkdXhuamltc3h0ZnB5eHVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NzU1MTIsImV4cCI6MjEwNTI1MTUxMn0.1rXZSTVYVpFl4oUbFrqrdfLhnMaNzfVEstDp8e9OcAY"
 
 # Cloudflare Turnstile public site key. Safe to commit — it's the
 # public-facing identifier; the matching secret key lives in Supabase

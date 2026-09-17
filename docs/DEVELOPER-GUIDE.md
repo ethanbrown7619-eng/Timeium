@@ -23,7 +23,7 @@
 |---|---|
 | This repo | <https://github.com/ethanbrown7619-eng/Timeium> |
 | Live app | <https://ptl-timesheet.businessautomation.workers.dev> |
-| Supabase dashboard (shared project) | <https://supabase.com/dashboard/project/kyfydyownbgwhquorchn> |
+| Supabase dashboard (shared project) | <https://supabase.com/dashboard/project/swpxduxnjimsxtfpyxur> |
 | Cloudflare dashboard (worker `temporium`) | <https://dash.cloudflare.com/> → account `d9f2…f8b6` → Workers & Pages |
 | PTL Clock kiosk repo | Separate GitHub + Cloudflare account — coordinate via the owner above |
 | Companion docs | [RPC-REFERENCE.md](RPC-REFERENCE.md) · [USER-GUIDE.md](USER-GUIDE.md) · [SECURITY-TESTING.md](SECURITY-TESTING.md) |
@@ -288,7 +288,7 @@ GitHub account; you cannot see its code). This has real consequences:
 
 **Migrations are hand-applied.** Pushing code does *not* touch the DB.
 Every `supabase/migrations/NNN_*.sql` file must be pasted into the
-[Supabase SQL editor](https://supabase.com/dashboard/project/kyfydyownbgwhquorchn)
+[Supabase SQL editor](https://supabase.com/dashboard/project/swpxduxnjimsxtfpyxur)
 by a human. Write every migration idempotent ("safe to re-run").
 
 **Numbering is partitioned** — see [the registry](#migration-numbering--the-registry).
@@ -413,7 +413,7 @@ kiosk or an ERP sibling app, not just this one.
 ## 7c. Backups & data recovery
 
 - Supabase takes automated backups of the project — see
-  [Dashboard → Database → Backups](https://supabase.com/dashboard/project/kyfydyownbgwhquorchn/database/backups)
+  [Dashboard → Database → Backups](https://supabase.com/dashboard/project/swpxduxnjimsxtfpyxur/database/backups)
   for what's available on the current plan (daily backups; point-in-time
   recovery only if enabled).
 - **A restore rolls back every application sharing the project** — the kiosk
@@ -561,7 +561,7 @@ test-data tool.
 | **Infusion** | PTL's accounting system. Admin exports timesheet data to it; unrelated to this app's internals. |
 | **Xero** | Payroll/accounting SaaS; the worker's `/xero/*` routes handle its OAuth + API for leave export. |
 | **Turnstile** | Cloudflare's CAPTCHA, on the auth forms. |
-| **Supabase** | Hosted Postgres + Auth + PostgREST. The shared project is `kyfydyownbgwhquorchn`. |
+| **Supabase** | Hosted Postgres + Auth + PostgREST. The shared project is `swpxduxnjimsxtfpyxur`. |
 | **PostgREST** | The REST layer Supabase puts over Postgres — what supabase-js talks to. Source of the 1000-row cap. |
 | **RLS** | Row-Level Security — per-row Postgres policies; the baseline authorization layer. |
 | **RPC** | A Postgres function called via PostgREST (`sb.rpc('name')`). |

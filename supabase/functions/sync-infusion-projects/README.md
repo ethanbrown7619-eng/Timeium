@@ -19,12 +19,12 @@ developer — so passing `p_org_id` explicitly is always allowed.
 
 ```bash
 supabase functions deploy sync-infusion-projects \
-  --project-ref kyfydyownbgwhquorchn
+  --project-ref swpxduxnjimsxtfpyxur
 
 supabase secrets set \
   INFUSION_API_URL=https://api.infusion.example/v1/projects \
   INFUSION_API_KEY=xxx \
-  --project-ref kyfydyownbgwhquorchn
+  --project-ref swpxduxnjimsxtfpyxur
 ```
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase
@@ -41,7 +41,7 @@ select cron.schedule(
     '*/30 * * * *',
     $$
     select net.http_post(
-        url := 'https://kyfydyownbgwhquorchn.supabase.co/functions/v1/sync-infusion-projects',
+        url := 'https://swpxduxnjimsxtfpyxur.supabase.co/functions/v1/sync-infusion-projects',
         headers := jsonb_build_object(
             'Authorization', 'Bearer ' || current_setting('app.settings.service_role_key', true),
             'Content-Type',  'application/json'

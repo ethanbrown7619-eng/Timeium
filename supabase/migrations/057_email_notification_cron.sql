@@ -34,7 +34,7 @@ end $$;
 -- so the cost of running every 15 min is ~one Postgres select.
 --
 -- Replace the values below before applying:
---   <YOUR-PROJECT-REF>          your Supabase project ref (e.g. kyfydyownbgwhquorchn)
+--   <YOUR-PROJECT-REF>          your Supabase project ref (e.g. swpxduxnjimsxtfpyxur)
 --   <YOUR-SERVICE-ROLE-JWT>     from Supabase Dashboard > Settings > API > service_role
 select cron.schedule(
     'timesheet-notify',

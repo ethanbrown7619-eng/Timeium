@@ -216,7 +216,7 @@ finding A2 (§11) is exactly what that looks like when the discipline slips.
 
 ### 3.4 The shared-database trust boundary: PTL Clock
 
-The Supabase project `kyfydyownbgwhquorchn` is shared. PTL Timesheet and
+The Supabase project `swpxduxnjimsxtfpyxur` is shared. PTL Timesheet and
 the PTL Clock kiosk are two applications, two repositories, two GitHub
 accounts and two Cloudflare accounts, on **one** database. (ERP sibling
 modules also share the project.)
