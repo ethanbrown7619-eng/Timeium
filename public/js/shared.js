@@ -705,18 +705,26 @@ export function renderTopbar(opts) {
 
   // Render the entire topbar in one place. Pages can leave the element empty
   // and we'll fill it; pages that pre-populated it (legacy) are overwritten.
+  // Same three-column bar as every other ERP module (user, 2026-09-28: "the
+  // top nav bar for the timesheet is not homogenous with the other top nav
+  // bars"): switcher + wordmark left, tabs centred, bell / org / email /
+  // Sign out right. Markup and classes mirror the sibling apps' nav.js;
+  // the styles live under "uniform ERP topbar" in style.css.
   el.innerHTML = `
-    <div class="app-switcher-slot"></div>
-    <div class="brand">
-      <img src="/img/ptl-logo.png" class="brand-logo" alt="PTL" />
-      <span class="brand-name">Timesheet</span>
+    <div class="topbar-inner">
+    <div class="topbar-left">
+      <div class="app-switcher-slot"></div>
+      <a class="brand" href="/timesheet.html">
+        <span class="brand-logo" aria-label="PTL">ptl</span>
+        <span class="brand-name">Timesheet</span>
+      </a>
     </div>
-    <nav class="ready">
+    <nav class="nav ready">
       ${links
         .filter((l) => l.show)
         .map(
           (l) =>
-            `<a href="${l.href}" class="${opts.active === l.key ? "active" : ""}">${l.label}${
+            `<a href="${l.href}" class="nav-link${opts.active === l.key ? " active" : ""}">${l.label}${
               // Leave gets a red count pill for requests waiting on THIS user
               // to accept — staff were missing manager-raised leave because
               // nothing on the nav pointed at it. Filled in async below.
@@ -732,11 +740,11 @@ export function renderTopbar(opts) {
         )
         .join("")}
     </nav>
-    <div class="grow"></div>
-    <div class="topbar-user ready">
+    <div class="topbar-user userbox ready">
       ${orgSwitcher}
-      <span class="who">${escapeHtml(opts.session?.user?.email || "")}</span>
-      <a href="#" id="signout-link" class="muted">Sign out</a>
+      <span class="who user-email">${escapeHtml(opts.session?.user?.email || "")}</span>
+      <button type="button" id="signout-link" class="topbar-signout">Sign out</button>
+    </div>
     </div>
   `;
 
