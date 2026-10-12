@@ -66,67 +66,115 @@ of the Groups one. The flow account needs Editor rights on that calendar.
 ### 4. Build the flow
 
 This needs the premium **HTTP** action, the same one the Infusion feeds already
-use. Every call to Supabase uses the same three headers:
+use. Name the actions **exactly** as written in bold below, because the
+expressions refer to them by name. In an expression, a space in an action's
+name becomes `_`.
+
+Every HTTP call to Supabase uses the same three headers:
 
 | Header | Value |
 |---|---|
-| `apikey` | the Supabase **anon** key (same as the Infusion flows) |
+| `apikey` | the Supabase **anon** key (copy it from an Infusion flow) |
 | `Authorization` | `Bearer <anon key>` |
 | `Content-Type` | `application/json` |
 
-1. **Trigger: Recurrence**, every 15 minutes.
-   - Under Settings, turn **Concurrency control on, degree 1**. Two overlapping
-     runs would create the same event twice.
-2. **HTTP: Get owed**
-   - `POST https://swpxduxnjimsxtfpyxur.supabase.co/rest/v1/rpc/leave_calendar_pending`
-   - Body: `{ "p_api_key": "<key from step 2>" }`
-3. **Apply to each**, over `body('Get_owed')?['ops']`.
-   - Under Settings, set **Concurrency control on, degree 1**.
-4. Inside the loop, add a **Switch** on `items('Apply_to_each')?['op']`.
+**1. Create the flow.**
+- In Power Automate, go to **Create** and choose **Scheduled cloud flow**.
+- Name it `Leave to company calendar`, set it to repeat every **15 minutes**,
+  and click **Create**.
+- On the **Recurrence** trigger, open **Settings** and turn **Concurrency
+  control on**, with degree of parallelism **1**.
 
-   **Case `create`:** Office 365 Groups, **Send an HTTP request**
-   - Method `POST`
-   - URI `https://graph.microsoft.com/v1.0/groups/<group-id>/events`
-   - Body `items('Apply_to_each')?['graph_body']`
+**2. Add Initialize variable.**
+- Name `eventId`, type **String**, value left empty.
 
-   **Case `update`:** Send an HTTP request
-   - Method `PATCH`
-   - URI `https://graph.microsoft.com/v1.0/groups/<group-id>/events/@{items('Apply_to_each')?['event_id']}`
-   - Body `items('Apply_to_each')?['graph_body']`
+**3. Add HTTP, renamed to Get owed.**
+- Method `POST`
+- URI `https://swpxduxnjimsxtfpyxur.supabase.co/rest/v1/rpc/leave_calendar_pending`
+- The three headers above
+- Body:
+  `{ "p_api_key": "<key from step 2>", "p_limit": 1 }`
+- `p_limit: 1` is only for the **first test**. It processes a single event.
+  Remove it once the test event looks right.
 
-   **Case `delete`:** Send an HTTP request
-   - Method `DELETE`
-   - URI as for update, with no body
+**4. Add Apply to each, renamed to For each op.**
+- Output from previous steps (expression): `body('Get_owed')?['ops']`
+- Under **Settings**, turn **Concurrency control on**, degree **1**.
 
-5. **After the Switch, add the success report.** An HTTP action, **Ack ok**:
-   - `POST .../rest/v1/rpc/leave_calendar_ack`
-   - Body:
-     ```
-     {
-       "p_api_key": "<key>",
-       "p_results": @{setProperty(setProperty(items('Apply_to_each'), 'ok', true),
-                       'event_id', coalesce(body('Create_event')?['id'], items('Apply_to_each')?['event_id']))}
-     }
-     ```
-     (`Create_event` is whatever you named the create action.)
+Every remaining step goes **inside** For each op.
 
-6. **Add the failure report.** A second HTTP action, **Ack failed**, beside
-   **Ack ok**.
-   - Under **Configure run after**, tick **has failed** only.
-   - Body:
-     ```
-     {
-       "p_api_key": "<key>",
-       "p_results": @{setProperty(setProperty(items('Apply_to_each'), 'ok', false),
-                       'error', string(outputs('Switch')))}
-     }
-     ```
-   - The text only needs to contain `404` or `ErrorItemNotFound` when an event
-     was deleted by hand. The database then treats a delete as done and
-     re-creates an event whose update failed that way.
+**5. Add Set variable.**
+- `eventId`, set to the expression `coalesce(item()?['event_id'], '')`.
 
-The first run creates every current and future approved leave. After that,
-each run does only what has changed.
+**6. Add a Scope, renamed to Do op.** Inside it, add a **Switch**.
+- On: the expression `item()?['op']`
+
+**Case 1: equals `create`**
+- Add **Office 365 Groups → Send an HTTP request** and rename it to
+  **Create event**.
+  - URI `https://graph.microsoft.com/v1.0/groups/<group-id>/events`
+  - Method `POST`
+  - Body: the expression `item()?['graph_body']`
+- Below it, add **Set variable**: `eventId` = `body('Create_event')?['id']`
+
+**Case 2: equals `update`**
+- Add **Send an HTTP request**.
+  - URI `https://graph.microsoft.com/v1.0/groups/<group-id>/events/` followed
+    by the expression `item()?['event_id']`
+  - Method `PATCH`
+  - Body: the expression `item()?['graph_body']`
+
+**Case 3: equals `delete`**
+- Add **Send an HTTP request**.
+  - URI the same as update
+  - Method `DELETE`
+  - No body
+
+**7. Add HTTP, renamed to Ack ok.** It goes below the Do op scope and inside
+the loop.
+- Method `POST`
+- URI `https://swpxduxnjimsxtfpyxur.supabase.co/rest/v1/rpc/leave_calendar_ack`
+- The three headers
+- Body: type the outer JSON, and insert the value of `p_results` as an
+  expression:
+  ```
+  {
+    "p_api_key": "<key>",
+    "p_results": setProperty(setProperty(item(), 'ok', true), 'event_id', variables('eventId'))
+  }
+  ```
+
+**8. Add HTTP, renamed to Ack failed.** Add it **in parallel** with Ack ok
+(the **+** on the arrow, then **Add a parallel branch**).
+- Same URI and headers as Ack ok.
+- Body:
+  ```
+  {
+    "p_api_key": "<key>",
+    "p_results": setProperty(setProperty(item(), 'ok', false), 'error', string(result('Do_op')))
+  }
+  ```
+- Open its **Settings** (or **Configure run after**). Untick **is
+  successful**, then tick **has failed** and **has timed out**.
+- `result('Do_op')` carries the Graph error. When it contains `404` or
+  `ErrorItemNotFound` (an event someone deleted by hand), the database treats a
+  delete as done and re-creates the event on an update.
+
+**9. Save, then click Test → Manually.**
+- With `p_limit: 1`, a single event should appear on the calendar.
+- Check the following:
+  - The event is all-day, covers the right dates and has the subject
+    "Name - On leave".
+  - **Group members did not each get an invite in their inbox.** If they did,
+    turn off the group's "send copies of group events to members' inboxes"
+    setting, or use a shared mailbox calendar instead.
+  - In Supabase, `select * from public.leave_calendar_events;` shows one row
+    with an `event_id`.
+
+**10. Remove `"p_limit": 1` from Get owed and save.**
+- The next run creates every current and future approved leave (up to 100
+  per run).
+- After that, each run does only what has changed.
 
 ## Looking after it
 
