@@ -99,6 +99,10 @@ select migration,
     -- so there is nothing about them worth pattern-matching.
     ('177_user_module_access',            exists(select 1 from information_schema.tables
                                                   where table_schema = 'public'
-                                                    and table_name = 'user_module_access'),                                        'table public.user_module_access')
+                                                    and table_name = 'user_module_access'),                                        'table public.user_module_access'),
+    -- "yes" means the sync is installed, not that anything is syncing: the
+    -- Power Automate flow and a minted org_secrets.leave_calendar_key are
+    -- separate (docs/LEAVE-CALENDAR-FLOW.md).
+    ('192_leave_calendar_sync',           exists(select 1 from fn where proname = 'leave_calendar_ack'),                        'fn leave_calendar_ack')
   ) as t(migration, applied, probe)
  order by migration;

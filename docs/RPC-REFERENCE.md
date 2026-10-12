@@ -96,7 +96,7 @@ Shorthand used below: **"Admin"** means `public.is_admin_of(org)` → a row in
 |---|---|---|---|---|---|
 | `save_org_settings(p_org_id, p_settings jsonb) → void` | **141** (supersedes 107/105/056/050/047) | DEFINER | `resolve_org_id` + `is_admin_of` | Patch org settings; SMTP/debug-redirect secrets now written to `org_secrets` | configure.js |
 | `get_org_secrets_admin(p_org_id=null) → table` | 141 | DEFINER | `resolve_org_id` + `is_admin_of` | Read SMTP + webhook keys for the Configure page | configure.js |
-| `rotate_import_key(p_kind 'jobs'\|'tasks'\|'dept_codes', p_org_id=null) → text` | **141** (supersedes 032/030) | DEFINER | `resolve_org_id` + `is_admin_of` | Mint a new webhook API key into `org_secrets` | configure.js |
+| `rotate_import_key(p_kind 'jobs'\|'tasks'\|'dept_codes'\|'invoices'\|'quotes'\|'leave_calendar', p_org_id=null) → text` | **192** (supersedes 173/141/032/030) | DEFINER | `resolve_org_id` + `is_admin_of` | Mint a new webhook API key into `org_secrets` | configure.js |
 | `save_import_mapping(p_kind, p_mapping jsonb, p_org_id=null) → void` | **032** (supersedes 030) | DEFINER | `resolve_org_id` + `is_admin_of` | Store CSV column/status mapping for webhook imports | configure.js |
 | `ingest_jobs_via_webhook(p_api_key, p_rows jsonb) → jsonb` | **141** (supersedes 052/030) | DEFINER | API key (≥16 chars) must match `org_secrets.jobs_webhook_key` — no auth.uid() | Upsert jobs from the Infusion push | external webhook |
 | `ingest_tasks_via_webhook(p_api_key, p_rows jsonb) → jsonb` | **141** (supersedes 052/030) | DEFINER | key vs `org_secrets.tasks_webhook_key` | Upsert tasks | external webhook |
@@ -111,6 +111,9 @@ Shorthand used below: **"Admin"** means `public.is_admin_of(org)` → a row in
 | `xero_set_employee_mapping(p_user_id, p_xero_employee_id text) → void` | 113 | DEFINER | `is_admin_of(user's org)` | Map employee → Xero employee id | configure.js |
 | `xero_set_job_leave_type_mapping(p_job_id, p_xero_leave_type_id text) → void` | 114 | DEFINER | `is_admin_of`; job must be `is_leave` | Map leave job → Xero leave type | configure.js |
 | `xero_set_leave_type_mapping(p_leave_type_id, p_xero_leave_type_id text) → void` | 113 | DEFINER | `is_admin_of` | Older leave-type→Xero mapping | not called from JS (superseded by 114) |
+| `leave_calendar_pending(p_api_key, p_limit=100) → jsonb` | 192 | DEFINER | key vs `org_secrets.leave_calendar_key` — no auth.uid() | Calendar ops owed (create/update/delete) for approved leave, each with a Graph-ready `graph_body` | Power Automate leave-calendar flow (docs/LEAVE-CALENDAR-FLOW.md) |
+| `leave_calendar_ack(p_api_key, p_results jsonb) → jsonb` | 192 | DEFINER | key vs `org_secrets.leave_calendar_key` | Record each op's result into `leave_calendar_events` (404 on delete = done; 5 failures = stuck) | Power Automate leave-calendar flow |
+| `leave_calendar_subject(p_name, p_hours_per_day) → text` | 192 | INVOKER (sql, immutable) | n/a | The calendar event's subject — the one place to change what the calendar says | `leave_calendar_pending` |
 | `set_leave_notifications(p_org_id, p_enabled bool) → void` | 158 | DEFINER | `is_admin_of(p_org_id)` | Toggle `organisations.notify_leave` (dedicated setter — deliberately NOT folded into `save_org_settings`, whose live definition has drifted) | configure.js |
 
 ## Module access (the PTL ERP module switcher)
