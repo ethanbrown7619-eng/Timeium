@@ -749,6 +749,21 @@ async function buildInfusionRows() {
     return 0;
   }
 
+  // Every line needs a job (migration 193). A line with hours and no job
+  // would go to Infusion with a blank jobid - refuse the whole export and
+  // name the lines, so they get fixed in Admin edit first.
+  const jobless = [];
+  for (const entry of entries || []) {
+    if (entry.job_id) continue;
+    const hours = DAYS.reduce((s, d) => s + (Number(entry[`${d}_hours`]) || 0), 0);
+    if (hours <= 0) continue;
+    const emp = empMap[tsUserMap[entry.timesheet_id]];
+    jobless.push(`${emp?.name || "Unknown"}: ${entry.description || "(no description)"} (${fmtHours(hours)})`);
+  }
+  if (jobless.length) {
+    throw new Error(`Every line needs a job. Fix ${jobless.length === 1 ? "this line" : "these lines"} in the timesheet first: ${jobless.join("; ")}`);
+  }
+
   // Build rows: for each entry, for each day, one row
   const rows = [];
   for (const entry of entries || []) {

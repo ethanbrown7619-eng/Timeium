@@ -103,6 +103,7 @@ select migration,
     -- "yes" means the sync is installed, not that anything is syncing: the
     -- Power Automate flow and a minted org_secrets.leave_calendar_key are
     -- separate (docs/LEAVE-CALENDAR-FLOW.md).
-    ('192_leave_calendar_sync',           exists(select 1 from fn where proname = 'leave_calendar_ack'),                        'fn leave_calendar_ack')
+    ('192_leave_calendar_sync',           exists(select 1 from fn where proname = 'leave_calendar_ack'),                        'fn leave_calendar_ack'),
+    ('193_every_line_needs_a_job',        exists(select 1 from pg_trigger where tgname = 'trg_timesheet_entry_require_job'),    'trigger trg_timesheet_entry_require_job')
   ) as t(migration, applied, probe)
  order by migration;

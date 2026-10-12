@@ -1588,7 +1588,15 @@ function wireRow(row, idx) {
     onClear: () => {
       const wasLeave = !!jobsById.get(entries[idx].job_id)?.is_leave;
       entries[idx].job_id = null;
-      saveEntry(entries[idx], ["job_id"]);
+      // On a submitted / approved / exported sheet (Admin edit) a line with
+      // hours keeps its saved job until a new one is picked - clearing the
+      // box to type a replacement must not write a blank job (migration 193
+      // refuses it anyway). 2026-10-12: Sam Bonnici's "Cleaning for FAT"
+      // was exported with no job exactly this way.
+      const hasHours = DAYS.some((d) => Number(entries[idx][`${d}_hours`]) > 0);
+      if (!(hasHours && isTsSubmittedOrApproved(tsStatus))) {
+        saveEntry(entries[idx], ["job_id"]);
+      }
       if (wasLeave) {
         // Dept/task were forced read-only; need a re-render so they go
         // back to editable. When the clear came from typing in the job
