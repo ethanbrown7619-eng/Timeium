@@ -19,9 +19,11 @@ every 15 min ─► leave_calendar_pending  ──►  for each op:
   The leave type and the reason are **never** shown, because sick leave on a
   company-wide calendar is a privacy problem. To change the wording, edit
   `public.leave_calendar_subject`. The next run updates every event.
-- There is one all-day event per request, from the first to the last day,
-  shown as **Free** with no reminder. A Fri–Mon request shows across the
-  weekend.
+- **Weekends are left off** (migration 194). Each unbroken Mon–Fri stretch
+  of a request is one all-day event, shown as **Free** with no reminder:
+  Mon 12 – Mon 19 Oct shows as Mon 12 – Fri 16 plus Mon 19. Leave falling
+  only on a Saturday and Sunday shows nothing. Public holidays are not
+  skipped.
 - The first run adds leave **ending today or later**. Past leave is not
   back-filled.
 
